@@ -34,4 +34,30 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertFalse(ChatExportDisplayState.notExported.isPhysicallyExported)
         XCTAssertTrue(ChatExportDisplayState.invalid("broken").isPhysicallyExported)
     }
+
+    func testLargeMessageSearchCompletesInOneLinearPass() throws {
+        let data = Data(
+            """
+            {
+              "id": 1,
+              "chatId": 44,
+              "message": "Aguja en el pajar",
+              "date": "2026-07-12T12:00:00Z",
+              "isFromMe": false,
+              "messageType": "Text"
+            }
+            """.utf8
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let message = try decoder.decode(MessageInfo.self, from: data)
+        let messages = Array(repeating: message, count: 50_000)
+
+        let start = Date()
+        let results = MessageSearch.filter(messages, query: "aguja")
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertEqual(results.count, 50_000)
+        XCTAssertLessThan(elapsed, 2, "Filtering 50,000 messages should remain interactive")
+    }
 }

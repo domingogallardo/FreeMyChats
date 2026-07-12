@@ -6,6 +6,7 @@ struct ConversationView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var isSearching = false
     @State private var messageSearchText = ""
+    @State private var appliedMessageSearchText = ""
 
     var body: some View {
         Group {
@@ -66,10 +67,22 @@ struct ConversationView: View {
                 updateExport: store.updateSelectedExport
             )
             Divider()
-            MessageListView(exported: exported, searchText: messageSearchText)
+            MessageListView(exported: exported, searchText: appliedMessageSearchText)
+        }
+        .task(id: messageSearchText) {
+            let query = messageSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else {
+                appliedMessageSearchText = ""
+                return
+            }
+
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            appliedMessageSearchText = query
         }
         .onChange(of: exported.document.chat.id) { _, _ in
             messageSearchText = ""
+            appliedMessageSearchText = ""
             isSearching = false
         }
     }
@@ -174,24 +187,25 @@ private struct MessageListView: View {
     let exported: ExportedChat
     let searchText: String
 
-    private var messages: [MessageInfo] {
-        guard !searchText.isEmpty else { return exported.document.messages }
-        return exported.document.messages.filter { message in
-            [message.message, message.caption, message.author?.displayName, message.mediaFilename]
-                .compactMap { $0 }
-                .contains { $0.localizedCaseInsensitiveContains(searchText) }
-        }
+    private var filteredMessages: [MessageInfo] {
+        MessageSearch.filter(exported.document.messages, query: searchText)
     }
 
     var body: some View {
+        let messages = filteredMessages
+
         if messages.isEmpty {
-            ContentUnavailableView.search(text: searchText)
+            ContentUnavailableView(
+                "No hay resultados",
+                systemImage: "magnifyingglass",
+                description: Text("No se han encontrado mensajes que contengan “\(searchText)”.")
+            )
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            if beginsNewDay(at: index) {
+                            if beginsNewDay(at: index, in: messages) {
                                 Text(Self.dayFormatter.string(from: message.date))
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(.secondary)
@@ -216,7 +230,7 @@ private struct MessageListView: View {
         }
     }
 
-    private func beginsNewDay(at index: Int) -> Bool {
+    private func beginsNewDay(at index: Int, in messages: [MessageInfo]) -> Bool {
         guard index > 0 else { return true }
         return !Calendar.current.isDate(messages[index].date, inSameDayAs: messages[index - 1].date)
     }
