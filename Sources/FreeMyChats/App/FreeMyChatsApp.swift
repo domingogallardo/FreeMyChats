@@ -5,14 +5,36 @@ import SwiftUI
 @available(macOS 14.0, *)
 struct FreeMyChatsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var store = FreeMyChatsStore()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(store: store)
         }
-        .defaultSize(width: 820, height: 560)
+        .defaultSize(width: 1180, height: 760)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("Abrir biblioteca…") {
+                    if let url = DirectoryPicker.chooseExistingLibrary(
+                        startingAt: store.session?.paths.rootURL.path
+                    ) {
+                        store.openLibrary(at: url)
+                    }
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                .disabled(store.operation != nil)
+
+                if store.session != nil {
+                    Button("Cerrar biblioteca") {
+                        store.closeLibrary()
+                    }
+                    .disabled(store.operation != nil)
+                    Divider()
+                    Button("Abrir biblioteca en Finder") {
+                        store.revealLibrary()
+                    }
+                }
+            }
         }
     }
 }

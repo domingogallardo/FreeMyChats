@@ -1,10 +1,43 @@
-# FreeMyChats
+# Free My Chats
 
-FreeMyChats es una aplicación nativa para macOS que localiza las copias de seguridad de iPhone disponibles y muestra cuáles contienen datos de WhatsApp. La interfaz permite analizar la carpeta estándar de MobileSync o seleccionar otra ubicación, e indica de forma clara si cada copia está lista, cifrada o no contiene la base de datos esperada.
+Free My Chats es una aplicación nativa para macOS que convierte los datos de WhatsApp de una copia de iPhone en una biblioteca local de conversaciones.
+
+La biblioteca mantiene dos niveles deliberadamente distintos:
+
+- La columna izquierda muestra el catálogo leído de la copia local de WhatsApp.
+- Al seleccionar un chat por primera vez se crea una exportación física y autocontenida.
+- La columna derecha abre siempre el `chat.json` de esa exportación, junto con los archivos de su carpeta `Media`.
+
+## Funciones del MVP
+
+- Descubrimiento e inspección de copias de iPhone en MobileSync o en otra carpeta.
+- Creación y reapertura de bibliotecas locales.
+- Catálogo de chats con búsqueda y filtros por grupo, persona o archivado.
+- Exportación automática de un chat durante su primera apertura.
+- Detección de exportaciones vigentes, desactualizadas o inválidas.
+- Visor de mensajes, autores, respuestas, reacciones, ubicaciones y adjuntos.
+- Búsqueda de texto dentro del chat exportado.
+- Acciones para abrir la biblioteca, la carpeta del chat y sus archivos en Finder.
+
+## Estructura de una biblioteca
+
+```text
+Mi biblioteca Free My Chats/
+├── Backup/
+│   ├── ChatStorage.sqlite
+│   ├── .wa-backup/
+│   └── …
+└── Exports/
+    ├── ChatProfilePhotos/
+    └── Chats/
+        └── <chatId>/
+            ├── chat.json
+            └── Media/
+```
 
 ## Relación con SwiftWABackupAPI
 
-Este proyecto utiliza [SwiftWABackupAPI](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone y la detección, extracción y lectura de los datos de WhatsApp. FreeMyChats proporciona una interfaz gráfica sobre esa API: en su estado actual se centra en descubrir e inspeccionar copias, mientras que SwiftWABackupAPI contiene la lógica reutilizable y también ofrece una herramienta de línea de comandos.
+Este proyecto utiliza [SwiftWABackupAPI 4.2 o posterior](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
 
 ## Requisitos
 

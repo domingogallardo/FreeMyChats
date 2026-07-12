@@ -16,7 +16,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/domingogallardo/SwiftWABackupAPI.git",
-            from: "4.1.0"
+            from: "4.2.0"
         )
     ],
     targets: [
@@ -25,6 +25,10 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftWABackupAPI", package: "SwiftWABackupAPI")
             ]
+        ),
+        .testTarget(
+            name: "FreeMyChatsTests",
+            dependencies: ["FreeMyChats"]
         )
     ]
 )

@@ -32,8 +32,8 @@ cat >"$INFO_PLIST" <<PLIST
 <dict>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleName</key><string>Free my chats</string>
-  <key>CFBundleDisplayName</key><string>Free my chats</string>
+  <key>CFBundleName</key><string>Free My Chats</string>
+  <key>CFBundleDisplayName</key><string>Free My Chats</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>

@@ -14,6 +14,11 @@ struct BackupInspectionRow: Identifiable {
     let encryptionState: Bool?
     let whatsAppState: WhatsAppState
     let detail: String?
+    let iPhoneBackup: IPhoneBackup?
+
+    var canCreateLibrary: Bool {
+        iPhoneBackup != nil && encryptionState == false
+    }
 
     init(info: IPhoneBackupDiscoveryInfo) {
         id = info.identifier
@@ -21,6 +26,7 @@ struct BackupInspectionRow: Identifiable {
         creationDate = info.creationDate
         encryptionState = info.isEncrypted
         detail = info.issue
+        iPhoneBackup = info.isReady ? info.iPhoneBackup : nil
 
         switch info.status {
         case .ready, .encrypted, .encryptionStatusUnavailable:
