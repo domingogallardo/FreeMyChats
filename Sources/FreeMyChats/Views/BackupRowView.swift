@@ -3,7 +3,7 @@ import SwiftUI
 @available(macOS 14.0, *)
 struct BackupRowView: View {
     let row: BackupInspectionRow
-    let createLibrary: () -> Void
+    let addToLibrary: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -44,7 +44,7 @@ struct BackupRowView: View {
 
             HStack {
                 Spacer()
-                Button("Crear biblioteca…", action: createLibrary)
+                Button("Añadir a la biblioteca", action: addToLibrary)
                     .buttonStyle(.borderedProminent)
                     .disabled(!row.canCreateLibrary)
             }

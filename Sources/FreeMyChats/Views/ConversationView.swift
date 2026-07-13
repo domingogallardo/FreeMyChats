@@ -17,8 +17,8 @@ struct ConversationView: View {
                     "Selecciona un chat",
                     systemImage: "bubble.left.and.bubble.right",
                     description: Text(
-                        "La lista de la izquierda representa la biblioteca. "
-                        + "Al abrir un chat por primera vez se crea su carpeta exportada."
+                        "Despliega una copia de WhatsApp a la izquierda y selecciona un chat. "
+                        + "Podrás revisar sus datos antes de decidir si quieres exportarlo."
                     )
                 )
             }
@@ -27,8 +27,10 @@ struct ConversationView: View {
 
     @ViewBuilder
     private func selectedChatContent(_ chat: ChatInfo) -> some View {
-        if let operation = store.operation, operation.kind == .exportingChat(chat.id)
-            || operation.kind == .openingChat(chat.id) {
+        if let selection = store.selectedChatID,
+           let operation = store.operation,
+           operation.kind == .exportingChat(selection)
+            || operation.kind == .openingChat(selection) {
             OperationProgressView(operation: operation)
         } else if case .invalid(let reason) = store.selectedExportState {
             ContentUnavailableView {
@@ -43,11 +45,23 @@ struct ConversationView: View {
             }
         } else if let exported = store.selectedExport {
             conversation(exported)
+        } else if case .notExported = store.selectedExportState {
+            ContentUnavailableView(
+                "Chat sin exportar",
+                systemImage: "arrow.right.circle",
+                description: Text(
+                    "Revisa la información desplegada en el panel izquierdo y pulsa Exportar "
+                    + "para abrir aquí la conversación completa."
+                )
+            )
         } else {
             OperationProgressView(
                 operation: AppOperation(
                     id: UUID(),
-                    kind: .openingChat(chat.id),
+                    kind: .openingChat(
+                        store.selectedChatID
+                            ?? VersionChatID(versionID: "", chatID: chat.id)
+                    ),
                     title: "Abriendo el chat…",
                     detail: nil,
                     fractionCompleted: nil
@@ -133,7 +147,7 @@ private struct ConversationHeaderView: View {
 
             if case .stale = state {
                 HStack {
-                    Label("La biblioteca contiene una versión más reciente de este chat.", systemImage: "clock.arrow.circlepath")
+                    Label("La copia fuente contiene una versión más reciente de este chat.", systemImage: "clock.arrow.circlepath")
                     Spacer()
                     Button("Actualizar", action: updateExport)
                 }

@@ -4,28 +4,100 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
-    func testLibraryPathsUseBackupAndExportsSiblings() {
+    func testLibraryPathsNamespaceSourcesAndExportsByVersion() {
         let root = URL(fileURLWithPath: "/tmp/My Library", isDirectory: true)
         let paths = LibraryPaths(rootURL: root)
 
         XCTAssertEqual(paths.rootURL.path, "/tmp/My Library")
-        XCTAssertEqual(paths.backupURL.path, "/tmp/My Library/Backup")
+        XCTAssertEqual(paths.sourcesURL.path, "/tmp/My Library/Sources")
         XCTAssertEqual(paths.exportsURL.path, "/tmp/My Library/Exports")
+        XCTAssertEqual(paths.manifestURL.path, "/tmp/My Library/library.json")
+        XCTAssertEqual(paths.backupURL(for: "july").path, "/tmp/My Library/Sources/july/Backup")
+        XCTAssertEqual(paths.exportURL(for: "july").path, "/tmp/My Library/Exports/july")
     }
 
-    func testResolvingBackupSelectionReturnsLibraryRoot() throws {
+    func testResolvingVersionBackupSelectionReturnsLibraryRoot() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let backup = root.appendingPathComponent("Backup", isDirectory: true)
-        let metadataDirectory = backup.appendingPathComponent(".wa-backup", isDirectory: true)
-        try FileManager.default.createDirectory(at: metadataDirectory, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: metadataDirectory.appendingPathComponent("backup-info.json"))
+        let paths = LibraryPaths(rootURL: root)
+        let backup = paths.backupURL(for: "july")
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: paths.manifestURL)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let paths = LibraryPaths.resolvingSelection(backup)
+        let resolved = LibraryPaths.resolvingSelection(backup)
 
-        XCTAssertEqual(paths.rootURL, root.standardizedFileURL)
-        XCTAssertEqual(paths.backupURL, backup.standardizedFileURL)
+        XCTAssertEqual(resolved.rootURL, root.standardizedFileURL)
+    }
+
+    func testEmptyLibraryCreationWritesVersionedManifest() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let session = try LibraryService.create(at: root)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.manifestURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.sourcesURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.exportsURL.path))
+        XCTAssertTrue(session.versions.isEmpty)
+    }
+
+    func testLibraryOpensExportsAfterSourceBackupWasDeleted() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let session = try LibraryService.create(at: root)
+        let version = LibraryVersionRecord(
+            id: "july",
+            sourceBackupIdentifier: "iphone-id",
+            sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
+            importedAt: Date(timeIntervalSince1970: 1_720_000_100)
+        )
+        var manifest = session.manifest
+        manifest.versions = [version]
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(manifest).write(to: session.paths.manifestURL, options: .atomic)
+
+        let chatDirectory = session.paths.exportURL(for: version.id)
+            .appendingPathComponent("Chats/44", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: chatDirectory.appendingPathComponent("Media", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data(
+            """
+            {
+              "schemaVersion": 1,
+              "exportedAt": "2026-07-12T12:00:00Z",
+              "chat": {
+                "id": 44,
+                "contactJid": "family@g.us",
+                "name": "Familia",
+                "numberMessages": 0,
+                "lastMessageDate": "2026-07-12T12:00:00Z",
+                "chatType": "group",
+                "isArchived": false
+              },
+              "messages": [],
+              "contacts": []
+            }
+            """.utf8
+        ).write(to: chatDirectory.appendingPathComponent("chat.json"))
+
+        let reopened = try LibraryService.open(selectedURL: root)
+
+        XCTAssertEqual(reopened.versions.count, 1)
+        XCTAssertFalse(try XCTUnwrap(reopened.versions.first).hasSourceBackup)
+        XCTAssertEqual(reopened.versions.first?.backupByteCount, 0)
+        XCTAssertEqual(reopened.versions.first?.chats.first?.name, "Familia")
+        XCTAssertEqual(
+            try reopened.versions.first?.exportStore.openChat(chatId: 44).document.chat.id,
+            44
+        )
     }
 
     func testExportDisplayStatePreservesUnavailableAndInvalidStates() {

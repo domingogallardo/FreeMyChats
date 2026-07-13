@@ -3,6 +3,7 @@ import SwiftUI
 @available(macOS 14.0, *)
 struct BackupDiscoveryView: View {
     @ObservedObject var store: FreeMyChatsStore
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -16,17 +17,14 @@ struct BackupDiscoveryView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("Free My Chats")
+                Text("Añadir una copia de WhatsApp")
                     .font(.largeTitle.bold())
-                Text("Convierte una copia de WhatsApp en una biblioteca local de conversaciones.")
+                Text("Selecciona otra copia del iPhone para incorporarla como una versión independiente.")
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Abrir biblioteca…") {
-                if let url = DirectoryPicker.chooseExistingLibrary() {
-                    store.openLibrary(at: url)
-                }
-            }
+            Button("Cerrar") { dismiss() }
+                .keyboardShortcut(.cancelAction)
         }
     }
 
@@ -90,8 +88,7 @@ struct BackupDiscoveryView: View {
                 LazyVStack(spacing: 10) {
                     ForEach(store.backupRows) { row in
                         BackupRowView(row: row) {
-                            guard let destination = DirectoryPicker.chooseNewLibrary() else { return }
-                            store.createLibrary(from: row, at: destination)
+                            store.addBackup(from: row)
                         }
                     }
                 }

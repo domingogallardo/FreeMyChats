@@ -7,12 +7,12 @@ struct ContentView: View {
     var body: some View {
         Group {
             if store.session == nil {
-                BackupDiscoveryView(store: store)
+                LibraryWelcomeView(store: store)
             } else {
                 LibraryView(store: store)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(minWidth: 900, minHeight: 600)
         .task {
             store.start()
         }

@@ -3,49 +3,147 @@ import Foundation
 
 struct LibraryPaths: Equatable {
     let rootURL: URL
-    let backupURL: URL
+    let sourcesURL: URL
     let exportsURL: URL
+    let manifestURL: URL
 
     init(rootURL: URL) {
-        let standardizedRoot = rootURL.standardizedFileURL
-        self.rootURL = standardizedRoot
-        self.backupURL = standardizedRoot.appendingPathComponent("Backup", isDirectory: true)
-        self.exportsURL = standardizedRoot.appendingPathComponent("Exports", isDirectory: true)
+        let root = rootURL.standardizedFileURL
+        self.rootURL = root
+        self.sourcesURL = root.appendingPathComponent("Sources", isDirectory: true)
+        self.exportsURL = root.appendingPathComponent("Exports", isDirectory: true)
+        self.manifestURL = root.appendingPathComponent("library.json")
+    }
+
+    func backupURL(for versionID: String) -> URL {
+        sourcesURL
+            .appendingPathComponent(versionID, isDirectory: true)
+            .appendingPathComponent("Backup", isDirectory: true)
+    }
+
+    func exportURL(for versionID: String) -> URL {
+        exportsURL.appendingPathComponent(versionID, isDirectory: true)
     }
 
     static func resolvingSelection(_ selectedURL: URL) -> LibraryPaths {
-        let selected = selectedURL.standardizedFileURL
-        let metadataAtSelection = selected
-            .appendingPathComponent(".wa-backup", isDirectory: true)
-            .appendingPathComponent("backup-info.json")
+        var candidate = selectedURL.standardizedFileURL
+        let fileManager = FileManager.default
 
-        if FileManager.default.fileExists(atPath: metadataAtSelection.path) {
-            return LibraryPaths(rootURL: selected.deletingLastPathComponent())
+        for _ in 0..<4 {
+            if fileManager.fileExists(atPath: candidate.appendingPathComponent("library.json").path) {
+                return LibraryPaths(rootURL: candidate)
+            }
+
+            let legacyMetadata = candidate
+                .appendingPathComponent("Backup", isDirectory: true)
+                .appendingPathComponent(".wa-backup", isDirectory: true)
+                .appendingPathComponent("backup-info.json")
+            if fileManager.fileExists(atPath: legacyMetadata.path) {
+                return LibraryPaths(rootURL: candidate)
+            }
+
+            let parent = candidate.deletingLastPathComponent()
+            guard parent.path != candidate.path else { break }
+            candidate = parent
         }
 
-        return LibraryPaths(rootURL: selected)
+        return LibraryPaths(rootURL: selectedURL)
+    }
+}
+
+struct LibraryManifest: Codable, Equatable {
+    static let currentSchemaVersion = 1
+
+    var schemaVersion: Int
+    var createdAt: Date
+    var versions: [LibraryVersionRecord]
+
+    init(createdAt: Date = Date(), versions: [LibraryVersionRecord] = []) {
+        self.schemaVersion = Self.currentSchemaVersion
+        self.createdAt = createdAt
+        self.versions = versions
+    }
+}
+
+struct LibraryVersionRecord: Codable, Equatable, Identifiable {
+    let id: String
+    let sourceBackupIdentifier: String
+    let sourceBackupCreationDate: Date
+    let importedAt: Date
+
+    var title: String {
+        Self.titleFormatter.string(from: sourceBackupCreationDate)
+    }
+
+    private static let titleFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter
+    }()
+}
+
+struct VersionChatID: Hashable {
+    let versionID: String
+    let chatID: Int
+}
+
+enum ChatDetailsState: Equatable {
+    case loading
+    case loaded(firstMessageDate: Date?)
+    case failed(String)
+}
+
+final class LibraryVersionSession: @unchecked Sendable, Identifiable {
+    let record: LibraryVersionRecord
+    let backupURL: URL
+    let exportsURL: URL
+    let backup: ExtractedWhatsAppBackup?
+    let reader: WhatsAppBackupReader?
+    let exportStore: ChatExportStore
+    let chats: [ChatInfo]
+    let backupByteCount: Int64
+
+    var id: String { record.id }
+    var hasSourceBackup: Bool { backup != nil }
+
+    init(
+        record: LibraryVersionRecord,
+        backupURL: URL,
+        exportsURL: URL,
+        backup: ExtractedWhatsAppBackup?,
+        reader: WhatsAppBackupReader?,
+        chats: [ChatInfo],
+        backupByteCount: Int64
+    ) {
+        self.record = record
+        self.backupURL = backupURL
+        self.exportsURL = exportsURL
+        self.backup = backup
+        self.reader = reader
+        self.exportStore = ChatExportStore(rootDirectory: exportsURL)
+        self.chats = chats
+        self.backupByteCount = backupByteCount
     }
 }
 
 final class LibrarySession: @unchecked Sendable {
     let paths: LibraryPaths
-    let backup: ExtractedWhatsAppBackup
-    let reader: WhatsAppBackupReader
-    let info: ExtractedWhatsAppBackupInfo
-    var chats: [ChatInfo]
+    let manifest: LibraryManifest
+    let versions: [LibraryVersionSession]
 
-    init(
-        paths: LibraryPaths,
-        backup: ExtractedWhatsAppBackup,
-        reader: WhatsAppBackupReader,
-        info: ExtractedWhatsAppBackupInfo,
-        chats: [ChatInfo]
-    ) {
+    init(paths: LibraryPaths, manifest: LibraryManifest, versions: [LibraryVersionSession]) {
         self.paths = paths
-        self.backup = backup
-        self.reader = reader
-        self.info = info
-        self.chats = chats
+        self.manifest = manifest
+        self.versions = versions
+    }
+
+    func version(id: String) -> LibraryVersionSession? {
+        versions.first { $0.id == id }
+    }
+
+    func chat(for selection: VersionChatID) -> ChatInfo? {
+        version(id: selection.versionID)?.chats.first { $0.id == selection.chatID }
     }
 }
 
@@ -100,9 +198,11 @@ struct AppOperation: Equatable {
         case discovering
         case creatingLibrary
         case openingLibrary
+        case addingBackup
+        case deletingBackup(String)
         case loadingChats
-        case exportingChat(Int)
-        case openingChat(Int)
+        case exportingChat(VersionChatID)
+        case openingChat(VersionChatID)
     }
 
     let id: UUID

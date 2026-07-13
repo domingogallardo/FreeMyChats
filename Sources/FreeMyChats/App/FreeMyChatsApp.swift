@@ -14,6 +14,14 @@ struct FreeMyChatsApp: App {
         .defaultSize(width: 1180, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("Crear biblioteca…") {
+                    if let url = DirectoryPicker.chooseNewLibrary() {
+                        store.createLibrary(at: url)
+                    }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(store.operation != nil)
+
                 Button("Abrir biblioteca…") {
                     if let url = DirectoryPicker.chooseExistingLibrary(
                         startingAt: store.session?.paths.rootURL.path
@@ -25,6 +33,12 @@ struct FreeMyChatsApp: App {
                 .disabled(store.operation != nil)
 
                 if store.session != nil {
+                    Divider()
+                    Button("Añadir copia de WhatsApp…") {
+                        store.showBackupImporter()
+                    }
+                    .disabled(store.operation != nil)
+
                     Button("Cerrar biblioteca") {
                         store.closeLibrary()
                     }

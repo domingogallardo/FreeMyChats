@@ -4,16 +4,19 @@ Free My Chats es una aplicación nativa para macOS que convierte los datos de Wh
 
 La biblioteca mantiene dos niveles deliberadamente distintos:
 
-- La columna izquierda muestra el catálogo leído de la copia local de WhatsApp.
-- Al seleccionar un chat por primera vez se crea una exportación física y autocontenida.
+- La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
+- Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
 - La columna derecha abre siempre el `chat.json` de esa exportación, junto con los archivos de su carpeta `Media`.
+- Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
 
 ## Funciones del MVP
 
 - Descubrimiento e inspección de copias de iPhone en MobileSync o en otra carpeta.
-- Creación y reapertura de bibliotecas locales.
+- Creación y reapertura de bibliotecas locales con múltiples versiones de una copia.
+- Incorporación y eliminación de copias desde el navegador lateral.
 - Catálogo de chats con búsqueda y filtros por grupo, persona o archivado.
-- Exportación automática de un chat durante su primera apertura.
+- Vista previa de número de mensajes y fechas antes de exportar.
+- Exportación explícita desde la fila desplegada del chat.
 - Detección de exportaciones vigentes, desactualizadas o inválidas.
 - Visor de mensajes, autores, respuestas, reacciones, ubicaciones y adjuntos.
 - Búsqueda de texto dentro del chat exportado.
@@ -23,16 +26,20 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 
 ```text
 Mi biblioteca Free My Chats/
-├── Backup/
-│   ├── ChatStorage.sqlite
-│   ├── .wa-backup/
-│   └── …
+├── library.json
+├── Sources/
+│   └── <sourceId>/
+│       └── Backup/
+│           ├── ChatStorage.sqlite
+│           ├── .wa-backup/
+│           └── …
 └── Exports/
-    ├── ChatProfilePhotos/
-    └── Chats/
-        └── <chatId>/
-            ├── chat.json
-            └── Media/
+    └── <sourceId>/
+        ├── ChatProfilePhotos/
+        └── Chats/
+            └── <chatId>/
+                ├── chat.json
+                └── Media/
 ```
 
 ## Relación con SwiftWABackupAPI
