@@ -31,6 +31,11 @@ struct ChatSidebarView: View {
                                     detailsState: store.chatDetails[selection],
                                     exportState: store.exportStates[selection] ?? .checking,
                                     canExport: version.hasSourceBackup,
+                                    toggleExpansion: {
+                                        store.selectedChatID = store.selectedChatID == selection
+                                            ? nil
+                                            : selection
+                                    },
                                     export: { store.exportChat(selection) },
                                     replaceExport: { store.replaceExport(selection) }
                                 )
@@ -88,7 +93,7 @@ struct ChatSidebarView: View {
 
     private var sidebarHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Copias de WhatsApp")
                         .font(.title2.bold())
@@ -96,7 +101,19 @@ struct ChatSidebarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
+
+                Spacer(minLength: 4)
+
+                libraryActions
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Despliega una copia para navegar por sus chats")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                Spacer(minLength: 4)
+
                 Picker("Filtro", selection: $store.chatFilter) {
                     ForEach(ChatListFilter.allCases) { filter in
                         Text(filter.title).tag(filter)
@@ -105,14 +122,52 @@ struct ChatSidebarView: View {
                 .labelsHidden()
                 .frame(width: 105)
             }
-
-            Text("Despliega una copia para navegar por sus chats")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 8)
+    }
+
+    private var libraryActions: some View {
+        HStack(spacing: 6) {
+            Button {
+                store.showBackupImporter()
+            } label: {
+                Label("Añadir copia…", systemImage: "plus")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("Añadir otra copia de WhatsApp a esta biblioteca")
+            .disabled(store.operation != nil)
+
+            Menu {
+                Button("Volver a leer la biblioteca") {
+                    store.reloadLibrary()
+                }
+                Divider()
+                Button("Abrir biblioteca en Finder") {
+                    store.revealLibrary()
+                }
+                Button("Abrir otra biblioteca…") {
+                    if let url = DirectoryPicker.chooseExistingLibrary(
+                        startingAt: store.session?.paths.rootURL.path
+                    ) {
+                        store.openLibrary(at: url)
+                    }
+                }
+                Button("Cerrar biblioteca") {
+                    store.closeLibrary()
+                }
+            } label: {
+                Label("Opciones de la biblioteca", systemImage: "ellipsis.circle")
+                    .labelStyle(.iconOnly)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Opciones de la biblioteca")
+            .disabled(store.operation != nil)
+        }
+        .controlSize(.regular)
     }
 
     private func expansionBinding(for id: String) -> Binding<Bool> {
@@ -188,29 +243,36 @@ private struct ChatSidebarRow: View {
     let detailsState: ChatDetailsState?
     let exportState: ChatExportDisplayState
     let canExport: Bool
+    let toggleExpansion: () -> Void
     let export: () -> Void
     let replaceExport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                ChatAvatar(photoURL: photoURL, name: chat.name)
+            Button(action: toggleExpansion) {
+                HStack(spacing: 10) {
+                    ChatAvatar(photoURL: photoURL, name: chat.name)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(chat.name)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-
-                    HStack(spacing: 4) {
-                        Text(summary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(chat.name)
+                            .fontWeight(.medium)
                             .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(Self.shortDateFormatter.string(from: chat.lastMessageDate))
+
+                        HStack(spacing: 4) {
+                            Text(summary)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(Self.shortDateFormatter.string(from: chat.lastMessageDate))
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .help(isExpanded ? "Cerrar detalles del chat" : "Mostrar detalles del chat")
 
             if isExpanded {
                 expandedDetails
