@@ -7,6 +7,7 @@ enum LibraryServiceError: Error, LocalizedError {
     case unsupportedSchema(Int)
     case duplicateBackup
     case sourceAlreadyDeleted
+    case exportedChatNotFound
     case layoutMigrationConflict(URL)
 
     var errorDescription: String? {
@@ -21,6 +22,8 @@ enum LibraryServiceError: Error, LocalizedError {
             return "Esta copia de iPhone ya forma parte de la biblioteca."
         case .sourceAlreadyDeleted:
             return "La copia fuente ya había sido eliminada."
+        case .exportedChatNotFound:
+            return "El chat exportado ya no está disponible."
         case .layoutMigrationConflict(let url):
             return "No se ha podido reorganizar la biblioteca porque ya existe un archivo distinto en \(url.path)."
         }
@@ -122,6 +125,97 @@ enum LibraryService {
         } catch {
             try? fileManager.moveItem(at: stagingURL, to: versionSourceURL)
             throw error
+        }
+
+        return try open(paths: session.paths)
+    }
+
+    static func deleteExportedChat(
+        _ selection: VersionChatID,
+        from session: LibrarySession
+    ) throws -> LibrarySession {
+        guard let version = session.version(id: selection.versionID) else {
+            throw LibraryServiceError.exportedChatNotFound
+        }
+
+        let fileManager = FileManager.default
+        let chatsURL = version.exportsURL.appendingPathComponent("Chats", isDirectory: true)
+        let chatURL = chatsURL.appendingPathComponent(
+            String(selection.chatID),
+            isDirectory: true
+        )
+        guard fileManager.fileExists(atPath: chatURL.path) else {
+            throw LibraryServiceError.exportedChatNotFound
+        }
+
+        let stagingURL = session.paths.rootURL.appendingPathComponent(
+            ".deleting-export-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
+        let stagedChatURL = stagingURL.appendingPathComponent("Chat", isDirectory: true)
+        try fileManager.moveItem(at: chatURL, to: stagedChatURL)
+
+        let removeVersion = !version.hasSourceBackup
+            && exportedChatIDs(at: version.exportsURL).isEmpty
+
+        if removeVersion {
+            var manifestWasUpdated = false
+            do {
+                let sourceURL = version.backupURL.deletingLastPathComponent()
+                let legacyExportsURL = version.exportsURL.deletingLastPathComponent()
+                    .appendingPathComponent(version.id, isDirectory: true)
+                let stagedSourceURL = stagingURL.appendingPathComponent("Source", isDirectory: true)
+                let stagedExportsURL = stagingURL.appendingPathComponent("Exports", isDirectory: true)
+                let stagedLegacyExportsURL = stagingURL.appendingPathComponent(
+                    "LegacyExports",
+                    isDirectory: true
+                )
+
+                if fileManager.fileExists(atPath: sourceURL.path) {
+                    try fileManager.moveItem(at: sourceURL, to: stagedSourceURL)
+                }
+                if fileManager.fileExists(atPath: version.exportsURL.path) {
+                    try fileManager.moveItem(at: version.exportsURL, to: stagedExportsURL)
+                }
+                if legacyExportsURL.standardizedFileURL != version.exportsURL.standardizedFileURL,
+                   fileManager.fileExists(atPath: legacyExportsURL.path) {
+                    try fileManager.moveItem(at: legacyExportsURL, to: stagedLegacyExportsURL)
+                }
+
+                var manifest = session.manifest
+                manifest.versions.removeAll { $0.id == selection.versionID }
+                try write(manifest, to: session.paths.manifestURL)
+                manifestWasUpdated = true
+                try fileManager.removeItem(at: stagingURL)
+            } catch {
+                if manifestWasUpdated {
+                    try? write(session.manifest, to: session.paths.manifestURL)
+                }
+                restoreDeletedVersion(
+                    version,
+                    chatURL: chatURL,
+                    stagingURL: stagingURL,
+                    using: fileManager
+                )
+                throw error
+            }
+        } else {
+            do {
+                try removeDirectoryIfEffectivelyEmpty(chatsURL)
+                try removeDirectoryIfEffectivelyEmpty(version.exportsURL)
+                try fileManager.removeItem(at: stagingURL)
+            } catch {
+                if fileManager.fileExists(atPath: stagedChatURL.path) {
+                    try? fileManager.createDirectory(
+                        at: chatURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try? fileManager.moveItem(at: stagedChatURL, to: chatURL)
+                }
+                try? fileManager.removeItem(at: stagingURL)
+                throw error
+            }
         }
 
         return try open(paths: session.paths)
@@ -257,6 +351,44 @@ enum LibraryService {
             try? visibleEntry.setResourceValues(resourceValues)
             return chatID
         }.sorted()
+    }
+
+    private static func restoreDeletedVersion(
+        _ version: LibraryVersionSession,
+        chatURL: URL,
+        stagingURL: URL,
+        using fileManager: FileManager
+    ) {
+        let stagedSourceURL = stagingURL.appendingPathComponent("Source", isDirectory: true)
+        let sourceURL = version.backupURL.deletingLastPathComponent()
+        if fileManager.fileExists(atPath: stagedSourceURL.path) {
+            try? fileManager.moveItem(at: stagedSourceURL, to: sourceURL)
+        }
+
+        let stagedExportsURL = stagingURL.appendingPathComponent("Exports", isDirectory: true)
+        if fileManager.fileExists(atPath: stagedExportsURL.path) {
+            try? fileManager.moveItem(at: stagedExportsURL, to: version.exportsURL)
+        }
+
+        let stagedLegacyExportsURL = stagingURL.appendingPathComponent(
+            "LegacyExports",
+            isDirectory: true
+        )
+        let legacyExportsURL = version.exportsURL.deletingLastPathComponent()
+            .appendingPathComponent(version.id, isDirectory: true)
+        if fileManager.fileExists(atPath: stagedLegacyExportsURL.path) {
+            try? fileManager.moveItem(at: stagedLegacyExportsURL, to: legacyExportsURL)
+        }
+
+        let stagedChatURL = stagingURL.appendingPathComponent("Chat", isDirectory: true)
+        if fileManager.fileExists(atPath: stagedChatURL.path) {
+            try? fileManager.createDirectory(
+                at: chatURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try? fileManager.moveItem(at: stagedChatURL, to: chatURL)
+        }
+        try? fileManager.removeItem(at: stagingURL)
     }
 
     private static func migrateLegacyLibraryIfNeeded(at paths: LibraryPaths) throws {

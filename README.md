@@ -21,7 +21,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Detección de exportaciones vigentes, desactualizadas o inválidas.
 - Visor de mensajes, autores, respuestas, reacciones, ubicaciones y adjuntos.
 - Búsqueda de texto dentro del chat exportado.
-- Acciones para abrir la biblioteca, la carpeta del chat y sus archivos en Finder.
+- Acciones para abrir la biblioteca, la carpeta del chat y sus archivos en Finder, o borrar una exportación.
+- Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
 
 ## Estructura de una biblioteca
 

@@ -7,6 +7,7 @@ struct ConversationView: View {
     @State private var isSearching = false
     @State private var messageSearchText = ""
     @State private var appliedMessageSearchText = ""
+    @State private var isConfirmingExportDeletion = false
 
     var body: some View {
         Group {
@@ -22,6 +23,22 @@ struct ConversationView: View {
             } else {
                 exportLoadingView
             }
+        }
+        .confirmationDialog(
+            "¿Borrar este chat exportado?",
+            isPresented: $isConfirmingExportDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Borrar chat exportado", role: .destructive) {
+                store.deleteSelectedExportedChat()
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text(
+                "Se borrarán permanentemente sus mensajes y archivos exportados. "
+                + "Si es el último chat de una copia cuya fuente ya fue eliminada, "
+                + "también se borrará esa copia de la biblioteca."
+            )
         }
     }
 
@@ -54,7 +71,8 @@ struct ConversationView: View {
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
                 goBack: store.showExportList,
-                revealInFinder: store.revealSelectedChat
+                revealInFinder: store.revealSelectedChat,
+                deleteExport: { isConfirmingExportDeletion = true }
             )
             Divider()
             MessageListView(
@@ -114,6 +132,7 @@ private struct ConversationHeaderView: View {
     @Binding var searchText: String
     let goBack: () -> Void
     let revealInFinder: () -> Void
+    let deleteExport: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,6 +163,8 @@ private struct ConversationHeaderView: View {
 
                 Menu {
                     Button("Abrir carpeta en Finder", action: revealInFinder)
+                    Divider()
+                    Button("Borrar chat exportado…", role: .destructive, action: deleteExport)
                 } label: {
                     Label("Opciones del chat", systemImage: "ellipsis.circle")
                 }

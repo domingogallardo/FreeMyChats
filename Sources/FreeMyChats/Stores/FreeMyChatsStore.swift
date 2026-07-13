@@ -312,6 +312,43 @@ final class FreeMyChatsStore: ObservableObject {
         WorkspaceService.reveal(selectedExport.directoryURL)
     }
 
+    func deleteSelectedExportedChat() {
+        guard let selection = selectedExportID, let session else { return }
+        let chatName = selectedExport?.document.chat.name ?? "chat"
+        let operationID = beginOperation(
+            kind: .deletingExportedChat(selection),
+            title: "Borrando “\(chatName)”…",
+            detail: "Eliminando sus mensajes y archivos exportados."
+        )
+
+        workQueue.async { [weak self] in
+            let result = Result {
+                try LibraryService.deleteExportedChat(selection, from: session)
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success(let newSession):
+                    if newSession.version(id: selection.versionID) == nil {
+                        self.readingPositionStore.remove(
+                            versionID: selection.versionID,
+                            in: session.paths.rootURL
+                        )
+                    } else {
+                        self.readingPositionStore.remove(
+                            chat: selection,
+                            in: session.paths.rootURL
+                        )
+                    }
+                    self.install(newSession, preservingSelection: true)
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     func profilePhotoURL(for chat: ChatInfo, in version: LibraryVersionSession) -> URL? {
         guard let filename = chat.photoFilename else { return nil }
         let catalogURL = session?.paths

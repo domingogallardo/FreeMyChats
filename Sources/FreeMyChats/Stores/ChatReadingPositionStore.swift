@@ -19,6 +19,22 @@ struct ChatReadingPositionStore {
         defaults.set(updatedPositions, forKey: Self.defaultsKey)
     }
 
+    func remove(chat: VersionChatID, in libraryURL: URL) {
+        var updatedPositions = positions
+        updatedPositions.removeValue(forKey: positionKey(for: chat, in: libraryURL))
+        defaults.set(updatedPositions, forKey: Self.defaultsKey)
+    }
+
+    func remove(versionID: String, in libraryURL: URL) {
+        let prefix = [
+            libraryURL.standardizedFileURL.path,
+            versionID,
+            ""
+        ].joined(separator: "\u{1F}")
+        let updatedPositions = positions.filter { !$0.key.hasPrefix(prefix) }
+        defaults.set(updatedPositions, forKey: Self.defaultsKey)
+    }
+
     private var positions: [String: Int] {
         defaults.dictionary(forKey: Self.defaultsKey)?.compactMapValues { value in
             (value as? NSNumber)?.intValue

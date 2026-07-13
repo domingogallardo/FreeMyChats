@@ -56,6 +56,7 @@ struct ChatSidebarView: View {
             store.selectChat(chatID)
         }
         .onChange(of: store.versions.map(\.id)) { _, ids in
+            expandedVersionIDs.formIntersection(Set(ids))
             if expandedVersionIDs.isEmpty, let first = ids.first {
                 expandedVersionIDs.insert(first)
             }

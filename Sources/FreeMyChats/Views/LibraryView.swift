@@ -28,7 +28,7 @@ struct LibraryView: View {
     private var blockingOperation: AppOperation? {
         guard let operation = store.operation else { return nil }
         switch operation.kind {
-        case .openingLibrary, .deletingBackup, .loadingChats:
+        case .openingLibrary, .deletingBackup, .deletingExportedChat, .loadingChats:
             return operation
         case .discovering, .creatingLibrary, .addingBackup, .exportingChat:
             return nil
