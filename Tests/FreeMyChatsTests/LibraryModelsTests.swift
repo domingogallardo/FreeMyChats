@@ -103,6 +103,10 @@ final class LibraryModelsTests: XCTestCase {
             }
             """.utf8
         ).write(to: chatDirectory.appendingPathComponent("chat.json"))
+        var hiddenLegacyExportURL = chatDirectory
+        var hiddenLegacyValues = URLResourceValues()
+        hiddenLegacyValues.isHidden = true
+        try hiddenLegacyExportURL.setResourceValues(hiddenLegacyValues)
 
         let reopened = try LibraryService.open(selectedURL: root)
 
@@ -118,6 +122,39 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(
             try reopened.versions.first?.exportStore.openChat(chatId: 44).document.chat.id,
             44
+        )
+
+        let reopenedVersion = try XCTUnwrap(reopened.versions.first)
+        let catalogOnlyVersion = LibraryVersionSession(
+            record: reopenedVersion.record,
+            backupURL: reopenedVersion.backupURL,
+            exportsURL: reopenedVersion.exportsURL,
+            backup: nil,
+            reader: nil,
+            chats: [],
+            backupByteCount: 0
+        )
+        let catalogOnlySession = LibrarySession(
+            paths: reopened.paths,
+            manifest: reopened.manifest,
+            versions: [catalogOnlyVersion]
+        )
+        var hiddenExportURL = reopenedVersion.exportsURL
+            .appendingPathComponent("Chats/44", isDirectory: true)
+        var hiddenValues = URLResourceValues()
+        hiddenValues.isHidden = true
+        try hiddenExportURL.setResourceValues(hiddenValues)
+        let invalidExportURL = reopenedVersion.exportsURL
+            .appendingPathComponent("Chats/45", isDirectory: true)
+        try FileManager.default.createDirectory(at: invalidExportURL, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: invalidExportURL.appendingPathComponent("chat.json"))
+
+        let catalog = LibraryService.exportCatalog(in: catalogOnlySession)
+
+        XCTAssertEqual(catalog.map(\.id.chatID), [44])
+        XCTAssertEqual(catalog.first?.chat.name, "Familia")
+        XCTAssertFalse(
+            try hiddenExportURL.resourceValues(forKeys: [.isHiddenKey]).isHidden ?? true
         )
     }
 

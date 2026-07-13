@@ -127,6 +127,43 @@ enum LibraryService {
         return try open(paths: session.paths)
     }
 
+    static func exportCatalog(in session: LibrarySession) -> [ExportedChatListItem] {
+        var items: [ExportedChatListItem] = []
+        let fileManager = FileManager.default
+
+        for version in session.versions {
+            for chatID in exportedChatIDs(at: version.exportsURL) {
+                guard let exported = try? version.exportStore.openChat(chatId: chatID) else {
+                    continue
+                }
+
+                let chat = exported.document.chat
+                let photoURL = chat.photoFilename.map {
+                    exported.mediaDirectoryURL.appendingPathComponent($0)
+                }.flatMap {
+                    fileManager.fileExists(atPath: $0.path) ? $0 : nil
+                }
+                items.append(
+                    ExportedChatListItem(
+                        id: VersionChatID(versionID: version.id, chatID: chatID),
+                        chat: chat,
+                        exportedAt: exported.document.exportedAt,
+                        versionTitle: version.record.title,
+                        directoryURL: exported.directoryURL,
+                        photoURL: photoURL
+                    )
+                )
+            }
+        }
+
+        return items.sorted { lhs, rhs in
+            if lhs.exportedAt != rhs.exportedAt {
+                return lhs.exportedAt > rhs.exportedAt
+            }
+            return lhs.chat.name.localizedStandardCompare(rhs.chat.name) == .orderedAscending
+        }
+    }
+
     private static func open(
         paths: LibraryPaths,
         progress: WABackupProgressHandler? = nil
@@ -158,6 +195,7 @@ enum LibraryService {
         let backupURL = paths.backupURL(for: record.id)
         let exportsURL = paths.exportURL(for: record)
         let profilePhotosURL = paths.profilePhotosURL(for: record.id)
+        let exportedChatIDs = exportedChatIDs(at: exportsURL)
 
         let metadataURL = backupURL
             .appendingPathComponent(".wa-backup", isDirectory: true)
@@ -187,8 +225,8 @@ enum LibraryService {
         }
 
         let exportStore = ChatExportStore(rootDirectory: exportsURL)
-        let chats = try exportStore.listExportedChats().map {
-            try exportStore.openChat(chatId: $0.chatId).document.chat
+        let chats = exportedChatIDs.compactMap {
+            try? exportStore.openChat(chatId: $0).document.chat
         }
         return LibraryVersionSession(
             record: record,
@@ -199,6 +237,26 @@ enum LibraryService {
             chats: chats,
             backupByteCount: 0
         )
+    }
+
+    private static func exportedChatIDs(at exportsURL: URL) -> [Int] {
+        let chatsURL = exportsURL.appendingPathComponent("Chats", isDirectory: true)
+        let fileManager = FileManager.default
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: chatsURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: []
+        ) else { return [] }
+
+        return entries.compactMap { entry in
+            guard let chatID = Int(entry.lastPathComponent),
+                  entry.lastPathComponent == String(chatID) else { return nil }
+            var visibleEntry = entry
+            var resourceValues = URLResourceValues()
+            resourceValues.isHidden = false
+            try? visibleEntry.setResourceValues(resourceValues)
+            return chatID
+        }.sorted()
     }
 
     private static func migrateLegacyLibraryIfNeeded(at paths: LibraryPaths) throws {

@@ -498,53 +498,14 @@ final class FreeMyChatsStore: ObservableObject {
         exportPanelError = nil
 
         workQueue.async { [weak self] in
-            let result = Result { () -> [ExportedChatListItem] in
-                var items: [ExportedChatListItem] = []
-                for version in session.versions {
-                    for info in try version.exportStore.listExportedChats() {
-                        guard let chat = version.chats.first(where: { $0.id == info.chatId }) else {
-                            continue
-                        }
-                        items.append(
-                            ExportedChatListItem(
-                                id: VersionChatID(versionID: version.id, chatID: info.chatId),
-                                chat: chat,
-                                exportedAt: info.exportedAt,
-                                versionTitle: version.record.title,
-                                directoryURL: info.directoryURL,
-                                photoURL: Self.exportListPhotoURL(
-                                    for: chat,
-                                    selection: VersionChatID(
-                                        versionID: version.id,
-                                        chatID: info.chatId
-                                    ),
-                                    directoryURL: info.directoryURL,
-                                    session: session
-                                )
-                            )
-                        )
-                    }
-                }
-                return items.sorted { lhs, rhs in
-                    if lhs.exportedAt != rhs.exportedAt {
-                        return lhs.exportedAt > rhs.exportedAt
-                    }
-                    return lhs.chat.name.localizedStandardCompare(rhs.chat.name) == .orderedAscending
-                }
-            }
+            let items = LibraryService.exportCatalog(in: session)
 
             DispatchQueue.main.async {
                 guard let self,
                       self.session === session,
                       self.exportCatalogRequestID == requestID else { return }
                 self.isLoadingExportCatalog = false
-                switch result {
-                case .success(let items):
-                    self.exportedChats = items
-                case .failure(let error):
-                    self.exportedChats = []
-                    self.exportPanelError = error.localizedDescription
-                }
+                self.exportedChats = items
             }
         }
     }
