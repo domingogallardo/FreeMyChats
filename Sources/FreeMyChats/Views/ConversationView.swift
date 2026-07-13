@@ -211,6 +211,8 @@ private struct MessageListView: View {
 
     @State private var scrollPosition: Int?
     @State private var lastReadingPosition: Int?
+    @State private var isRestoringPosition = true
+    @State private var restorationID = UUID()
 
     init(
         exported: ExportedChat,
@@ -222,7 +224,7 @@ private struct MessageListView: View {
         self.searchText = searchText
         self.initialMessageID = initialMessageID
         self.saveReadingPosition = saveReadingPosition
-        _scrollPosition = State(initialValue: initialMessageID)
+        _scrollPosition = State(initialValue: nil)
         _lastReadingPosition = State(initialValue: initialMessageID)
     }
 
@@ -240,65 +242,97 @@ private struct MessageListView: View {
                 description: Text("No se han encontrado mensajes que contengan “\(searchText)”.")
             )
         } else {
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                        if beginsNewDay(at: index, in: messages) {
-                            Text(Self.dayFormatter.string(from: message.date))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 8)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                            if beginsNewDay(at: index, in: messages) {
+                                Text(Self.dayFormatter.string(from: message.date))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 8)
+                            }
+                            MessageRowView(
+                                message: message,
+                                mediaDirectoryURL: exported.mediaDirectoryURL
+                            )
+                            .id(message.id)
                         }
-                        MessageRowView(
-                            message: message,
-                            mediaDirectoryURL: exported.mediaDirectoryURL
-                        )
-                        .id(message.id)
+                    }
+                    .scrollTargetLayout()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                }
+                .scrollPosition(id: $scrollPosition, anchor: .top)
+                .onAppear {
+                    if searchText.isEmpty {
+                        restoreReadingPosition(in: messages, proxy: proxy)
                     }
                 }
-                .scrollTargetLayout()
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-            }
-            .scrollPosition(id: $scrollPosition, anchor: .top)
-            .onAppear {
-                if searchText.isEmpty {
-                    restoreReadingPosition(in: messages)
+                .onChange(of: searchText) { _, query in
+                    if query.isEmpty {
+                        restoreReadingPosition(in: filteredMessages, proxy: proxy)
+                    } else if let firstResultID = filteredMessages.first?.id {
+                        restorationID = UUID()
+                        isRestoringPosition = false
+                        DispatchQueue.main.async {
+                            proxy.scrollTo(firstResultID, anchor: .top)
+                        }
+                    }
                 }
-            }
-            .onChange(of: searchText) { _, query in
-                if query.isEmpty {
-                    restoreReadingPosition(in: filteredMessages)
-                } else {
-                    scrollPosition = filteredMessages.first?.id
+                .onChange(of: scrollPosition) { _, messageID in
+                    guard !isRestoringPosition,
+                          searchText.isEmpty,
+                          let messageID else { return }
+                    lastReadingPosition = messageID
                 }
-            }
-            .onChange(of: scrollPosition) { _, messageID in
-                guard searchText.isEmpty, let messageID else { return }
-                lastReadingPosition = messageID
-            }
-            .task(id: lastReadingPosition) {
-                guard let messageID = lastReadingPosition else { return }
-                try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled else { return }
-                saveReadingPosition(messageID)
-            }
-            .onDisappear {
-                if let messageID = lastReadingPosition {
+                .task(id: lastReadingPosition) {
+                    guard let messageID = lastReadingPosition else { return }
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
                     saveReadingPosition(messageID)
+                }
+                .onDisappear {
+                    restorationID = UUID()
+                    if let messageID = lastReadingPosition {
+                        saveReadingPosition(messageID)
+                    }
                 }
             }
         }
     }
 
-    private func restoreReadingPosition(in messages: [MessageInfo]) {
+    private func restoreReadingPosition(
+        in messages: [MessageInfo],
+        proxy: ScrollViewProxy
+    ) {
         let savedPosition = lastReadingPosition ?? initialMessageID
-        let target = savedPosition.flatMap { savedID in
+        let validSavedPosition = savedPosition.flatMap { savedID in
             messages.contains(where: { $0.id == savedID }) ? savedID : nil
-        } ?? messages.last?.id
+        }
+        guard let target = validSavedPosition ?? messages.last?.id else { return }
+        let anchor: UnitPoint = validSavedPosition == nil ? .bottom : .top
 
-        scrollPosition = target
-        lastReadingPosition = target
+        isRestoringPosition = true
+        scrollPosition = nil
+        let requestID = UUID()
+        restorationID = requestID
+
+        Task { @MainActor in
+            for delay in [0, 50, 100] {
+                if delay == 0 {
+                    await Task.yield()
+                } else {
+                    try? await Task.sleep(for: .milliseconds(delay))
+                }
+                guard restorationID == requestID else { return }
+                proxy.scrollTo(target, anchor: anchor)
+            }
+
+            guard restorationID == requestID else { return }
+            lastReadingPosition = target
+            isRestoringPosition = false
+        }
     }
 
     private func beginsNewDay(at index: Int, in messages: [MessageInfo]) -> Bool {
