@@ -305,6 +305,51 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(ChatExportDisplayState.invalid("broken").isPhysicallyExported)
     }
 
+    func testChatListCanSortLargestMediaSizeFirst() throws {
+        let data = Data(
+            """
+            [
+              {
+                "id": 1,
+                "contactJid": "recent@s.whatsapp.net",
+                "name": "Reciente",
+                "numberMessages": 1,
+                "lastMessageDate": "2026-07-13T12:00:00Z",
+                "chatType": "individual",
+                "isArchived": false,
+                "mediaByteCount": 100000000
+              },
+              {
+                "id": 2,
+                "contactJid": "large@g.us",
+                "name": "Grande",
+                "numberMessages": 1,
+                "lastMessageDate": "2026-07-11T12:00:00Z",
+                "chatType": "group",
+                "isArchived": false,
+                "mediaByteCount": 3000000000
+              },
+              {
+                "id": 3,
+                "contactJid": "middle@s.whatsapp.net",
+                "name": "Mediano",
+                "numberMessages": 1,
+                "lastMessageDate": "2026-07-12T12:00:00Z",
+                "chatType": "individual",
+                "isArchived": false,
+                "mediaByteCount": 500000000
+              }
+            ]
+            """.utf8
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let chats = try decoder.decode([ChatInfo].self, from: data)
+
+        XCTAssertEqual(ChatListSortOrder.largest.sort(chats).map(\.id), [2, 3, 1])
+        XCTAssertEqual(ChatListSortOrder.recent.sort(chats).map(\.id), [1, 3, 2])
+    }
+
     func testReadingPositionsPersistIndependentlyForEachLibraryAndChat() throws {
         let suiteName = "ChatReadingPositionStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

@@ -214,6 +214,32 @@ enum ChatListFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum ChatListSortOrder: String, CaseIterable, Identifiable {
+    case recent
+    case largest
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .recent: return "Recientes"
+        case .largest: return "Más grandes"
+        }
+    }
+
+    func sort(_ chats: [ChatInfo]) -> [ChatInfo] {
+        chats.sorted { lhs, rhs in
+            if self == .largest, lhs.mediaByteCount != rhs.mediaByteCount {
+                return lhs.mediaByteCount > rhs.mediaByteCount
+            }
+            if lhs.lastMessageDate != rhs.lastMessageDate {
+                return lhs.lastMessageDate > rhs.lastMessageDate
+            }
+            return lhs.id < rhs.id
+        }
+    }
+}
+
 enum ChatExportDisplayState: Equatable {
     case checking
     case notExported

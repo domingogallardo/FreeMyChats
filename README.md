@@ -19,7 +19,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Descubrimiento e inspección de copias de iPhone en MobileSync o en otra carpeta.
 - Creación y reapertura de bibliotecas locales con múltiples versiones de una copia.
 - Incorporación y eliminación de copias desde el navegador lateral.
-- Catálogo de chats con búsqueda y filtros por grupo, persona o archivado.
+- Catálogo de chats con tamaño multimedia en GB, filtros por grupo, persona o archivado,
+  y orden por fecha o por tamaño de mayor a menor.
 - Vista previa de número de mensajes y fechas antes de exportar.
 - Exportación explícita desde la fila desplegada del chat.
 - Indicador de actividad mientras se exporta un chat.
@@ -64,7 +65,7 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 ## Relación con SwiftWABackupAPI
 
-Este proyecto utiliza [SwiftWABackupAPI 4.3.3](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
+Este proyecto utiliza [SwiftWABackupAPI 4.4.0](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
 
 ## Requisitos
 

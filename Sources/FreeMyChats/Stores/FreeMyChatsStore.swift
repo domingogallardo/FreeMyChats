@@ -27,6 +27,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var exportStates: [VersionChatID: ChatExportDisplayState] = [:]
     @Published private(set) var chatDetails: [VersionChatID: ChatDetailsState] = [:]
     @Published var chatFilter: ChatListFilter = .all
+    @Published var chatSortOrder: ChatListSortOrder = .recent
     @Published private(set) var operation: AppOperation?
     @Published private(set) var errorMessage: String?
     @Published private(set) var informationMessage: String?
@@ -73,7 +74,7 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func visibleChats(in version: LibraryVersionSession) -> [ChatInfo] {
-        version.chats.filter { chat in
+        let filteredChats = version.chats.filter { chat in
             switch chatFilter {
             case .all: return true
             case .groups: return chat.chatType == .group
@@ -81,6 +82,7 @@ final class FreeMyChatsStore: ObservableObject {
             case .archived: return chat.isArchived
             }
         }
+        return chatSortOrder.sort(filteredChats)
     }
 
     func readingPosition(for selection: VersionChatID) -> Int? {

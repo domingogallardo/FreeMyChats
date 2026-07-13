@@ -118,6 +118,20 @@ struct ChatSidebarView: View {
 
                 Spacer(minLength: 4)
 
+                Menu {
+                    Picker("Ordenar chats", selection: $store.chatSortOrder) {
+                        ForEach(ChatListSortOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                } label: {
+                    Label("Ordenar chats", systemImage: "arrow.up.arrow.down")
+                        .labelStyle(.iconOnly)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Ordenar chats: \(store.chatSortOrder.title)")
+
                 Picker("Filtro", selection: $store.chatFilter) {
                     ForEach(ChatListFilter.allCases) { filter in
                         Text(filter.title).tag(filter)
@@ -297,6 +311,7 @@ private struct ChatSidebarRow: View {
     private var expandedDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
             detailLine("Mensajes", value: chat.numberMessages.formatted())
+            detailLine("Tamaño", value: sizeDescription)
             detailLine("Primero", value: firstMessageDescription)
             detailLine("Último", value: Self.detailDateFormatter.string(from: chat.lastMessageDate))
 
@@ -402,7 +417,13 @@ private struct ChatSidebarRow: View {
         if chat.chatType == .group { parts.append("Grupo") }
         if chat.isArchived { parts.append("Archivado") }
         if parts.isEmpty { parts.append("Conversación") }
+        parts.append(sizeDescription)
         return parts.joined(separator: " · ")
+    }
+
+    private var sizeDescription: String {
+        guard chat.mediaByteCount > 0 else { return "0 GB" }
+        return Self.gigabyteFormatter.string(fromByteCount: chat.mediaByteCount)
     }
 
     private var firstMessageDescription: String {
@@ -430,6 +451,14 @@ private struct ChatSidebarRow: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let gigabyteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useGB]
+        formatter.countStyle = .decimal
+        formatter.isAdaptive = false
         return formatter
     }()
 }
