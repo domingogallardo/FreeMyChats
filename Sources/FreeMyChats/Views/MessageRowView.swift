@@ -96,9 +96,7 @@ struct MessageRowView: View {
     }
 
     private var mediaURL: URL? {
-        guard let filename = message.mediaFilename else { return nil }
-        let url = mediaDirectoryURL.appendingPathComponent(filename)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        message.mediaFilename.map { mediaDirectoryURL.appendingPathComponent($0) }
     }
 
     private var iconForMessageType: String {
@@ -129,15 +127,11 @@ private struct MediaAttachmentView: View {
     let seconds: Int?
 
     var body: some View {
-        if isImage, let image = NSImage(contentsOf: url) {
+        if isImage {
             Button {
                 WorkspaceService.open(url)
             } label: {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 420, maxHeight: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                MediaThumbnailView(url: url)
             }
             .buttonStyle(.plain)
             .help("Abrir \(filename)")
@@ -186,5 +180,39 @@ private struct MediaAttachmentView: View {
             return "\(messageType) · \(Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond)))"
         }
         return messageType
+    }
+}
+
+private struct MediaThumbnailView: View {
+    let url: URL
+
+    @State private var image: NSImage?
+    @State private var didFail = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else if didFail {
+                Label("No se pudo mostrar la imagen", systemImage: "photo.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 280, height: 120)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 280, height: 120)
+            }
+        }
+        .frame(maxWidth: 420, maxHeight: 300)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .task(id: url) {
+            let loadedImage = await ImageThumbnailCache.shared.thumbnail(for: url)
+            guard !Task.isCancelled else { return }
+            image = loadedImage
+            didFail = loadedImage == nil
+        }
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftWABackupAPI
 import XCTest
@@ -246,5 +247,84 @@ final class LibraryModelsTests: XCTestCase {
 
         XCTAssertEqual(results.count, 50_000)
         XCTAssertLessThan(elapsed, 2, "Filtering 50,000 messages should remain interactive")
+    }
+
+    func testMessageTimelineWindowKeepsAStableBoundedPage() throws {
+        let messages = try (0..<10).map { try makeMessage(id: $0) }
+        var window = MessageTimelineWindow(
+            messages: messages,
+            centeredOn: nil,
+            pageSize: 3,
+            maximumVisibleCount: 4
+        )
+
+        XCTAssertEqual(window.rows.map(\.id), [6, 7, 8, 9])
+        XCTAssertTrue(window.hasEarlierMessages)
+        XCTAssertFalse(window.hasLaterMessages)
+
+        XCTAssertEqual(window.loadEarlier(), 6)
+        XCTAssertEqual(window.rows.map(\.id), [3, 4, 5, 6])
+        XCTAssertTrue(window.hasEarlierMessages)
+        XCTAssertTrue(window.hasLaterMessages)
+
+        XCTAssertEqual(window.loadLater(), 6)
+        XCTAssertEqual(window.rows.map(\.id), [6, 7, 8, 9])
+
+        let centered = MessageTimelineWindow(
+            messages: messages,
+            centeredOn: 5,
+            pageSize: 3,
+            maximumVisibleCount: 4
+        )
+        XCTAssertEqual(centered.rows.map(\.id), [3, 4, 5, 6])
+    }
+
+    func testMessageTimelineWindowCapsFamilyScaleHistory() throws {
+        let message = try makeMessage(id: 1)
+        let messages = Array(repeating: message, count: 43_716)
+
+        let window = MessageTimelineWindow(messages: messages, centeredOn: nil)
+
+        XCTAssertEqual(window.rows.count, 900)
+        XCTAssertEqual(window.range, 42_816..<43_716)
+    }
+
+    func testImageThumbnailCacheLoadsAndReusesLocalThumbnail() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = root.appendingPathComponent("pixel.png")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let encodedPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2"
+            + "ZQAAAABJRU5ErkJggg=="
+        let pngData = try XCTUnwrap(
+            Data(base64Encoded: encodedPNG)
+        )
+        try pngData.write(to: imageURL)
+
+        let first = await ImageThumbnailCache.shared.thumbnail(for: imageURL)
+        let second = await ImageThumbnailCache.shared.thumbnail(for: imageURL)
+
+        XCTAssertNotNil(first)
+        XCTAssertTrue(first === second)
+    }
+
+    private func makeMessage(id: Int) throws -> MessageInfo {
+        let data = Data(
+            """
+            {
+              "id": \(id),
+              "chatId": 224,
+              "message": "Message \(id)",
+              "date": "2026-07-12T12:00:00Z",
+              "isFromMe": false,
+              "messageType": "Text"
+            }
+            """.utf8
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(MessageInfo.self, from: data)
     }
 }
