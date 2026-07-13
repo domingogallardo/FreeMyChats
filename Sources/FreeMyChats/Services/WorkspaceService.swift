@@ -13,6 +13,24 @@ enum WorkspaceService {
     }
 
     @MainActor
+    static func openFullDiskAccessSettings() {
+        if let privacyURL = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+        ), NSWorkspace.shared.open(privacyURL) {
+            return
+        }
+
+        NSWorkspace.shared.open(
+            URL(fileURLWithPath: "/System/Applications/System Settings.app", isDirectory: true)
+        )
+    }
+
+    @MainActor
+    static func quitApplication() {
+        NSApp.terminate(nil)
+    }
+
+    @MainActor
     static func openMap(latitude: Double, longitude: Double) {
         var components = URLComponents(string: "https://maps.apple.com/")
         components?.queryItems = [

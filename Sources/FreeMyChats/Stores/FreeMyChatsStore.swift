@@ -11,6 +11,7 @@ final class FreeMyChatsStore: ObservableObject {
     private enum DefaultsKey {
         static let lastLibraryPath = "lastLibraryPath"
         static let backupSearchPath = "backupSearchPath"
+        static let resumeBackupImportAfterPermission = "resumeBackupImportAfterPermission"
     }
 
     @Published var backupSearchPath: String
@@ -28,7 +29,9 @@ final class FreeMyChatsStore: ObservableObject {
     @Published var chatFilter: ChatListFilter = .all
     @Published private(set) var operation: AppOperation?
     @Published private(set) var errorMessage: String?
-    @Published private(set) var discoveryIssue: String?
+    @Published private(set) var informationMessage: String?
+    @Published private(set) var discoveryIssue: BackupDiscoveryIssue?
+    @Published private(set) var importedBackupCleanupPrompt: ImportedIPhoneBackupCleanupPrompt?
     @Published var isShowingBackupImporter = false
 
     private let workQueue = DispatchQueue(
@@ -62,6 +65,11 @@ final class FreeMyChatsStore: ObservableObject {
     var openedExportState: ChatExportDisplayState {
         guard let selectedExportID else { return .notExported }
         return exportStates[selectedExportID] ?? .checking
+    }
+
+    var exportingChatID: VersionChatID? {
+        guard case .exportingChat(let selection) = operation?.kind else { return nil }
+        return selection
     }
 
     func visibleChats(in version: LibraryVersionSession) -> [ChatInfo] {
@@ -138,7 +146,9 @@ final class FreeMyChatsStore: ObservableObject {
         exportCatalogRequestID = nil
         openExportRequestID = nil
         discoveryIssue = nil
+        importedBackupCleanupPrompt = nil
         isShowingBackupImporter = false
+        UserDefaults.standard.removeObject(forKey: DefaultsKey.resumeBackupImportAfterPermission)
         UserDefaults.standard.removeObject(forKey: DefaultsKey.lastLibraryPath)
     }
 
@@ -171,9 +181,23 @@ final class FreeMyChatsStore: ObservableObject {
                 case .success(let rows):
                     self.backupRows = rows
                     self.discoveryIssue = nil
-                case .failure:
+                    UserDefaults.standard.removeObject(
+                        forKey: DefaultsKey.resumeBackupImportAfterPermission
+                    )
+                case .failure(let error):
                     self.backupRows = []
-                    self.discoveryIssue = "No se ha podido leer la carpeta de copias seleccionada."
+                    let issue = BackupDiscoveryIssue(error: error)
+                    self.discoveryIssue = issue
+                    if issue == .permissionRequired {
+                        UserDefaults.standard.set(
+                            true,
+                            forKey: DefaultsKey.resumeBackupImportAfterPermission
+                        )
+                    } else {
+                        UserDefaults.standard.removeObject(
+                            forKey: DefaultsKey.resumeBackupImportAfterPermission
+                        )
+                    }
                 }
             }
         }
@@ -204,6 +228,10 @@ final class FreeMyChatsStore: ObservableObject {
                     self.operation = nil
                     self.install(newSession, preservingSelection: false)
                     self.isShowingBackupImporter = false
+                    self.importedBackupCleanupPrompt = ImportedIPhoneBackupCleanupPrompt(
+                        sourceURL: URL(fileURLWithPath: row.path, isDirectory: true),
+                        creationDate: row.creationDate
+                    )
                 case .failure(let error):
                     self.operation = nil
                     self.errorMessage = error.localizedDescription
@@ -370,6 +398,40 @@ final class FreeMyChatsStore: ObservableObject {
         errorMessage = nil
     }
 
+    func dismissInformation() {
+        informationMessage = nil
+    }
+
+    func dismissImportedBackupCleanupPrompt() {
+        importedBackupCleanupPrompt = nil
+    }
+
+    func moveImportedIPhoneBackupToTrash() {
+        guard let prompt = importedBackupCleanupPrompt else { return }
+        importedBackupCleanupPrompt = nil
+        let operationID = beginOperation(
+            kind: .deletingOriginalIPhoneBackup,
+            title: "Moviendo la copia del iPhone a la Papelera…",
+            detail: prompt.sourceURL.lastPathComponent
+        )
+
+        workQueue.async { [weak self] in
+            let result = Result {
+                try LibraryService.moveOriginalIPhoneBackupToTrash(at: prompt.sourceURL)
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success:
+                    self.informationMessage = "La copia original del iPhone se ha movido a la Papelera. La copia extraída de WhatsApp sigue disponible en la biblioteca."
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     private func performExport(_ selection: VersionChatID, overwriteExisting: Bool) {
         guard let version = session?.version(id: selection.versionID),
               let reader = version.reader else {
@@ -474,6 +536,10 @@ final class FreeMyChatsStore: ObservableObject {
         refreshExportCatalog(in: newSession)
         if let selectedChatID {
             selectChat(selectedChatID)
+        }
+        if UserDefaults.standard.bool(forKey: DefaultsKey.resumeBackupImportAfterPermission) {
+            isShowingBackupImporter = true
+            inspectBackups()
         }
     }
 

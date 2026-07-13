@@ -5,6 +5,31 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
+    func testBackupDiscoveryRecognizesWrappedCocoaPermissionError() {
+        let permissionError = NSError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.Code.fileReadNoPermission.rawValue
+        )
+
+        XCTAssertEqual(
+            BackupDiscoveryIssue(error: BackupError.directoryAccess(permissionError)),
+            .permissionRequired
+        )
+    }
+
+    func testBackupDiscoveryKeepsNonPermissionErrorDetail() {
+        let missingError = NSError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.Code.fileNoSuchFile.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "No existe"]
+        )
+
+        XCTAssertEqual(
+            BackupDiscoveryIssue(error: BackupError.directoryAccess(missingError)),
+            .unreadableDirectory("Failed to access backup directory: No existe")
+        )
+    }
+
     func testLibraryPathsNamespaceSourcesAndExportsByVersion() {
         let root = URL(fileURLWithPath: "/tmp/My Library", isDirectory: true)
         let paths = LibraryPaths(rootURL: root)

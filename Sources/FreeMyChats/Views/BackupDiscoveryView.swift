@@ -60,19 +60,7 @@ struct BackupDiscoveryView: View {
             OperationProgressView(operation: operation)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let issue = store.discoveryIssue {
-            ContentUnavailableView {
-                Label("No se pudo acceder a las copias", systemImage: "lock.trianglebadge.exclamationmark")
-            } description: {
-                Text(issue + "\nPuede ser necesario conceder acceso total al disco.")
-            } actions: {
-                Button("Elegir otra carpeta…") {
-                    if let url = DirectoryPicker.choose(startingAt: store.backupSearchPath) {
-                        store.backupSearchPath = url.path
-                        store.inspectBackups()
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            discoveryIssueView(issue)
         } else if store.backupRows.isEmpty {
             ContentUnavailableView(
                 "Sin copias disponibles",
@@ -94,6 +82,56 @@ struct BackupDiscoveryView: View {
                 }
                 .padding(.vertical, 2)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func discoveryIssueView(_ issue: BackupDiscoveryIssue) -> some View {
+        switch issue {
+        case .permissionRequired:
+            ContentUnavailableView {
+                Label(
+                    "Free My Chats necesita permiso",
+                    systemImage: "lock.trianglebadge.exclamationmark"
+                )
+            } description: {
+                Text(
+                    "En Ajustes del Sistema, abre Privacidad y seguridad > Acceso total al disco "
+                    + "y activa Free My Chats. Después sal completamente de la app y vuelve a abrirla. "
+                    + "La comprobación continuará automáticamente al reiniciar."
+                )
+            } actions: {
+                Button("Abrir Ajustes del Sistema") {
+                    WorkspaceService.openFullDiskAccessSettings()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Salir de Free My Chats") {
+                    WorkspaceService.quitApplication()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+        case .unreadableDirectory(let detail):
+            ContentUnavailableView {
+                Label(
+                    "No se pudo leer la carpeta de copias",
+                    systemImage: "externaldrive.badge.exclamationmark"
+                )
+            } description: {
+                Text(detail)
+            } actions: {
+                Button("Elegir otra carpeta…") {
+                    if let url = DirectoryPicker.choose(startingAt: store.backupSearchPath) {
+                        store.backupSearchPath = url.path
+                        store.inspectBackups()
+                    }
+                }
+                Button("Volver a intentar") {
+                    store.inspectBackups()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

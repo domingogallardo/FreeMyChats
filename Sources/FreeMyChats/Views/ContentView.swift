@@ -29,5 +29,18 @@ struct ContentView: View {
         } message: {
             Text(store.errorMessage ?? "Error desconocido")
         }
+        .alert(
+            "Operación completada",
+            isPresented: Binding(
+                get: { store.informationMessage != nil },
+                set: { if !$0 { store.dismissInformation() } }
+            )
+        ) {
+            Button("Aceptar", role: .cancel) {
+                store.dismissInformation()
+            }
+        } message: {
+            Text(store.informationMessage ?? "")
+        }
     }
 }

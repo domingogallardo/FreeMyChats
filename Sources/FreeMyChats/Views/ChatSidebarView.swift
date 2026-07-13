@@ -30,6 +30,7 @@ struct ChatSidebarView: View {
                                     isExpanded: store.selectedChatID == selection,
                                     detailsState: store.chatDetails[selection],
                                     exportState: store.exportStates[selection] ?? .checking,
+                                    isExporting: store.exportingChatID == selection,
                                     canExport: version.hasSourceBackup,
                                     toggleExpansion: {
                                         store.selectedChatID = store.selectedChatID == selection
@@ -43,7 +44,10 @@ struct ChatSidebarView: View {
                             }
                         }
                     } label: {
-                        BackupVersionRow(version: version) {
+                        BackupVersionRow(
+                            version: version,
+                            isExporting: store.exportingChatID?.versionID == version.id
+                        ) {
                             versionPendingDeletion = version
                         }
                     }
@@ -190,6 +194,7 @@ struct ChatSidebarView: View {
 
 private struct BackupVersionRow: View {
     let version: LibraryVersionSession
+    let isExporting: Bool
     let deleteSource: () -> Void
 
     var body: some View {
@@ -197,6 +202,7 @@ private struct BackupVersionRow: View {
             Image(systemName: version.hasSourceBackup ? "externaldrive.fill" : "externaldrive.badge.xmark")
                 .foregroundStyle(version.hasSourceBackup ? Color.secondary : Color.orange)
                 .frame(width: 17)
+                .symbolEffect(.pulse, options: .repeating, isActive: isExporting)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(version.record.title)
@@ -242,6 +248,7 @@ private struct ChatSidebarRow: View {
     let isExpanded: Bool
     let detailsState: ChatDetailsState?
     let exportState: ChatExportDisplayState
+    let isExporting: Bool
     let canExport: Bool
     let toggleExpansion: () -> Void
     let export: () -> Void
@@ -314,6 +321,20 @@ private struct ChatSidebarRow: View {
 
     @ViewBuilder
     private var exportStatus: some View {
+        if isExporting {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Exportando…")
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            exportStateView
+        }
+    }
+
+    @ViewBuilder
+    private var exportStateView: some View {
         switch exportState {
         case .checking:
             HStack(spacing: 6) {

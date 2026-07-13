@@ -8,6 +8,7 @@ enum LibraryServiceError: Error, LocalizedError {
     case duplicateBackup
     case sourceAlreadyDeleted
     case exportedChatNotFound
+    case originalIPhoneBackupNotFound(URL)
     case layoutMigrationConflict(URL)
 
     var errorDescription: String? {
@@ -24,6 +25,8 @@ enum LibraryServiceError: Error, LocalizedError {
             return "La copia fuente ya había sido eliminada."
         case .exportedChatNotFound:
             return "El chat exportado ya no está disponible."
+        case .originalIPhoneBackupNotFound(let url):
+            return "La copia original del iPhone ya no está en \(url.path)."
         case .layoutMigrationConflict(let url):
             return "No se ha podido reorganizar la biblioteca porque ya existe un archivo distinto en \(url.path)."
         }
@@ -128,6 +131,19 @@ enum LibraryService {
         }
 
         return try open(paths: session.paths)
+    }
+
+    static func moveOriginalIPhoneBackupToTrash(at sourceURL: URL) throws {
+        do {
+            try FileManager.default.trashItem(at: sourceURL, resultingItemURL: nil)
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain,
+               nsError.code == CocoaError.Code.fileNoSuchFile.rawValue {
+                throw LibraryServiceError.originalIPhoneBackupNotFound(sourceURL)
+            }
+            throw error
+        }
     }
 
     static func deleteExportedChat(

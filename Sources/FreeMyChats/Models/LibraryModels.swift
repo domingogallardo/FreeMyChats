@@ -249,6 +249,7 @@ struct AppOperation: Equatable {
         case openingLibrary
         case addingBackup
         case deletingBackup(String)
+        case deletingOriginalIPhoneBackup
         case deletingExportedChat(VersionChatID)
         case loadingChats
         case exportingChat(VersionChatID)

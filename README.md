@@ -2,6 +2,10 @@
 
 Free My Chats es una aplicación nativa para macOS que convierte los datos de WhatsApp de una copia de iPhone en una biblioteca local de conversaciones.
 
+![Vista general de Free My Chats](docs/images/free-my-chats-overview.png)
+
+_Captura de la aplicación con nombres, imágenes y conversaciones ficticios o anonimizados._
+
 La biblioteca mantiene dos niveles deliberadamente distintos:
 
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
@@ -18,11 +22,14 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Catálogo de chats con búsqueda y filtros por grupo, persona o archivado.
 - Vista previa de número de mensajes y fechas antes de exportar.
 - Exportación explícita desde la fila desplegada del chat.
+- Indicador de actividad mientras se exporta un chat.
 - Detección de exportaciones vigentes, desactualizadas o inválidas.
 - Visor de mensajes, autores, respuestas, reacciones, ubicaciones y adjuntos.
 - Búsqueda de texto dentro del chat exportado.
 - Acciones para abrir la biblioteca, la carpeta del chat y sus archivos en Finder, o borrar una exportación.
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
+- Guía para conceder acceso total al disco y reanudar la inspección tras reiniciar la app.
+- Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
 
 ## Estructura de una biblioteca
 
@@ -51,9 +58,13 @@ fuente. Las bibliotecas anteriores se reorganizan automáticamente al abrirse:
 se conservan sus exportaciones y los UUID visibles se sustituyen por nombres de
 carpeta basados en la fecha de la copia.
 
+## Descargar el código fuente
+
+La versión estable más reciente está disponible en [GitHub Releases](https://github.com/domingogallardo/FreeMyChats/releases/latest). La publicación incluye únicamente el código fuente: cada persona compila la aplicación en su propio Mac siguiendo la guía inferior.
+
 ## Relación con SwiftWABackupAPI
 
-Este proyecto utiliza [SwiftWABackupAPI 4.2 o posterior](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
+Este proyecto utiliza [SwiftWABackupAPI 4.3.3](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
 
 ## Requisitos
 
@@ -68,17 +79,62 @@ La ubicación predeterminada de las copias es:
 ~/Library/Application Support/MobileSync/Backup/
 ```
 
-## Compilar y ejecutar
+## Guía para descargar, compilar y ejecutar
 
-Desde la raíz del repositorio:
+No hace falta saber programar, pero sí utilizar brevemente la aplicación Terminal. El proceso no modifica el sistema y se puede repetir cuando se publique una versión nueva.
+
+### 1. Instalar las herramientas de Apple
+
+Abre **Terminal** desde `Aplicaciones > Utilidades > Terminal`, copia este comando, pégalo y pulsa Intro:
 
 ```bash
-swift build
+xcode-select --install
+```
+
+macOS mostrará una ventana para instalar las herramientas de desarrollo. Si indica que ya están instaladas, continúa con el siguiente paso.
+
+### 2. Descargar Free My Chats
+
+En la página de la [versión más reciente](https://github.com/domingogallardo/FreeMyChats/releases/latest), abre el apartado **Assets** y descarga **Source code (zip)**. Descomprime el ZIP con doble clic y mueve la carpeta resultante a un lugar que recuerdes, por ejemplo `Documentos`.
+
+### 3. Abrir la carpeta desde Terminal
+
+Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
+
+```bash
+cd ~/Documents/FreeMyChats-1.0.0
+```
+
+### 4. Compilar y abrir la aplicación
+
+Ejecuta:
+
+```bash
 ./script/build_and_run.sh
 ```
 
-El script crea `dist/FreeMyChats.app` y abre la aplicación. Swift Package Manager descarga automáticamente SwiftWABackupAPI y sus dependencias.
+La primera compilación puede tardar unos minutos porque Swift Package Manager descarga SwiftWABackupAPI y sus dependencias. Al terminar, el script crea `dist/FreeMyChats.app` y abre la aplicación automáticamente.
+
+Las siguientes ejecuciones se pueden hacer con doble clic sobre `FreeMyChats.app`, dentro de la carpeta `dist`, o repitiendo el comando anterior para volver a compilar.
+
+### 5. Conceder acceso a las copias del iPhone
+
+Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, activa el permiso para **Free My Chats** y reinicia la aplicación. La app volverá a comprobar el acceso al arrancar.
+
+### Alternativa para personas familiarizadas con Git
+
+```bash
+git clone https://github.com/domingogallardo/FreeMyChats.git
+cd FreeMyChats
+./script/build_and_run.sh
+```
 
 ## Privacidad
 
 FreeMyChats está pensado para tareas legítimas de copia, recuperación y análisis personal. Utiliza únicamente copias sobre las que tengas derecho de acceso y respeta la privacidad de las personas participantes en las conversaciones.
+
+## Licencia
+
+Free My Chats se distribuye bajo la [PolyForm Noncommercial License 1.0.0](LICENSE.md). Puedes descargar, estudiar, modificar y redistribuir el código con fines no comerciales. No puedes vender la aplicación ni utilizar el código o sus modificaciones para crear un producto o servicio comercial.
+
+Esta es una licencia de código fuente disponible, no una licencia _open source_ aprobada por la OSI, porque restringe expresamente el uso comercial.
