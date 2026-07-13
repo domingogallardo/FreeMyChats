@@ -31,16 +31,10 @@ struct ChatSidebarView: View {
                                     detailsState: store.chatDetails[selection],
                                     exportState: store.exportStates[selection] ?? .checking,
                                     canExport: version.hasSourceBackup,
-                                    export: { store.exportChat(selection) }
+                                    export: { store.exportChat(selection) },
+                                    replaceExport: { store.replaceExport(selection) }
                                 )
                                 .tag(selection)
-                                .contextMenu {
-                                    if store.selectedChatID == selection, store.selectedExport != nil {
-                                        Button("Abrir exportación en Finder") {
-                                            store.revealSelectedChat()
-                                        }
-                                    }
-                                }
                             }
                         }
                     } label: {
@@ -195,6 +189,7 @@ private struct ChatSidebarRow: View {
     let exportState: ChatExportDisplayState
     let canExport: Bool
     let export: () -> Void
+    let replaceExport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -266,16 +261,8 @@ private struct ChatSidebarRow: View {
             }
         case .notExported:
             if canExport {
-                Button(action: export) {
-                    HStack(spacing: 5) {
-                        Text("Exportar")
-                        Image(systemName: "arrow.right")
-                            .font(.caption2.weight(.semibold))
-                    }
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.tint)
-                .help("Exportar y abrir en el panel derecho")
+                actionButton("Exportar", systemImage: "arrow.right", action: export)
+                .help("Exportar y añadir al listado del panel derecho")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
@@ -284,12 +271,47 @@ private struct ChatSidebarRow: View {
             Label("Exportado", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
         case .stale:
-            Label("Exportado · actualización disponible", systemImage: "clock.arrow.circlepath")
-                .foregroundStyle(.orange)
+            if canExport {
+                actionButton("Actualizar", systemImage: "arrow.right", action: replaceExport)
+                    .help("Actualizar el chat del panel derecho")
+            } else {
+                Label("Exportado · fuente no disponible", systemImage: "checkmark")
+                    .foregroundStyle(.secondary)
+            }
         case .invalid:
-            Label("Exportación no válida", systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.red)
+            if canExport {
+                actionButton("Volver a exportar", systemImage: "arrow.right", action: replaceExport)
+                    .help("Reemplazar la exportación no válida del panel derecho")
+            } else {
+                Label("Exportación no válida", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+            }
         }
+    }
+
+    private func actionButton(
+        _ title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(title)
+                Image(systemName: systemImage)
+                    .font(.caption2.weight(.semibold))
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.white.opacity(0.92), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.accentColor.opacity(0.22), lineWidth: 0.75)
+            }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Capsule())
     }
 
     private var summary: String {

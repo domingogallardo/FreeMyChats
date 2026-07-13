@@ -10,63 +10,38 @@ struct ConversationView: View {
 
     var body: some View {
         Group {
-            if let chat = store.selectedChat {
-                selectedChatContent(chat)
+            if store.selectedExportID == nil {
+                ExportedChatsListView(store: store)
+            } else if store.isOpeningExport {
+                exportLoadingView
+            } else if let reason = store.exportPanelError {
+                exportErrorView(reason)
+            } else if let exported = store.selectedExport {
+                conversation(exported)
             } else {
-                ContentUnavailableView(
-                    "Selecciona un chat",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text(
-                        "Despliega una copia de WhatsApp a la izquierda y selecciona un chat. "
-                        + "Podrás revisar sus datos antes de decidir si quieres exportarlo."
-                    )
-                )
+                exportLoadingView
             }
         }
     }
 
-    @ViewBuilder
-    private func selectedChatContent(_ chat: ChatInfo) -> some View {
-        if let selection = store.selectedChatID,
-           let operation = store.operation,
-           operation.kind == .exportingChat(selection)
-            || operation.kind == .openingChat(selection) {
-            OperationProgressView(operation: operation)
-        } else if case .invalid(let reason) = store.selectedExportState {
+    private var exportLoadingView: some View {
+        VStack(spacing: 0) {
+            ExportBackHeader(title: "Abriendo chat", action: store.showExportList)
+            Divider()
+            ProgressView("Abriendo el chat exportado…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func exportErrorView(_ reason: String) -> some View {
+        VStack(spacing: 0) {
+            ExportBackHeader(title: "Chat exportado", action: store.showExportList)
+            Divider()
             ContentUnavailableView {
                 Label("La exportación no es válida", systemImage: "exclamationmark.folder")
             } description: {
                 Text(reason)
-            } actions: {
-                Button("Volver a exportar") {
-                    store.updateSelectedExport()
-                }
-                .buttonStyle(.borderedProminent)
             }
-        } else if let exported = store.selectedExport {
-            conversation(exported)
-        } else if case .notExported = store.selectedExportState {
-            ContentUnavailableView(
-                "Chat sin exportar",
-                systemImage: "arrow.right.circle",
-                description: Text(
-                    "Revisa la información desplegada en el panel izquierdo y pulsa Exportar "
-                    + "para abrir aquí la conversación completa."
-                )
-            )
-        } else {
-            OperationProgressView(
-                operation: AppOperation(
-                    id: UUID(),
-                    kind: .openingChat(
-                        store.selectedChatID
-                            ?? VersionChatID(versionID: "", chatID: chat.id)
-                    ),
-                    title: "Abriendo el chat…",
-                    detail: nil,
-                    fractionCompleted: nil
-                )
-            )
         }
     }
 
@@ -74,11 +49,11 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ConversationHeaderView(
                 exported: exported,
-                state: store.selectedExportState,
+                state: store.openedExportState,
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
-                revealInFinder: store.revealSelectedChat,
-                updateExport: store.updateSelectedExport
+                goBack: store.showExportList,
+                revealInFinder: store.revealSelectedChat
             )
             Divider()
             MessageListView(exported: exported, searchText: appliedMessageSearchText)
@@ -94,11 +69,32 @@ struct ConversationView: View {
             guard !Task.isCancelled else { return }
             appliedMessageSearchText = query
         }
-        .onChange(of: exported.document.chat.id) { _, _ in
+        .onChange(of: store.selectedExportID) { _, _ in
             messageSearchText = ""
             appliedMessageSearchText = ""
             isSearching = false
         }
+    }
+}
+
+private struct ExportBackHeader: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: action) {
+                Label("Volver a chats exportados", systemImage: "chevron.left")
+            }
+            .labelStyle(.iconOnly)
+            .help("Volver a chats exportados")
+
+            Text(title)
+                .font(.title2.bold())
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
     }
 }
 
@@ -107,12 +103,18 @@ private struct ConversationHeaderView: View {
     let state: ChatExportDisplayState
     @Binding var isSearching: Bool
     @Binding var searchText: String
+    let goBack: () -> Void
     let revealInFinder: () -> Void
-    let updateExport: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
+                Button(action: goBack) {
+                    Label("Volver a chats exportados", systemImage: "chevron.left")
+                }
+                .labelStyle(.iconOnly)
+                .help("Volver a chats exportados")
+
                 VStack(alignment: .leading, spacing: 3) {
                     Text(exported.document.chat.name)
                         .font(.title2.bold())
@@ -133,10 +135,6 @@ private struct ConversationHeaderView: View {
 
                 Menu {
                     Button("Abrir carpeta en Finder", action: revealInFinder)
-                    if case .stale = state {
-                        Divider()
-                        Button("Actualizar exportación", action: updateExport)
-                    }
                 } label: {
                     Label("Opciones del chat", systemImage: "ellipsis.circle")
                 }
@@ -149,7 +147,6 @@ private struct ConversationHeaderView: View {
                 HStack {
                     Label("La copia fuente contiene una versión más reciente de este chat.", systemImage: "clock.arrow.circlepath")
                     Spacer()
-                    Button("Actualizar", action: updateExport)
                 }
                 .font(.caption)
                 .padding(.horizontal, 16)

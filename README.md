@@ -6,7 +6,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
 - Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
-- La columna derecha abre siempre el `chat.json` de esa exportación, junto con los archivos de su carpeta `Media`.
+- La columna derecha mantiene un listado independiente de chats exportados. Al pulsar uno abre su `chat.json` y los archivos de `Media`; una flecha permite volver al listado.
+- La selección y navegación del panel derecho no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
 
 ## Funciones del MVP
@@ -29,18 +30,25 @@ Mi biblioteca Free My Chats/
 ├── library.json
 ├── Sources/
 │   └── <sourceId>/
-│       └── Backup/
-│           ├── ChatStorage.sqlite
-│           ├── .wa-backup/
-│           └── …
+│       ├── Backup/
+│       │   ├── ChatStorage.sqlite
+│       │   ├── .wa-backup/
+│       │   └── …
+│       └── Catalog/
+│           └── ChatProfilePhotos/
 └── Exports/
-    └── <sourceId>/
-        ├── ChatProfilePhotos/
+    └── Copia 2026-04-03 21.26/
         └── Chats/
             └── <chatId>/
                 ├── chat.json
                 └── Media/
 ```
+
+`Exports` permanece vacío hasta que el usuario exporta un chat. Los recursos
+auxiliares del navegador, como las fotos de perfil, se guardan junto a su copia
+fuente. Las bibliotecas anteriores se reorganizan automáticamente al abrirse:
+se conservan sus exportaciones y los UUID visibles se sustituyen por nombres de
+carpeta basados en la fecha de la copia.
 
 ## Relación con SwiftWABackupAPI
 

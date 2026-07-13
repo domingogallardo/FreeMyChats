@@ -7,6 +7,7 @@ enum LibraryServiceError: Error, LocalizedError {
     case unsupportedSchema(Int)
     case duplicateBackup
     case sourceAlreadyDeleted
+    case layoutMigrationConflict(URL)
 
     var errorDescription: String? {
         switch self {
@@ -20,6 +21,8 @@ enum LibraryServiceError: Error, LocalizedError {
             return "Esta copia de iPhone ya forma parte de la biblioteca."
         case .sourceAlreadyDeleted:
             return "La copia fuente ya había sido eliminada."
+        case .layoutMigrationConflict(let url):
+            return "No se ha podido reorganizar la biblioteca porque ya existe un archivo distinto en \(url.path)."
         }
     }
 }
@@ -65,21 +68,24 @@ enum LibraryService {
 
         let id = UUID().uuidString.lowercased()
         let backupURL = session.paths.backupURL(for: id)
-        let exportURL = session.paths.exportURL(for: id)
         let fileManager = FileManager.default
         var manifestWasUpdated = false
 
         do {
-            try fileManager.createDirectory(at: exportURL, withIntermediateDirectories: true)
             let extracted = try iPhoneBackup.extractWhatsAppBackup(to: backupURL, progress: progress)
             let info = try extracted.getBackupInfo()
             var manifest = session.manifest
+            let exportDirectoryName = makeExportDirectoryName(
+                for: info.source.iPhoneBackupCreationDate,
+                excluding: Set(manifest.versions.map(\.resolvedExportDirectoryName))
+            )
             manifest.versions.append(
                 LibraryVersionRecord(
                     id: id,
                     sourceBackupIdentifier: info.source.iPhoneBackupIdentifier,
                     sourceBackupCreationDate: info.source.iPhoneBackupCreationDate,
-                    importedAt: Date()
+                    importedAt: Date(),
+                    exportDirectoryName: exportDirectoryName
                 )
             )
             manifest.versions.sort { $0.sourceBackupCreationDate > $1.sourceBackupCreationDate }
@@ -91,7 +97,6 @@ enum LibraryService {
                 try? write(session.manifest, to: session.paths.manifestURL)
             }
             try? fileManager.removeItem(at: backupURL.deletingLastPathComponent())
-            try? fileManager.removeItem(at: exportURL)
             throw error
         }
     }
@@ -130,13 +135,14 @@ enum LibraryService {
             throw LibraryServiceError.invalidLibrary(paths.rootURL)
         }
 
-        let manifest = try readManifest(at: paths.manifestURL)
+        var manifest = try readManifest(at: paths.manifestURL)
         guard manifest.schemaVersion == LibraryManifest.currentSchemaVersion else {
             throw LibraryServiceError.unsupportedSchema(manifest.schemaVersion)
         }
 
         try FileManager.default.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
+        manifest = try migrateUserFacingLayout(paths: paths, manifest: manifest)
 
         let versions = try manifest.versions.map { record in
             try openVersion(record, paths: paths, progress: progress)
@@ -150,8 +156,8 @@ enum LibraryService {
         progress: WABackupProgressHandler?
     ) throws -> LibraryVersionSession {
         let backupURL = paths.backupURL(for: record.id)
-        let exportsURL = paths.exportURL(for: record.id)
-        try FileManager.default.createDirectory(at: exportsURL, withIntermediateDirectories: true)
+        let exportsURL = paths.exportURL(for: record)
+        let profilePhotosURL = paths.profilePhotosURL(for: record.id)
 
         let metadataURL = backupURL
             .appendingPathComponent(".wa-backup", isDirectory: true)
@@ -161,7 +167,14 @@ enum LibraryService {
             let backup = ExtractedWhatsAppBackup(url: backupURL)
             _ = try backup.getBackupInfo()
             let reader = try backup.openReader(exportRootDirectory: exportsURL)
-            let chats = try reader.getChats(progress: progress)
+            try FileManager.default.createDirectory(
+                at: profilePhotosURL,
+                withIntermediateDirectories: true
+            )
+            let chats = try reader.getChats(
+                directoryToSavePhotos: profilePhotosURL,
+                progress: progress
+            )
             return LibraryVersionSession(
                 record: record,
                 backupURL: backupURL,
@@ -206,8 +219,18 @@ enum LibraryService {
             ".legacy-exports-\(UUID().uuidString)",
             isDirectory: true
         )
+        let record = LibraryVersionRecord(
+            id: id,
+            sourceBackupIdentifier: info.source.iPhoneBackupIdentifier,
+            sourceBackupCreationDate: info.source.iPhoneBackupCreationDate,
+            importedAt: Date(),
+            exportDirectoryName: makeExportDirectoryName(
+                for: info.source.iPhoneBackupCreationDate,
+                excluding: []
+            )
+        )
         let newBackupURL = paths.backupURL(for: id)
-        let newExportsURL = paths.exportURL(for: id)
+        let newExportsURL = paths.exportURL(for: record)
         let fileManager = FileManager.default
         let hadLegacyExports = fileManager.fileExists(atPath: legacyExportsURL.path)
 
@@ -223,16 +246,8 @@ enum LibraryService {
             try fileManager.moveItem(at: legacyBackupURL, to: newBackupURL)
             if hadLegacyExports {
                 try fileManager.moveItem(at: temporaryExportsURL, to: newExportsURL)
-            } else {
-                try fileManager.createDirectory(at: newExportsURL, withIntermediateDirectories: true)
             }
 
-            let record = LibraryVersionRecord(
-                id: id,
-                sourceBackupIdentifier: info.source.iPhoneBackupIdentifier,
-                sourceBackupCreationDate: info.source.iPhoneBackupCreationDate,
-                importedAt: Date()
-            )
             try write(LibraryManifest(versions: [record]), to: paths.manifestURL)
         } catch {
             try? fileManager.removeItem(at: paths.manifestURL)
@@ -249,6 +264,146 @@ enum LibraryService {
             throw error
         }
     }
+
+    private static func migrateUserFacingLayout(
+        paths: LibraryPaths,
+        manifest: LibraryManifest
+    ) throws -> LibraryManifest {
+        var usedNames = Set(
+            manifest.versions.compactMap(\.exportDirectoryName)
+        )
+        var changedManifest = false
+        var migratedVersions: [LibraryVersionRecord] = []
+        migratedVersions.reserveCapacity(manifest.versions.count)
+
+        for record in manifest.versions {
+            let migratedRecord: LibraryVersionRecord
+            if record.exportDirectoryName == nil {
+                let name = makeExportDirectoryName(
+                    for: record.sourceBackupCreationDate,
+                    excluding: usedNames
+                )
+                usedNames.insert(name)
+                migratedRecord = record.withExportDirectoryName(name)
+                changedManifest = true
+            } else {
+                migratedRecord = record
+            }
+
+            let legacyExportsURL = paths.legacyExportURL(for: record.id)
+            let readableExportsURL = paths.exportURL(for: migratedRecord)
+            if legacyExportsURL.standardizedFileURL != readableExportsURL.standardizedFileURL,
+               FileManager.default.fileExists(atPath: legacyExportsURL.path) {
+                try mergeDirectory(at: legacyExportsURL, into: readableExportsURL)
+            }
+
+            try moveProfilePhotoCatalog(
+                from: readableExportsURL,
+                to: paths.profilePhotosURL(for: record.id)
+            )
+            try removeDirectoryIfEffectivelyEmpty(readableExportsURL)
+            migratedVersions.append(migratedRecord)
+        }
+
+        guard changedManifest else { return manifest }
+        var migratedManifest = manifest
+        migratedManifest.versions = migratedVersions
+        try write(migratedManifest, to: paths.manifestURL)
+        return migratedManifest
+    }
+
+    private static func moveProfilePhotoCatalog(
+        from exportsURL: URL,
+        to catalogURL: URL
+    ) throws {
+        let oldCatalogURL = exportsURL.appendingPathComponent(
+            "ChatProfilePhotos",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(atPath: oldCatalogURL.path) else { return }
+        try mergeDirectory(at: oldCatalogURL, into: catalogURL)
+    }
+
+    private static func mergeDirectory(at sourceURL: URL, into destinationURL: URL) throws {
+        let fileManager = FileManager.default
+        var sourceIsDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: sourceURL.path, isDirectory: &sourceIsDirectory) else {
+            return
+        }
+        guard sourceIsDirectory.boolValue else {
+            throw LibraryServiceError.layoutMigrationConflict(sourceURL)
+        }
+
+        var destinationIsDirectory: ObjCBool = false
+        if !fileManager.fileExists(atPath: destinationURL.path, isDirectory: &destinationIsDirectory) {
+            try fileManager.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try fileManager.moveItem(at: sourceURL, to: destinationURL)
+            return
+        }
+        guard destinationIsDirectory.boolValue else {
+            throw LibraryServiceError.layoutMigrationConflict(destinationURL)
+        }
+
+        for sourceItemURL in try fileManager.contentsOfDirectory(
+            at: sourceURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            let destinationItemURL = destinationURL.appendingPathComponent(
+                sourceItemURL.lastPathComponent,
+                isDirectory: false
+            )
+            var itemIsDirectory: ObjCBool = false
+            _ = fileManager.fileExists(atPath: sourceItemURL.path, isDirectory: &itemIsDirectory)
+            if itemIsDirectory.boolValue {
+                try mergeDirectory(at: sourceItemURL, into: destinationItemURL)
+            } else if fileManager.fileExists(atPath: destinationItemURL.path) {
+                let sourceData = try Data(contentsOf: sourceItemURL)
+                let destinationData = try Data(contentsOf: destinationItemURL)
+                guard sourceData == destinationData else {
+                    throw LibraryServiceError.layoutMigrationConflict(destinationItemURL)
+                }
+                try fileManager.removeItem(at: sourceItemURL)
+            } else {
+                try fileManager.moveItem(at: sourceItemURL, to: destinationItemURL)
+            }
+        }
+        try removeDirectoryIfEffectivelyEmpty(sourceURL)
+    }
+
+    private static func removeDirectoryIfEffectivelyEmpty(_ directoryURL: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: directoryURL.path) else { return }
+        let contents = try fileManager.contentsOfDirectory(atPath: directoryURL.path)
+        let meaningfulContents = contents.filter { $0 != ".DS_Store" }
+        guard meaningfulContents.isEmpty else { return }
+        try fileManager.removeItem(at: directoryURL)
+    }
+
+    private static func makeExportDirectoryName(
+        for date: Date,
+        excluding existingNames: Set<String>
+    ) -> String {
+        let baseName = "Copia \(exportDirectoryDateFormatter.string(from: date))"
+        guard existingNames.contains(baseName) else { return baseName }
+
+        var suffix = 2
+        while existingNames.contains("\(baseName) (\(suffix))") {
+            suffix += 1
+        }
+        return "\(baseName) (\(suffix))"
+    }
+
+    private static let exportDirectoryDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH.mm"
+        return formatter
+    }()
 
     private static func readManifest(at url: URL) throws -> LibraryManifest {
         let decoder = JSONDecoder()

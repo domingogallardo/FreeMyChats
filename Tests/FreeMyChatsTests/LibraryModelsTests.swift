@@ -13,7 +13,22 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(paths.exportsURL.path, "/tmp/My Library/Exports")
         XCTAssertEqual(paths.manifestURL.path, "/tmp/My Library/library.json")
         XCTAssertEqual(paths.backupURL(for: "july").path, "/tmp/My Library/Sources/july/Backup")
-        XCTAssertEqual(paths.exportURL(for: "july").path, "/tmp/My Library/Exports/july")
+        XCTAssertEqual(
+            paths.profilePhotosURL(for: "july").path,
+            "/tmp/My Library/Sources/july/Catalog/ChatProfilePhotos"
+        )
+        let record = LibraryVersionRecord(
+            id: "july",
+            sourceBackupIdentifier: "iphone-id",
+            sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
+            importedAt: Date(timeIntervalSince1970: 1_720_000_100),
+            exportDirectoryName: "Copia 2024-07-03 11.46"
+        )
+        XCTAssertEqual(
+            paths.exportURL(for: record).path,
+            "/tmp/My Library/Exports/Copia 2024-07-03 11.46"
+        )
+        XCTAssertEqual(paths.legacyExportURL(for: "july").path, "/tmp/My Library/Exports/july")
     }
 
     func testResolvingVersionBackupSelectionReturnsLibraryRoot() throws {
@@ -62,7 +77,8 @@ final class LibraryModelsTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: session.paths.manifestURL, options: .atomic)
 
-        let chatDirectory = session.paths.exportURL(for: version.id)
+        let legacyExportURL = session.paths.legacyExportURL(for: version.id)
+        let chatDirectory = legacyExportURL
             .appendingPathComponent("Chats/44", isDirectory: true)
         try FileManager.default.createDirectory(
             at: chatDirectory.appendingPathComponent("Media", isDirectory: true),
@@ -95,9 +111,50 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(reopened.versions.first?.backupByteCount, 0)
         XCTAssertEqual(reopened.versions.first?.chats.first?.name, "Familia")
         XCTAssertEqual(
+            reopened.versions.first?.exportsURL.lastPathComponent,
+            "Copia 2024-07-03 11.46"
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyExportURL.path))
+        XCTAssertEqual(
             try reopened.versions.first?.exportStore.openChat(chatId: 44).document.chat.id,
             44
         )
+    }
+
+    func testOpeningLibraryMovesProfileCatalogOutOfExports() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let session = try LibraryService.create(at: root)
+        let version = LibraryVersionRecord(
+            id: "july",
+            sourceBackupIdentifier: "iphone-id",
+            sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
+            importedAt: Date(timeIntervalSince1970: 1_720_000_100)
+        )
+        var manifest = session.manifest
+        manifest.versions = [version]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(manifest).write(to: session.paths.manifestURL, options: .atomic)
+
+        let legacyPhotoURL = session.paths.legacyExportURL(for: version.id)
+            .appendingPathComponent("ChatProfilePhotos", isDirectory: true)
+            .appendingPathComponent("chat_44.jpg")
+        try FileManager.default.createDirectory(
+            at: legacyPhotoURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("photo".utf8).write(to: legacyPhotoURL)
+
+        let reopened = try LibraryService.open(selectedURL: root)
+        let migratedPhotoURL = reopened.paths.profilePhotosURL(for: version.id)
+            .appendingPathComponent("chat_44.jpg")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: migratedPhotoURL.path))
+        XCTAssertEqual(try Data(contentsOf: migratedPhotoURL), Data("photo".utf8))
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: reopened.paths.exportsURL.path).isEmpty)
     }
 
     func testExportDisplayStatePreservesUnavailableAndInvalidStates() {

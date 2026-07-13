@@ -21,7 +21,18 @@ struct LibraryPaths: Equatable {
             .appendingPathComponent("Backup", isDirectory: true)
     }
 
-    func exportURL(for versionID: String) -> URL {
+    func profilePhotosURL(for versionID: String) -> URL {
+        sourcesURL
+            .appendingPathComponent(versionID, isDirectory: true)
+            .appendingPathComponent("Catalog", isDirectory: true)
+            .appendingPathComponent("ChatProfilePhotos", isDirectory: true)
+    }
+
+    func exportURL(for record: LibraryVersionRecord) -> URL {
+        exportsURL.appendingPathComponent(record.resolvedExportDirectoryName, isDirectory: true)
+    }
+
+    func legacyExportURL(for versionID: String) -> URL {
         exportsURL.appendingPathComponent(versionID, isDirectory: true)
     }
 
@@ -70,6 +81,35 @@ struct LibraryVersionRecord: Codable, Equatable, Identifiable {
     let sourceBackupIdentifier: String
     let sourceBackupCreationDate: Date
     let importedAt: Date
+    let exportDirectoryName: String?
+
+    init(
+        id: String,
+        sourceBackupIdentifier: String,
+        sourceBackupCreationDate: Date,
+        importedAt: Date,
+        exportDirectoryName: String? = nil
+    ) {
+        self.id = id
+        self.sourceBackupIdentifier = sourceBackupIdentifier
+        self.sourceBackupCreationDate = sourceBackupCreationDate
+        self.importedAt = importedAt
+        self.exportDirectoryName = exportDirectoryName
+    }
+
+    var resolvedExportDirectoryName: String {
+        exportDirectoryName ?? id
+    }
+
+    func withExportDirectoryName(_ name: String) -> Self {
+        Self(
+            id: id,
+            sourceBackupIdentifier: sourceBackupIdentifier,
+            sourceBackupCreationDate: sourceBackupCreationDate,
+            importedAt: importedAt,
+            exportDirectoryName: name
+        )
+    }
 
     var title: String {
         Self.titleFormatter.string(from: sourceBackupCreationDate)
@@ -86,6 +126,15 @@ struct LibraryVersionRecord: Codable, Equatable, Identifiable {
 struct VersionChatID: Hashable {
     let versionID: String
     let chatID: Int
+}
+
+struct ExportedChatListItem: Identifiable {
+    let id: VersionChatID
+    let chat: ChatInfo
+    let exportedAt: Date
+    let versionTitle: String
+    let directoryURL: URL
+    let photoURL: URL?
 }
 
 enum ChatDetailsState: Equatable {
@@ -202,7 +251,6 @@ struct AppOperation: Equatable {
         case deletingBackup(String)
         case loadingChats
         case exportingChat(VersionChatID)
-        case openingChat(VersionChatID)
     }
 
     let id: UUID

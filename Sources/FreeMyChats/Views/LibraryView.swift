@@ -64,7 +64,7 @@ struct LibraryView: View {
         switch operation.kind {
         case .openingLibrary, .deletingBackup, .loadingChats:
             return operation
-        case .discovering, .creatingLibrary, .addingBackup, .exportingChat, .openingChat:
+        case .discovering, .creatingLibrary, .addingBackup, .exportingChat:
             return nil
         }
     }
