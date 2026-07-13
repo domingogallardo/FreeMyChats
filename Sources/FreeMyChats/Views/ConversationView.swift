@@ -16,8 +16,9 @@ struct ConversationView: View {
                 exportLoadingView
             } else if let reason = store.exportPanelError {
                 exportErrorView(reason)
-            } else if let exported = store.selectedExport {
-                conversation(exported)
+            } else if let exported = store.selectedExport,
+                      let selection = store.selectedExportID {
+                conversation(exported, selection: selection)
             } else {
                 exportLoadingView
             }
@@ -45,7 +46,7 @@ struct ConversationView: View {
         }
     }
 
-    private func conversation(_ exported: ExportedChat) -> some View {
+    private func conversation(_ exported: ExportedChat, selection: VersionChatID) -> some View {
         VStack(spacing: 0) {
             ConversationHeaderView(
                 exported: exported,
@@ -56,7 +57,15 @@ struct ConversationView: View {
                 revealInFinder: store.revealSelectedChat
             )
             Divider()
-            MessageListView(exported: exported, searchText: appliedMessageSearchText)
+            MessageListView(
+                exported: exported,
+                searchText: appliedMessageSearchText,
+                initialMessageID: store.readingPosition(for: selection),
+                saveReadingPosition: { messageID in
+                    store.saveReadingPosition(messageID, for: selection)
+                }
+            )
+            .id(selection)
         }
         .task(id: messageSearchText) {
             let query = messageSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,6 +206,25 @@ private struct ConversationHeaderView: View {
 private struct MessageListView: View {
     let exported: ExportedChat
     let searchText: String
+    let initialMessageID: Int?
+    let saveReadingPosition: (Int) -> Void
+
+    @State private var scrollPosition: Int?
+    @State private var lastReadingPosition: Int?
+
+    init(
+        exported: ExportedChat,
+        searchText: String,
+        initialMessageID: Int?,
+        saveReadingPosition: @escaping (Int) -> Void
+    ) {
+        self.exported = exported
+        self.searchText = searchText
+        self.initialMessageID = initialMessageID
+        self.saveReadingPosition = saveReadingPosition
+        _scrollPosition = State(initialValue: initialMessageID)
+        _lastReadingPosition = State(initialValue: initialMessageID)
+    }
 
     private var filteredMessages: [MessageInfo] {
         MessageSearch.filter(exported.document.messages, query: searchText)
@@ -212,33 +240,65 @@ private struct MessageListView: View {
                 description: Text("No se han encontrado mensajes que contengan “\(searchText)”.")
             )
         } else {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            if beginsNewDay(at: index, in: messages) {
-                                Text(Self.dayFormatter.string(from: message.date))
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 8)
-                            }
-                            MessageRowView(
-                                message: message,
-                                mediaDirectoryURL: exported.mediaDirectoryURL
-                            )
-                            .id(message.id)
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                        if beginsNewDay(at: index, in: messages) {
+                            Text(Self.dayFormatter.string(from: message.date))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 8)
                         }
+                        MessageRowView(
+                            message: message,
+                            mediaDirectoryURL: exported.mediaDirectoryURL
+                        )
+                        .id(message.id)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
                 }
-                .onAppear {
-                    if searchText.isEmpty, let last = messages.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
+                .scrollTargetLayout()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            }
+            .scrollPosition(id: $scrollPosition, anchor: .top)
+            .onAppear {
+                if searchText.isEmpty {
+                    restoreReadingPosition(in: messages)
+                }
+            }
+            .onChange(of: searchText) { _, query in
+                if query.isEmpty {
+                    restoreReadingPosition(in: filteredMessages)
+                } else {
+                    scrollPosition = filteredMessages.first?.id
+                }
+            }
+            .onChange(of: scrollPosition) { _, messageID in
+                guard searchText.isEmpty, let messageID else { return }
+                lastReadingPosition = messageID
+            }
+            .task(id: lastReadingPosition) {
+                guard let messageID = lastReadingPosition else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                saveReadingPosition(messageID)
+            }
+            .onDisappear {
+                if let messageID = lastReadingPosition {
+                    saveReadingPosition(messageID)
                 }
             }
         }
+    }
+
+    private func restoreReadingPosition(in messages: [MessageInfo]) {
+        let savedPosition = lastReadingPosition ?? initialMessageID
+        let target = savedPosition.flatMap { savedID in
+            messages.contains(where: { $0.id == savedID }) ? savedID : nil
+        } ?? messages.last?.id
+
+        scrollPosition = target
+        lastReadingPosition = target
     }
 
     private func beginsNewDay(at index: Int, in messages: [MessageInfo]) -> Bool {

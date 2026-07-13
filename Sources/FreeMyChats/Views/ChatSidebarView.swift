@@ -52,7 +52,6 @@ struct ChatSidebarView: View {
             .listStyle(.sidebar)
             .disabled(store.operation != nil)
         }
-        .searchable(text: $store.chatSearchText, prompt: "Buscar chats")
         .onChange(of: store.selectedChatID) { _, chatID in
             store.selectChat(chatID)
         }

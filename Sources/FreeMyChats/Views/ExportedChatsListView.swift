@@ -4,6 +4,7 @@ import SwiftUI
 @available(macOS 14.0, *)
 struct ExportedChatsListView: View {
     @ObservedObject var store: FreeMyChatsStore
+    @State private var searchText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,8 +29,14 @@ struct ExportedChatsListView: View {
                         + "Aparecerá aquí sin cambiar automáticamente esta pantalla."
                     )
                 )
+            } else if filteredChats.isEmpty {
+                ContentUnavailableView(
+                    "No hay resultados",
+                    systemImage: "magnifyingglass",
+                    description: Text("No se han encontrado chats exportados que coincidan con la búsqueda.")
+                )
             } else {
-                List(store.exportedChats) { item in
+                List(filteredChats) { item in
                     Button {
                         store.openExport(item.id)
                     } label: {
@@ -44,7 +51,7 @@ struct ExportedChatsListView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Chats exportados")
                     .font(.title2.bold())
@@ -52,15 +59,57 @@ struct ExportedChatsListView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
+
+            Spacer(minLength: 12)
+
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+
+                TextField("Buscar chats", text: $searchText)
+                    .textFieldStyle(.plain)
+
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Borrar búsqueda")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            .frame(minWidth: 190, idealWidth: 280, maxWidth: 360)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 13)
     }
 
     private var exportCountDescription: String {
-        let count = store.exportedChats.count
+        let count = filteredChats.count
+        if !normalizedSearchText.isEmpty {
+            return count == 1 ? "1 resultado" : "\(count) resultados"
+        }
         return count == 1 ? "1 chat disponible" : "\(count) chats disponibles"
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredChats: [ExportedChatListItem] {
+        let query = normalizedSearchText
+        guard !query.isEmpty else { return store.exportedChats }
+
+        return store.exportedChats.filter { item in
+            item.chat.name.localizedCaseInsensitiveContains(query)
+                || item.chat.contactJid.localizedCaseInsensitiveContains(query)
+                || item.versionTitle.localizedCaseInsensitiveContains(query)
+        }
     }
 }
 

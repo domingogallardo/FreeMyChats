@@ -25,7 +25,6 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var exportPanelError: String?
     @Published private(set) var exportStates: [VersionChatID: ChatExportDisplayState] = [:]
     @Published private(set) var chatDetails: [VersionChatID: ChatDetailsState] = [:]
-    @Published var chatSearchText = ""
     @Published var chatFilter: ChatListFilter = .all
     @Published private(set) var operation: AppOperation?
     @Published private(set) var errorMessage: String?
@@ -39,6 +38,7 @@ final class FreeMyChatsStore: ObservableObject {
     private var hasStarted = false
     private var exportCatalogRequestID: UUID?
     private var openExportRequestID: UUID?
+    private let readingPositionStore = ChatReadingPositionStore()
 
     init() {
         backupSearchPath = UserDefaults.standard.string(forKey: DefaultsKey.backupSearchPath)
@@ -66,11 +66,6 @@ final class FreeMyChatsStore: ObservableObject {
 
     func visibleChats(in version: LibraryVersionSession) -> [ChatInfo] {
         version.chats.filter { chat in
-            let matchesSearch = chatSearchText.isEmpty
-                || chat.name.localizedCaseInsensitiveContains(chatSearchText)
-                || chat.contactJid.localizedCaseInsensitiveContains(chatSearchText)
-            guard matchesSearch else { return false }
-
             switch chatFilter {
             case .all: return true
             case .groups: return chat.chatType == .group
@@ -78,6 +73,16 @@ final class FreeMyChatsStore: ObservableObject {
             case .archived: return chat.isArchived
             }
         }
+    }
+
+    func readingPosition(for selection: VersionChatID) -> Int? {
+        guard let libraryURL = session?.paths.rootURL else { return nil }
+        return readingPositionStore.messageID(for: selection, in: libraryURL)
+    }
+
+    func saveReadingPosition(_ messageID: Int, for selection: VersionChatID) {
+        guard let libraryURL = session?.paths.rootURL else { return }
+        readingPositionStore.save(messageID: messageID, for: selection, in: libraryURL)
     }
 
     func start() {
@@ -132,7 +137,6 @@ final class FreeMyChatsStore: ObservableObject {
         exportPanelError = nil
         exportCatalogRequestID = nil
         openExportRequestID = nil
-        chatSearchText = ""
         discoveryIssue = nil
         isShowingBackupImporter = false
         UserDefaults.standard.removeObject(forKey: DefaultsKey.lastLibraryPath)
@@ -424,7 +428,6 @@ final class FreeMyChatsStore: ObservableObject {
         isOpeningExport = false
         exportPanelError = nil
         openExportRequestID = nil
-        chatSearchText = ""
         chatDetails = [:]
         exportStates = Dictionary(uniqueKeysWithValues: newSession.versions.flatMap { version in
             version.chats.map { (VersionChatID(versionID: version.id, chatID: $0.id), .checking) }

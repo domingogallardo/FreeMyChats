@@ -10,7 +10,7 @@ struct LibraryView: View {
                 .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 470)
         } detail: {
             ConversationView(store: store)
-                .navigationTitle("Exportaciones")
+                .navigationTitle("")
         }
         .sheet(isPresented: $store.isShowingBackupImporter) {
             BackupDiscoveryView(store: store)

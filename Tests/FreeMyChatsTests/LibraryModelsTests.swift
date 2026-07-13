@@ -201,6 +201,27 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(ChatExportDisplayState.invalid("broken").isPhysicallyExported)
     }
 
+    func testReadingPositionsPersistIndependentlyForEachLibraryAndChat() throws {
+        let suiteName = "ChatReadingPositionStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = ChatReadingPositionStore(defaults: defaults)
+        let firstLibrary = URL(fileURLWithPath: "/tmp/First Library", isDirectory: true)
+        let secondLibrary = URL(fileURLWithPath: "/tmp/Second Library", isDirectory: true)
+        let firstChat = VersionChatID(versionID: "version-a", chatID: 44)
+        let secondChat = VersionChatID(versionID: "version-a", chatID: 45)
+
+        store.save(messageID: 1_234, for: firstChat, in: firstLibrary)
+        store.save(messageID: 5_678, for: secondChat, in: firstLibrary)
+        store.save(messageID: 9_012, for: firstChat, in: secondLibrary)
+
+        let reopenedStore = ChatReadingPositionStore(defaults: defaults)
+        XCTAssertEqual(reopenedStore.messageID(for: firstChat, in: firstLibrary), 1_234)
+        XCTAssertEqual(reopenedStore.messageID(for: secondChat, in: firstLibrary), 5_678)
+        XCTAssertEqual(reopenedStore.messageID(for: firstChat, in: secondLibrary), 9_012)
+    }
+
     func testLargeMessageSearchCompletesInOneLinearPass() throws {
         let data = Data(
             """
