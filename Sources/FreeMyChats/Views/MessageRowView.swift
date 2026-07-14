@@ -29,16 +29,28 @@ struct MessageRowView: View {
                 Button {
                     navigateToReply(replyTo)
                 } label: {
-                    Label("Respuesta al mensaje \(replyTo)", systemImage: "arrowshape.turn.up.left")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 5))
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "arrowshape.turn.up.left")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Respuesta al mensaje \(replyTo)")
+                            if let preview = message.replyToPreview, !preview.isEmpty {
+                                Text(preview)
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(3)
+                            }
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 5))
                 }
                 .buttonStyle(.plain)
                 .help("Ir al mensaje original")
+                .accessibilityLabel(replyAccessibilityLabel(replyTo: replyTo))
                 .accessibilityHint("Mueve la conversación al mensaje original")
             }
 
@@ -120,6 +132,13 @@ struct MessageRowView: View {
 
     private var mediaURL: URL? {
         message.mediaFilename.map { mediaDirectoryURL.appendingPathComponent($0) }
+    }
+
+    private func replyAccessibilityLabel(replyTo: Int) -> String {
+        guard let preview = message.replyToPreview, !preview.isEmpty else {
+            return "Respuesta al mensaje \(replyTo)"
+        }
+        return "Respuesta al mensaje \(replyTo): \(preview)"
     }
 
     private var iconForMessageType: String {

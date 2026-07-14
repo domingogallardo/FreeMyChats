@@ -7,7 +7,13 @@ enum MessageSearch {
         guard !normalizedQuery.isEmpty else { return messages }
 
         return messages.filter { message in
-            [message.message, message.caption, message.author?.displayName, message.mediaFilename]
+            [
+                message.message,
+                message.caption,
+                message.replyToPreview,
+                message.author?.displayName,
+                message.mediaFilename
+            ]
                 .compactMap { $0 }
                 .contains { $0.localizedCaseInsensitiveContains(normalizedQuery) }
         }

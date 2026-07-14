@@ -412,6 +412,29 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertLessThan(elapsed, 2, "Filtering 50,000 messages should remain interactive")
     }
 
+    func testMessageSearchIncludesReplyPreview() throws {
+        let data = Data(
+            """
+            {
+              "id": 2,
+              "chatId": 44,
+              "message": "De acuerdo",
+              "date": "2026-07-12T12:00:00Z",
+              "isFromMe": false,
+              "messageType": "Text",
+              "replyTo": 1,
+              "replyToPreview": "La reunión será el jueves"
+            }
+            """.utf8
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let message = try decoder.decode(MessageInfo.self, from: data)
+
+        XCTAssertEqual(message.replyToPreview, "La reunión será el jueves")
+        XCTAssertEqual(MessageSearch.filter([message], query: "jueves").map(\.id), [2])
+    }
+
     func testMessageTimelineWindowKeepsAStableBoundedPage() throws {
         let messages = try (0..<10).map { try makeMessage(id: $0) }
         var window = MessageTimelineWindow(

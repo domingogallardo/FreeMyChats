@@ -25,8 +25,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Exportación explícita desde la fila desplegada del chat.
 - Indicador de actividad mientras se exporta un chat.
 - Detección de exportaciones vigentes, desactualizadas o inválidas.
-- Visor de mensajes, autores, respuestas, reacciones, ubicaciones y adjuntos,
-  con reproductor integrado para los audios.
+- Visor de mensajes, autores, respuestas con vista previa, reacciones, ubicaciones
+  y adjuntos, con reproductor integrado para los audios.
 - Navegación entre los mensajes de respuesta y sus originales, con resaltado
   temporal y retorno al punto de partida.
 - Búsqueda de texto dentro del chat exportado.
@@ -68,7 +68,7 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 ## Relación con SwiftWABackupAPI
 
-Este proyecto utiliza [SwiftWABackupAPI 4.4.0](https://github.com/domingogallardo/SwiftWABackupAPI), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
+Este proyecto utiliza [SwiftWABackupAPI 4.5.0](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/4.5.0), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp y las exportaciones persistentes de chats.
 
 ## Requisitos
 
@@ -106,7 +106,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.2.0
+cd ~/Documents/FreeMyChats-1.3.0
 ```
 
 ### 4. Compilar y abrir la aplicación
