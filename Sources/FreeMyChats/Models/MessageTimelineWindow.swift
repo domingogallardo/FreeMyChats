@@ -101,6 +101,21 @@ struct MessageTimelineWindow {
         return lastMessage.id
     }
 
+    mutating func move(to messageID: Int) -> Int? {
+        guard let targetIndex = allMessages.firstIndex(where: { $0.id == messageID }) else {
+            return nil
+        }
+
+        guard !range.contains(targetIndex) else { return messageID }
+
+        var lowerBound = max(allMessages.startIndex, targetIndex - maximumVisibleCount / 2)
+        let upperBound = min(allMessages.endIndex, lowerBound + maximumVisibleCount)
+        lowerBound = max(allMessages.startIndex, upperBound - maximumVisibleCount)
+        range = lowerBound..<upperBound
+        rows = Self.makeRows(messages: allMessages, range: range)
+        return messageID
+    }
+
     private static func makeRows(
         messages: [MessageInfo],
         range: Range<Int>

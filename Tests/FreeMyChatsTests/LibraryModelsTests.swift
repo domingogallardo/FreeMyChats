@@ -489,6 +489,26 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertFalse(window.hasLaterMessages)
     }
 
+    func testMessageTimelineWindowCanMoveDirectlyToAReferencedMessage() throws {
+        let messages = try (0..<10).map { try makeMessage(id: $0) }
+        var window = MessageTimelineWindow(
+            messages: messages,
+            centeredOn: nil,
+            maximumVisibleCount: 4
+        )
+
+        XCTAssertEqual(window.rows.map(\.id), [6, 7, 8, 9])
+
+        XCTAssertEqual(window.move(to: 1), 1)
+        XCTAssertEqual(window.rows.map(\.id), [0, 1, 2, 3])
+
+        XCTAssertEqual(window.move(to: 5), 5)
+        XCTAssertEqual(window.rows.map(\.id), [3, 4, 5, 6])
+
+        XCTAssertNil(window.move(to: 99))
+        XCTAssertEqual(window.rows.map(\.id), [3, 4, 5, 6])
+    }
+
     func testImageThumbnailCacheLoadsAndReusesLocalThumbnail() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

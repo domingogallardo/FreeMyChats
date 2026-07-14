@@ -14,6 +14,9 @@ struct MessageListView: View {
     @State private var isRestoringPosition = true
     @State private var isAtBeginning = false
     @State private var restorationID = UUID()
+    @State private var highlightedMessageID: Int?
+    @State private var highlightID = UUID()
+    @State private var replyReturnMessageID: Int?
 
     init(
         exported: ExportedChat,
@@ -78,7 +81,15 @@ struct MessageListView: View {
                             }
                             MessageRowView(
                                 message: row.message,
-                                mediaDirectoryURL: exported.mediaDirectoryURL
+                                mediaDirectoryURL: exported.mediaDirectoryURL,
+                                isHighlighted: highlightedMessageID == row.id,
+                                navigateToReply: { messageID in
+                                    jumpToMessage(
+                                        messageID,
+                                        returnTo: row.id,
+                                        using: proxy
+                                    )
+                                }
                             )
                             .id(row.id)
                         }
@@ -101,9 +112,9 @@ struct MessageListView: View {
                 restoreReadingPosition(using: proxy)
             }
             .onChange(of: scrollPosition) { _, messageID in
-                guard !isRestoringPosition,
-                      searchText.isEmpty,
-                      let messageID else { return }
+                guard !isRestoringPosition else { return }
+                replyReturnMessageID = nil
+                guard searchText.isEmpty, let messageID else { return }
                 lastReadingPosition = messageID
             }
             .task(id: lastReadingPosition) {
@@ -111,6 +122,14 @@ struct MessageListView: View {
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
                 saveReadingPosition(messageID)
+            }
+            .task(id: highlightID) {
+                guard highlightedMessageID != nil else { return }
+                try? await Task.sleep(for: .milliseconds(1_400))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.45)) {
+                    highlightedMessageID = nil
+                }
             }
             .onDisappear {
                 restorationID = UUID()
@@ -123,10 +142,19 @@ struct MessageListView: View {
     }
 
     private func timelineJumpButton(using proxy: ScrollViewProxy) -> some View {
-        Button {
-            jumpToBoundary(isAtBeginning ? .end : .beginning, using: proxy)
+        let pointsDown = replyReturnMessageID != nil || isAtBeginning
+        let actionLabel = replyReturnMessageID != nil
+            ? "Volver al mensaje de respuesta"
+            : (isAtBeginning ? "Ir al último mensaje" : "Ir al primer mensaje")
+
+        return Button {
+            if let replyReturnMessageID {
+                jumpToMessage(replyReturnMessageID, returnTo: nil, using: proxy)
+            } else {
+                jumpToBoundary(isAtBeginning ? .end : .beginning, using: proxy)
+            }
         } label: {
-            Image(systemName: isAtBeginning ? "chevron.down" : "chevron.up")
+            Image(systemName: pointsDown ? "chevron.down" : "chevron.up")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.secondary)
                 .frame(width: 34, height: 34)
@@ -138,8 +166,8 @@ struct MessageListView: View {
                 .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
-        .help(isAtBeginning ? "Ir al último mensaje" : "Ir al primer mensaje")
-        .accessibilityLabel(isAtBeginning ? "Ir al último mensaje" : "Ir al primer mensaje")
+        .help(actionLabel)
+        .accessibilityLabel(actionLabel)
     }
 
     private var historyBoundary: some View {
@@ -156,6 +184,7 @@ struct MessageListView: View {
         restorationID = UUID()
         isRestoringPosition = true
         isAtBeginning = false
+        replyReturnMessageID = nil
         scrollPosition = nil
 
         let filteredMessages = MessageSearch.filter(exported.document.messages, query: query)
@@ -263,6 +292,7 @@ struct MessageListView: View {
         restorationID = UUID()
         isRestoringPosition = true
         isAtBeginning = false
+        replyReturnMessageID = nil
         scrollPosition = nil
 
         let target: Int?
@@ -293,6 +323,42 @@ struct MessageListView: View {
                 lastReadingPosition = scrollPosition ?? target
             }
             isAtBeginning = boundary == .beginning
+            isRestoringPosition = false
+        }
+    }
+
+    private func jumpToMessage(
+        _ messageID: Int,
+        returnTo returnMessageID: Int?,
+        using proxy: ScrollViewProxy
+    ) {
+        restorationID = UUID()
+        isRestoringPosition = true
+        isAtBeginning = false
+        scrollPosition = nil
+
+        guard let target = timeline.move(to: messageID) else {
+            isRestoringPosition = false
+            return
+        }
+
+        let requestID = UUID()
+        restorationID = requestID
+        Task { @MainActor in
+            await Task.yield()
+            guard restorationID == requestID else { return }
+            proxy.scrollTo(target, anchor: .center)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                highlightedMessageID = target
+                highlightID = UUID()
+            }
+            try? await Task.sleep(for: .milliseconds(40))
+            guard restorationID == requestID else { return }
+            if searchText.isEmpty {
+                lastReadingPosition = target
+            }
+            isAtBeginning = !timeline.hasEarlierMessages && target == timeline.firstMessageID
+            replyReturnMessageID = returnMessageID
             isRestoringPosition = false
         }
     }

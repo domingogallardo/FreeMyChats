@@ -27,6 +27,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Detección de exportaciones vigentes, desactualizadas o inválidas.
 - Visor de mensajes, autores, respuestas, reacciones, ubicaciones y adjuntos,
   con reproductor integrado para los audios.
+- Navegación entre los mensajes de respuesta y sus originales, con resaltado
+  temporal y retorno al punto de partida.
 - Búsqueda de texto dentro del chat exportado.
 - Acciones para abrir la biblioteca, la carpeta del chat y sus archivos en Finder, o borrar una exportación.
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
@@ -104,7 +106,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.1.0
+cd ~/Documents/FreeMyChats-1.2.0
 ```
 
 ### 4. Compilar y abrir la aplicación

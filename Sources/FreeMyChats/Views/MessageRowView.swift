@@ -5,6 +5,8 @@ import SwiftWABackupAPI
 struct MessageRowView: View {
     let message: MessageInfo
     let mediaDirectoryURL: URL
+    let isHighlighted: Bool
+    let navigateToReply: (Int) -> Void
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -24,12 +26,20 @@ struct MessageRowView: View {
             }
 
             if let replyTo = message.replyTo {
-                Label("Respuesta al mensaje \(replyTo)", systemImage: "arrowshape.turn.up.left")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 5))
+                Button {
+                    navigateToReply(replyTo)
+                } label: {
+                    Label("Respuesta al mensaje \(replyTo)", systemImage: "arrowshape.turn.up.left")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .help("Ir al mensaje original")
+                .accessibilityHint("Mueve la conversación al mensaje original")
             }
 
             if let text = message.message, !text.isEmpty {
@@ -93,6 +103,19 @@ struct MessageRowView: View {
             message.isFromMe ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.10),
             in: RoundedRectangle(cornerRadius: 11)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 11)
+                .stroke(
+                    Color.accentColor.opacity(isHighlighted ? 0.95 : 0),
+                    lineWidth: isHighlighted ? 3 : 0
+                )
+        }
+        .shadow(
+            color: Color.accentColor.opacity(isHighlighted ? 0.45 : 0),
+            radius: isHighlighted ? 10 : 0
+        )
+        .scaleEffect(isHighlighted ? 1.015 : 1)
+        .animation(.easeInOut(duration: 0.2), value: isHighlighted)
     }
 
     private var mediaURL: URL? {
