@@ -83,6 +83,24 @@ struct MessageTimelineWindow {
         return anchor
     }
 
+    mutating func moveToBeginning() -> Int? {
+        guard let firstMessage = allMessages.first else { return nil }
+
+        let upperBound = min(allMessages.endIndex, allMessages.startIndex + maximumVisibleCount)
+        range = allMessages.startIndex..<upperBound
+        rows = Self.makeRows(messages: allMessages, range: range)
+        return firstMessage.id
+    }
+
+    mutating func moveToEnd() -> Int? {
+        guard let lastMessage = allMessages.last else { return nil }
+
+        let lowerBound = max(allMessages.startIndex, allMessages.endIndex - maximumVisibleCount)
+        range = lowerBound..<allMessages.endIndex
+        rows = Self.makeRows(messages: allMessages, range: range)
+        return lastMessage.id
+    }
+
     private static func makeRows(
         messages: [MessageInfo],
         range: Range<Int>
@@ -90,7 +108,7 @@ struct MessageTimelineWindow {
         let calendar = Calendar.autoupdatingCurrent
         return range.map { index in
             let message = messages[index]
-            let beginsNewDay = index == messages.startIndex
+            let beginsNewDay = index == range.lowerBound
                 || !calendar.isDate(message.date, inSameDayAs: messages[index - 1].date)
             return MessageTimelineRow(message: message, beginsNewDay: beginsNewDay)
         }

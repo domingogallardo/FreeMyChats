@@ -12,6 +12,7 @@ struct MessageListView: View {
     @State private var lastReadingPosition: Int?
     @State private var positionBeforeSearch: Int?
     @State private var isRestoringPosition = true
+    @State private var isAtBeginning = false
     @State private var restorationID = UUID()
 
     init(
@@ -56,37 +57,46 @@ struct MessageListView: View {
 
     private var messageScrollView: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    if timeline.hasEarlierMessages {
-                        historyBoundary
-                            .onAppear { shiftTimelineEarlier(using: proxy) }
-                    }
-
-                    ForEach(timeline.rows) { row in
-                        if row.beginsNewDay {
-                            Text(Self.dayFormatter.string(from: row.message.date))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 8)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        if timeline.hasEarlierMessages {
+                            historyBoundary
+                                .onAppear { shiftTimelineEarlier(using: proxy) }
+                        } else {
+                            historyBoundary
+                                .onAppear { isAtBeginning = true }
+                                .onDisappear { isAtBeginning = false }
                         }
-                        MessageRowView(
-                            message: row.message,
-                            mediaDirectoryURL: exported.mediaDirectoryURL
-                        )
-                        .id(row.id)
-                    }
 
-                    if timeline.hasLaterMessages {
-                        historyBoundary
-                            .onAppear { shiftTimelineLater(using: proxy) }
+                        ForEach(timeline.rows) { row in
+                            if row.beginsNewDay {
+                                Text(Self.dayFormatter.string(from: row.message.date))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 8)
+                            }
+                            MessageRowView(
+                                message: row.message,
+                                mediaDirectoryURL: exported.mediaDirectoryURL
+                            )
+                            .id(row.id)
+                        }
+
+                        if timeline.hasLaterMessages {
+                            historyBoundary
+                                .onAppear { shiftTimelineLater(using: proxy) }
+                        }
                     }
+                    .scrollTargetLayout()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
                 }
-                .scrollTargetLayout()
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .scrollPosition(id: $scrollPosition, anchor: .top)
+
+                timelineJumpButton(using: proxy)
+                    .padding(16)
             }
-            .scrollPosition(id: $scrollPosition, anchor: .top)
             .onAppear {
                 restoreReadingPosition(using: proxy)
             }
@@ -112,6 +122,26 @@ struct MessageListView: View {
         .id(searchText)
     }
 
+    private func timelineJumpButton(using proxy: ScrollViewProxy) -> some View {
+        Button {
+            jumpToBoundary(isAtBeginning ? .end : .beginning, using: proxy)
+        } label: {
+            Image(systemName: isAtBeginning ? "chevron.down" : "chevron.up")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 34, height: 34)
+                .background(Color.white, in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(Color.black.opacity(0.08), lineWidth: 0.75)
+                }
+                .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
+        }
+        .buttonStyle(.plain)
+        .help(isAtBeginning ? "Ir al último mensaje" : "Ir al primer mensaje")
+        .accessibilityLabel(isAtBeginning ? "Ir al último mensaje" : "Ir al primer mensaje")
+    }
+
     private var historyBoundary: some View {
         Color.clear
             .frame(height: 1)
@@ -125,6 +155,7 @@ struct MessageListView: View {
 
         restorationID = UUID()
         isRestoringPosition = true
+        isAtBeginning = false
         scrollPosition = nil
 
         let filteredMessages = MessageSearch.filter(exported.document.messages, query: query)
@@ -175,6 +206,11 @@ struct MessageListView: View {
                 lastReadingPosition = target
                 positionBeforeSearch = nil
             }
+            if !timeline.hasEarlierMessages,
+               target == timeline.firstMessageID,
+               anchor == .top {
+                isAtBeginning = true
+            }
             isRestoringPosition = false
         }
     }
@@ -182,6 +218,7 @@ struct MessageListView: View {
     private func shiftTimelineEarlier(using proxy: ScrollViewProxy) {
         guard !isRestoringPosition else { return }
         isRestoringPosition = true
+        isAtBeginning = false
         scrollPosition = nil
         guard let anchor = timeline.loadEarlier() else {
             isRestoringPosition = false
@@ -193,6 +230,7 @@ struct MessageListView: View {
     private func shiftTimelineLater(using proxy: ScrollViewProxy) {
         guard !isRestoringPosition else { return }
         isRestoringPosition = true
+        isAtBeginning = false
         scrollPosition = nil
         guard let anchor = timeline.loadLater() else {
             isRestoringPosition = false
@@ -218,6 +256,47 @@ struct MessageListView: View {
         }
     }
 
+    private func jumpToBoundary(
+        _ boundary: TimelineBoundary,
+        using proxy: ScrollViewProxy
+    ) {
+        restorationID = UUID()
+        isRestoringPosition = true
+        isAtBeginning = false
+        scrollPosition = nil
+
+        let target: Int?
+        let anchor: UnitPoint
+        switch boundary {
+        case .beginning:
+            target = timeline.moveToBeginning()
+            anchor = .top
+        case .end:
+            target = timeline.moveToEnd()
+            anchor = .bottom
+        }
+
+        guard let target else {
+            isRestoringPosition = false
+            return
+        }
+
+        let requestID = UUID()
+        restorationID = requestID
+        Task { @MainActor in
+            await Task.yield()
+            guard restorationID == requestID else { return }
+            proxy.scrollTo(target, anchor: anchor)
+            try? await Task.sleep(for: .milliseconds(40))
+            guard restorationID == requestID else { return }
+            if searchText.isEmpty {
+                lastReadingPosition = scrollPosition ?? target
+            }
+            isAtBeginning = boundary == .beginning
+            isRestoringPosition = false
+        }
+    }
+
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .long
@@ -225,4 +304,9 @@ struct MessageListView: View {
         formatter.doesRelativeDateFormatting = true
         return formatter
     }()
+
+    private enum TimelineBoundary {
+        case beginning
+        case end
+    }
 }

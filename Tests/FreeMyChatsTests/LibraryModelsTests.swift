@@ -445,6 +445,43 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(window.range, 42_816..<43_716)
     }
 
+    func testMessageTimelineWindowStartsEveryVisiblePageWithDaySeparator() throws {
+        let messages = try (0..<10).map { try makeMessage(id: $0) }
+        var window = MessageTimelineWindow(
+            messages: messages,
+            centeredOn: nil,
+            pageSize: 3,
+            maximumVisibleCount: 4
+        )
+
+        XCTAssertTrue(window.rows[0].beginsNewDay)
+        XCTAssertFalse(window.rows[1].beginsNewDay)
+
+        _ = window.loadEarlier()
+
+        XCTAssertTrue(window.rows[0].beginsNewDay)
+        XCTAssertFalse(window.rows[1].beginsNewDay)
+    }
+
+    func testMessageTimelineWindowCanMoveDirectlyToEitherEnd() throws {
+        let messages = try (0..<10).map { try makeMessage(id: $0) }
+        var window = MessageTimelineWindow(
+            messages: messages,
+            centeredOn: nil,
+            maximumVisibleCount: 4
+        )
+
+        XCTAssertEqual(window.moveToBeginning(), 0)
+        XCTAssertEqual(window.rows.map(\.id), [0, 1, 2, 3])
+        XCTAssertFalse(window.hasEarlierMessages)
+        XCTAssertTrue(window.hasLaterMessages)
+
+        XCTAssertEqual(window.moveToEnd(), 9)
+        XCTAssertEqual(window.rows.map(\.id), [6, 7, 8, 9])
+        XCTAssertTrue(window.hasEarlierMessages)
+        XCTAssertFalse(window.hasLaterMessages)
+    }
+
     func testImageThumbnailCacheLoadsAndReusesLocalThumbnail() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
