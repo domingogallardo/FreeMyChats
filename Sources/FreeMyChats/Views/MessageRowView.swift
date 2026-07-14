@@ -127,7 +127,13 @@ private struct MediaAttachmentView: View {
     let seconds: Int?
 
     var body: some View {
-        if isImage {
+        if isAudio {
+            AudioPlayerView(
+                url: url,
+                filename: filename,
+                expectedDuration: seconds
+            )
+        } else if isImage {
             Button {
                 WorkspaceService.open(url)
             } label: {
@@ -164,6 +170,10 @@ private struct MediaAttachmentView: View {
     private var isImage: Bool {
         ["jpg", "jpeg", "png", "gif", "webp", "heic", "thumb"]
             .contains(url.pathExtension.lowercased())
+    }
+
+    private var isAudio: Bool {
+        messageType.caseInsensitiveCompare("audio") == .orderedSame
     }
 
     private var attachmentIcon: String {

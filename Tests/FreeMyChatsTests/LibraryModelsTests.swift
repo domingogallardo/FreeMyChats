@@ -5,6 +5,13 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
+    func testAudioTimeFormatterUsesClockStyleDurations() {
+        XCTAssertEqual(AudioTimeFormatter.string(from: 0), "0:00")
+        XCTAssertEqual(AudioTimeFormatter.string(from: 9.9), "0:09")
+        XCTAssertEqual(AudioTimeFormatter.string(from: 65), "1:05")
+        XCTAssertEqual(AudioTimeFormatter.string(from: 3_725), "1:02:05")
+    }
+
     func testBackupDiscoveryRecognizesWrappedCocoaPermissionError() {
         let permissionError = NSError(
             domain: NSCocoaErrorDomain,
