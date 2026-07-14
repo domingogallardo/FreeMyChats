@@ -275,9 +275,18 @@ private struct ChatSidebarRow: View {
                     ChatAvatar(photoURL: photoURL, name: chat.name)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(chat.name)
-                            .fontWeight(.medium)
-                            .lineLimit(1)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(chat.name)
+                                .fontWeight(.medium)
+                                .lineLimit(1)
+
+                            Spacer(minLength: 4)
+
+                            Text(sizeDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
 
                         HStack(spacing: 4) {
                             Text(summary)
@@ -417,7 +426,6 @@ private struct ChatSidebarRow: View {
         if chat.chatType == .group { parts.append("Grupo") }
         if chat.isArchived { parts.append("Archivado") }
         if parts.isEmpty { parts.append("Conversación") }
-        parts.append(sizeDescription)
         return parts.joined(separator: " · ")
     }
 
