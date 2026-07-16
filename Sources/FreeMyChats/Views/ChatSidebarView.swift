@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import SwiftWABackupAPI
 
-@available(macOS 14.0, *)
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
@@ -56,10 +55,10 @@ struct ChatSidebarView: View {
             .listStyle(.sidebar)
             .disabled(store.operation != nil)
         }
-        .onChange(of: store.selectedChatID) { _, chatID in
+        .onChange(of: store.selectedChatID) { chatID in
             store.selectChat(chatID)
         }
-        .onChange(of: store.versions.map(\.id)) { _, ids in
+        .onChange(of: store.versions.map(\.id)) { ids in
             expandedVersionIDs.formIntersection(Set(ids))
             if expandedVersionIDs.isEmpty, let first = ids.first {
                 expandedVersionIDs.insert(first)
@@ -213,10 +212,15 @@ private struct BackupVersionRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: version.hasSourceBackup ? "externaldrive.fill" : "externaldrive.badge.xmark")
-                .foregroundStyle(version.hasSourceBackup ? Color.secondary : Color.orange)
-                .frame(width: 17)
-                .symbolEffect(.pulse, options: .repeating, isActive: isExporting)
+            if isExporting {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 17)
+            } else {
+                Image(systemName: version.hasSourceBackup ? "externaldrive.fill" : "externaldrive.badge.xmark")
+                    .foregroundStyle(version.hasSourceBackup ? Color.secondary : Color.orange)
+                    .frame(width: 17)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(version.record.title)

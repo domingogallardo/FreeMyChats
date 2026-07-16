@@ -1,6 +1,5 @@
 import SwiftUI
 
-@available(macOS 14.0, *)
 struct BackupRowView: View {
     let row: BackupInspectionRow
     let addToLibrary: () -> Void
@@ -79,25 +78,25 @@ struct BackupRowView: View {
 
     private var encryptionTitle: String {
         switch row.encryptionState {
-        case true: return "Encriptada"
-        case false: return "Sin encriptar"
-        case nil: return "Cifrado desconocido"
+        case .some(true): return "Encriptada"
+        case .some(false): return "Sin encriptar"
+        case .none: return "Cifrado desconocido"
         }
     }
 
     private var encryptionIcon: String {
         switch row.encryptionState {
-        case true: return "lock.fill"
-        case false: return "lock.open.fill"
-        case nil: return "questionmark.diamond.fill"
+        case .some(true): return "lock.fill"
+        case .some(false): return "lock.open.fill"
+        case .none: return "questionmark.diamond.fill"
         }
     }
 
     private var encryptionColor: Color {
         switch row.encryptionState {
-        case true: return .orange
-        case false: return .green
-        case nil: return .secondary
+        case .some(true): return .orange
+        case .some(false): return .green
+        case .none: return .secondary
         }
     }
 
@@ -109,7 +108,6 @@ struct BackupRowView: View {
     }()
 }
 
-@available(macOS 14.0, *)
 private struct StatusBadge: View {
     let title: String
     let systemImage: String

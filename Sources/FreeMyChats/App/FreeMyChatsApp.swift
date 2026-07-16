@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 
 @main
-@available(macOS 14.0, *)
 struct FreeMyChatsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = FreeMyChatsStore()

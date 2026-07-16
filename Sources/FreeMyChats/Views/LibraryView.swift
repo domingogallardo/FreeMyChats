@@ -1,6 +1,5 @@
 import SwiftUI
 
-@available(macOS 14.0, *)
 struct LibraryView: View {
     @ObservedObject var store: FreeMyChatsStore
 

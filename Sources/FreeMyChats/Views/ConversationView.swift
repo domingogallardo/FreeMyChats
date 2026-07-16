@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftWABackupAPI
 
-@available(macOS 14.0, *)
 struct ConversationView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var isSearching = false
@@ -55,11 +54,11 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ExportBackHeader(title: "Chat exportado", action: store.showExportList)
             Divider()
-            ContentUnavailableView {
-                Label("La exportación no es válida", systemImage: "exclamationmark.folder")
-            } description: {
-                Text(reason)
-            }
+            UnavailableContentView(
+                "La exportación no es válida",
+                systemImage: "exclamationmark.folder",
+                description: reason
+            )
         }
     }
 
@@ -96,7 +95,7 @@ struct ConversationView: View {
             guard !Task.isCancelled else { return }
             appliedMessageSearchText = query
         }
-        .onChange(of: store.selectedExportID) { _, _ in
+        .onChange(of: store.selectedExportID) { _ in
             messageSearchText = ""
             appliedMessageSearchText = ""
             isSearching = false

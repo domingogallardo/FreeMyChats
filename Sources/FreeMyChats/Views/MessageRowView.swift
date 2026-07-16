@@ -76,7 +76,9 @@ struct MessageRowView: View {
 
             if let latitude = message.latitude, let longitude = message.longitude {
                 Button {
-                    WorkspaceService.openMap(latitude: latitude, longitude: longitude)
+                    Task { @MainActor in
+                        WorkspaceService.openMap(latitude: latitude, longitude: longitude)
+                    }
                 } label: {
                     Label("Abrir ubicación", systemImage: "map")
                 }

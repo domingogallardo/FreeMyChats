@@ -2,7 +2,6 @@ import Foundation
 @preconcurrency import SwiftWABackupAPI
 
 @MainActor
-@available(macOS 14.0, *)
 final class FreeMyChatsStore: ObservableObject {
     static let defaultBackupPath = NSString(
         string: "~/Library/Application Support/MobileSync/Backup/"

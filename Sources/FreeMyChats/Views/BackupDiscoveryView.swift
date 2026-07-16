@@ -1,6 +1,5 @@
 import SwiftUI
 
-@available(macOS 14.0, *)
 struct BackupDiscoveryView: View {
     @ObservedObject var store: FreeMyChatsStore
     @Environment(\.dismiss) private var dismiss
@@ -62,15 +61,13 @@ struct BackupDiscoveryView: View {
         } else if let issue = store.discoveryIssue {
             discoveryIssueView(issue)
         } else if store.backupRows.isEmpty {
-            ContentUnavailableView(
+            UnavailableContentView(
                 "Sin copias disponibles",
                 systemImage: "externaldrive.badge.questionmark",
-                description: Text(
+                description:
                     "Analiza la carpeta de MobileSync o elige otra ubicación. "
                     + "macOS puede exigir acceso total al disco."
-                )
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVStack(spacing: 10) {
@@ -89,49 +86,44 @@ struct BackupDiscoveryView: View {
     private func discoveryIssueView(_ issue: BackupDiscoveryIssue) -> some View {
         switch issue {
         case .permissionRequired:
-            ContentUnavailableView {
-                Label(
-                    "Free My Chats necesita permiso",
-                    systemImage: "lock.trianglebadge.exclamationmark"
-                )
-            } description: {
-                Text(
+            UnavailableContentView(
+                "Free My Chats necesita permiso",
+                systemImage: "lock.trianglebadge.exclamationmark",
+                description:
                     "En Ajustes del Sistema, abre Privacidad y seguridad > Acceso total al disco "
                     + "y activa Free My Chats. Después sal completamente de la app y vuelve a abrirla. "
                     + "La comprobación continuará automáticamente al reiniciar."
-                )
-            } actions: {
-                Button("Abrir Ajustes del Sistema") {
-                    WorkspaceService.openFullDiskAccessSettings()
-                }
-                .buttonStyle(.borderedProminent)
+            ) {
+                HStack {
+                    Button("Abrir Ajustes del Sistema") {
+                        WorkspaceService.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
 
-                Button("Salir de Free My Chats") {
-                    WorkspaceService.quitApplication()
+                    Button("Salir de Free My Chats") {
+                        WorkspaceService.quitApplication()
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .unreadableDirectory(let detail):
-            ContentUnavailableView {
-                Label(
-                    "No se pudo leer la carpeta de copias",
-                    systemImage: "externaldrive.badge.exclamationmark"
-                )
-            } description: {
-                Text(detail)
-            } actions: {
-                Button("Elegir otra carpeta…") {
-                    if let url = DirectoryPicker.choose(startingAt: store.backupSearchPath) {
-                        store.backupSearchPath = url.path
+            UnavailableContentView(
+                "No se pudo leer la carpeta de copias",
+                systemImage: "externaldrive.badge.exclamationmark",
+                description: detail
+            ) {
+                HStack {
+                    Button("Elegir otra carpeta…") {
+                        if let url = DirectoryPicker.choose(startingAt: store.backupSearchPath) {
+                            store.backupSearchPath = url.path
+                            store.inspectBackups()
+                        }
+                    }
+                    Button("Volver a intentar") {
                         store.inspectBackups()
                     }
                 }
-                Button("Volver a intentar") {
-                    store.inspectBackups()
-                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

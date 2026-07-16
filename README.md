@@ -72,7 +72,7 @@ Este proyecto utiliza [SwiftWABackupAPI 4.5.0](https://github.com/domingogallard
 
 ## Requisitos
 
-- macOS 14 o posterior.
+- macOS Ventura 13 o posterior.
 - Swift 5.9 o posterior.
 - Acceso a una carpeta de copias de seguridad de iPhone.
 - Permiso de acceso total al disco para la aplicación o Terminal cuando macOS lo requiera.

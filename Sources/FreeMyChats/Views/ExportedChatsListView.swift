@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-@available(macOS 14.0, *)
 struct ExportedChatsListView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var searchText = ""
@@ -15,25 +14,24 @@ struct ExportedChatsListView: View {
                 ProgressView("Leyendo chats exportados…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = store.exportPanelError, store.exportedChats.isEmpty {
-                ContentUnavailableView {
-                    Label("No se pueden leer las exportaciones", systemImage: "exclamationmark.folder")
-                } description: {
-                    Text(error)
-                }
+                UnavailableContentView(
+                    "No se pueden leer las exportaciones",
+                    systemImage: "exclamationmark.folder",
+                    description: error
+                )
             } else if store.exportedChats.isEmpty {
-                ContentUnavailableView(
+                UnavailableContentView(
                     "Todavía no hay chats exportados",
                     systemImage: "tray",
-                    description: Text(
+                    description:
                         "Despliega un chat en el panel izquierdo y pulsa Exportar. "
                         + "Aparecerá aquí sin cambiar automáticamente esta pantalla."
-                    )
                 )
             } else if filteredChats.isEmpty {
-                ContentUnavailableView(
+                UnavailableContentView(
                     "No hay resultados",
                     systemImage: "magnifyingglass",
-                    description: Text("No se han encontrado chats exportados que coincidan con la búsqueda.")
+                    description: "No se han encontrado chats exportados que coincidan con la búsqueda."
                 )
             } else {
                 List(filteredChats) { item in

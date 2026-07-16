@@ -24,7 +24,6 @@ struct AudioPlayerView: View {
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.circle)
                 .controlSize(.small)
                 .disabled(!playback.canPlay)
                 .help(playback.isPlaying ? "Pausar audio" : "Reproducir audio")
@@ -202,13 +201,14 @@ final class AudioPlaybackController: ObservableObject {
         let player = AVPlayer(playerItem: item)
         player.actionAtItemEnd = .pause
         self.player = player
+        let playbackRelay = AudioPlaybackRelay(self)
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
-        ) { [weak self] _ in
+        ) { _ in
             Task { @MainActor in
-                self?.playbackDidFinish()
+                playbackRelay.controller?.playbackDidFinish()
             }
         }
 
@@ -278,6 +278,14 @@ final class AudioPlaybackController: ObservableObject {
         if Self.activeController === self {
             Self.activeController = nil
         }
+    }
+}
+
+private final class AudioPlaybackRelay: @unchecked Sendable {
+    weak var controller: AudioPlaybackController?
+
+    init(_ controller: AudioPlaybackController) {
+        self.controller = controller
     }
 }
 

@@ -8,9 +8,10 @@ struct MessageListView: View {
     let saveReadingPosition: (Int) -> Void
 
     @State private var timeline: MessageTimelineWindow
-    @State private var scrollPosition: Int?
     @State private var lastReadingPosition: Int?
     @State private var positionBeforeSearch: Int?
+    @State private var observedSearchText: String
+    @State private var visibleMessageIDs: Set<Int> = []
     @State private var isRestoringPosition = true
     @State private var isAtBeginning = false
     @State private var restorationID = UUID()
@@ -39,23 +40,25 @@ struct MessageListView: View {
                 centeredOn: initialTarget
             )
         )
-        _scrollPosition = State(initialValue: nil)
         _lastReadingPosition = State(initialValue: initialMessageID)
+        _observedSearchText = State(initialValue: searchText)
     }
 
     var body: some View {
         Group {
             if timeline.isEmpty {
-                ContentUnavailableView(
+                UnavailableContentView(
                     "No hay resultados",
                     systemImage: "magnifyingglass",
-                    description: Text("No se han encontrado mensajes que contengan “\(searchText)”.")
+                    description: "No se han encontrado mensajes que contengan “\(searchText)”."
                 )
             } else {
                 messageScrollView
             }
         }
-        .onChange(of: searchText) { previousQuery, query in
+        .onChange(of: searchText) { query in
+            let previousQuery = observedSearchText
+            observedSearchText = query
             resetTimeline(from: previousQuery, to: query)
         }
     }
@@ -91,29 +94,23 @@ struct MessageListView: View {
                                 }
                             )
                             .id(row.id)
+                            .onAppear {
+                                messageBecameVisible(row.id, using: proxy)
+                            }
+                            .onDisappear {
+                                messageDisappeared(row.id, using: proxy)
+                            }
                         }
                     }
-                    .scrollTargetLayout()
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                 }
-                .scrollPosition(id: $scrollPosition, anchor: .top)
 
                 timelineJumpButton(using: proxy)
                     .padding(16)
             }
             .onAppear {
                 restoreReadingPosition(using: proxy)
-            }
-            .onChange(of: scrollPosition) { _, messageID in
-                guard let messageID else { return }
-                if !isRestoringPosition {
-                    replyReturnMessageID = nil
-                    if searchText.isEmpty {
-                        lastReadingPosition = messageID
-                    }
-                }
-                requestTimelineShiftIfNeeded(around: messageID, using: proxy)
             }
             .task(id: lastReadingPosition) {
                 guard let messageID = lastReadingPosition else { return }
@@ -178,7 +175,7 @@ struct MessageListView: View {
 
     private func resetTimeline(from previousQuery: String, to query: String) {
         if previousQuery.isEmpty, !query.isEmpty {
-            positionBeforeSearch = scrollPosition ?? lastReadingPosition ?? initialMessageID
+            positionBeforeSearch = lastReadingPosition ?? initialMessageID
         }
 
         restorationID = UUID()
@@ -187,7 +184,7 @@ struct MessageListView: View {
         isRestoringPosition = true
         isAtBeginning = false
         replyReturnMessageID = nil
-        scrollPosition = nil
+        visibleMessageIDs.removeAll()
 
         let filteredMessages = MessageSearch.filter(exported.document.messages, query: query)
         let target = query.isEmpty
@@ -219,7 +216,7 @@ struct MessageListView: View {
         activeTimelineShift = nil
         pendingTimelineShift = nil
         isRestoringPosition = true
-        scrollPosition = nil
+        visibleMessageIDs.removeAll()
         let requestID = UUID()
         restorationID = requestID
 
@@ -245,7 +242,31 @@ struct MessageListView: View {
                 isAtBeginning = true
             }
             isRestoringPosition = false
+            requestTimelineShiftIfNeeded(around: target, using: proxy)
         }
+    }
+
+    private func messageBecameVisible(_ messageID: Int, using proxy: ScrollViewProxy) {
+        visibleMessageIDs.insert(messageID)
+        updateVisiblePosition(using: proxy)
+    }
+
+    private func messageDisappeared(_ messageID: Int, using proxy: ScrollViewProxy) {
+        visibleMessageIDs.remove(messageID)
+        updateVisiblePosition(using: proxy)
+    }
+
+    private func updateVisiblePosition(using proxy: ScrollViewProxy) {
+        guard !isRestoringPosition else { return }
+        guard let messageID = timeline.rows.first(where: {
+            visibleMessageIDs.contains($0.id)
+        })?.id else { return }
+
+        replyReturnMessageID = nil
+        if searchText.isEmpty {
+            lastReadingPosition = messageID
+        }
+        requestTimelineShiftIfNeeded(around: messageID, using: proxy)
     }
 
     private func requestTimelineShiftIfNeeded(
@@ -289,7 +310,7 @@ struct MessageListView: View {
         pendingTimelineShift = nil
         isRestoringPosition = true
         isAtBeginning = false
-        scrollPosition = nil
+        visibleMessageIDs.removeAll()
 
         let loadedBoundaryID: Int?
         switch request {
@@ -322,11 +343,6 @@ struct MessageListView: View {
             await Task.yield()
             guard restorationID == requestID else { return }
 
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                scrollPosition = messageID
-            }
             proxy.scrollTo(messageID, anchor: .top)
 
             try? await Task.sleep(for: .milliseconds(40))
@@ -356,7 +372,7 @@ struct MessageListView: View {
         isRestoringPosition = true
         isAtBeginning = false
         replyReturnMessageID = nil
-        scrollPosition = nil
+        visibleMessageIDs.removeAll()
 
         let target: Int?
         let anchor: UnitPoint
@@ -383,7 +399,7 @@ struct MessageListView: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard restorationID == requestID else { return }
             if searchText.isEmpty {
-                lastReadingPosition = scrollPosition ?? target
+                lastReadingPosition = target
             }
             isAtBeginning = boundary == .beginning
             isRestoringPosition = false
@@ -400,7 +416,7 @@ struct MessageListView: View {
         pendingTimelineShift = nil
         isRestoringPosition = true
         isAtBeginning = false
-        scrollPosition = nil
+        visibleMessageIDs.removeAll()
 
         guard let target = timeline.move(to: messageID) else {
             isRestoringPosition = false
