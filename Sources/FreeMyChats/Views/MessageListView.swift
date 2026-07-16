@@ -17,6 +17,8 @@ struct MessageListView: View {
     @State private var highlightedMessageID: Int?
     @State private var highlightID = UUID()
     @State private var replyReturnMessageID: Int?
+    @State private var activeTimelineShift: TimelineShiftRequest?
+    @State private var pendingTimelineShift: TimelineShiftRequest?
 
     init(
         exported: ExportedChat,
@@ -63,10 +65,7 @@ struct MessageListView: View {
             ZStack(alignment: .bottomTrailing) {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        if timeline.hasEarlierMessages {
-                            historyBoundary
-                                .onAppear { shiftTimelineEarlier(using: proxy) }
-                        } else {
+                        if !timeline.hasEarlierMessages {
                             historyBoundary
                                 .onAppear { isAtBeginning = true }
                                 .onDisappear { isAtBeginning = false }
@@ -93,11 +92,6 @@ struct MessageListView: View {
                             )
                             .id(row.id)
                         }
-
-                        if timeline.hasLaterMessages {
-                            historyBoundary
-                                .onAppear { shiftTimelineLater(using: proxy) }
-                        }
                     }
                     .scrollTargetLayout()
                     .padding(.horizontal, 20)
@@ -112,10 +106,14 @@ struct MessageListView: View {
                 restoreReadingPosition(using: proxy)
             }
             .onChange(of: scrollPosition) { _, messageID in
-                guard !isRestoringPosition else { return }
-                replyReturnMessageID = nil
-                guard searchText.isEmpty, let messageID else { return }
-                lastReadingPosition = messageID
+                guard let messageID else { return }
+                if !isRestoringPosition {
+                    replyReturnMessageID = nil
+                    if searchText.isEmpty {
+                        lastReadingPosition = messageID
+                    }
+                }
+                requestTimelineShiftIfNeeded(around: messageID, using: proxy)
             }
             .task(id: lastReadingPosition) {
                 guard let messageID = lastReadingPosition else { return }
@@ -133,6 +131,8 @@ struct MessageListView: View {
             }
             .onDisappear {
                 restorationID = UUID()
+                activeTimelineShift = nil
+                pendingTimelineShift = nil
                 if searchText.isEmpty, let messageID = lastReadingPosition {
                     saveReadingPosition(messageID)
                 }
@@ -182,6 +182,8 @@ struct MessageListView: View {
         }
 
         restorationID = UUID()
+        activeTimelineShift = nil
+        pendingTimelineShift = nil
         isRestoringPosition = true
         isAtBeginning = false
         replyReturnMessageID = nil
@@ -214,6 +216,8 @@ struct MessageListView: View {
         }
 
         guard let target else { return }
+        activeTimelineShift = nil
+        pendingTimelineShift = nil
         isRestoringPosition = true
         scrollPosition = nil
         let requestID = UUID()
@@ -244,33 +248,72 @@ struct MessageListView: View {
         }
     }
 
-    private func shiftTimelineEarlier(using proxy: ScrollViewProxy) {
-        guard !isRestoringPosition else { return }
-        isRestoringPosition = true
-        isAtBeginning = false
-        scrollPosition = nil
-        guard let anchor = timeline.loadEarlier() else {
-            isRestoringPosition = false
+    private func requestTimelineShiftIfNeeded(
+        around messageID: Int,
+        using proxy: ScrollViewProxy
+    ) {
+        guard let rowIndex = timeline.rows.firstIndex(where: { $0.id == messageID }) else {
             return
         }
-        preserveBoundary(anchor, at: .top, using: proxy)
+
+        let threshold = min(
+            Self.timelinePreloadThreshold,
+            max(1, timeline.rows.count / 3)
+        )
+        let request: TimelineShiftRequest?
+        if timeline.hasEarlierMessages, rowIndex < threshold {
+            request = .earlier(preserving: messageID)
+        } else if timeline.hasLaterMessages,
+                  rowIndex >= timeline.rows.count - threshold {
+            request = .later(preserving: messageID)
+        } else {
+            request = nil
+        }
+
+        guard let request else { return }
+        requestTimelineShift(request, using: proxy)
     }
 
-    private func shiftTimelineLater(using proxy: ScrollViewProxy) {
-        guard !isRestoringPosition else { return }
+    private func requestTimelineShift(
+        _ request: TimelineShiftRequest,
+        using proxy: ScrollViewProxy
+    ) {
+        guard !isRestoringPosition else {
+            if activeTimelineShift != nil {
+                pendingTimelineShift = request
+            }
+            return
+        }
+
+        activeTimelineShift = request
+        pendingTimelineShift = nil
         isRestoringPosition = true
         isAtBeginning = false
         scrollPosition = nil
-        guard let anchor = timeline.loadLater() else {
+
+        let loadedBoundaryID: Int?
+        switch request {
+        case .earlier:
+            loadedBoundaryID = timeline.loadEarlier()
+        case .later:
+            loadedBoundaryID = timeline.loadLater()
+        }
+
+        guard let loadedBoundaryID else {
+            activeTimelineShift = nil
             isRestoringPosition = false
             return
         }
-        preserveBoundary(anchor, at: .bottom, using: proxy)
+
+        let requestedAnchor = request.messageID
+        let anchor = timeline.contains(messageID: requestedAnchor)
+            ? requestedAnchor
+            : loadedBoundaryID
+        preserveBoundary(anchor, using: proxy)
     }
 
     private func preserveBoundary(
         _ messageID: Int,
-        at anchor: UnitPoint,
         using proxy: ScrollViewProxy
     ) {
         let requestID = UUID()
@@ -278,10 +321,28 @@ struct MessageListView: View {
         Task { @MainActor in
             await Task.yield()
             guard restorationID == requestID else { return }
-            proxy.scrollTo(messageID, anchor: anchor)
-            try? await Task.sleep(for: .milliseconds(30))
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                scrollPosition = messageID
+            }
+            proxy.scrollTo(messageID, anchor: .top)
+
+            try? await Task.sleep(for: .milliseconds(40))
             guard restorationID == requestID else { return }
-            isRestoringPosition = false
+            finishTimelineShift(using: proxy)
+        }
+    }
+
+    private func finishTimelineShift(using proxy: ScrollViewProxy) {
+        let pendingShift = pendingTimelineShift
+        activeTimelineShift = nil
+        pendingTimelineShift = nil
+        isRestoringPosition = false
+
+        if let pendingShift {
+            requestTimelineShift(pendingShift, using: proxy)
         }
     }
 
@@ -290,6 +351,8 @@ struct MessageListView: View {
         using proxy: ScrollViewProxy
     ) {
         restorationID = UUID()
+        activeTimelineShift = nil
+        pendingTimelineShift = nil
         isRestoringPosition = true
         isAtBeginning = false
         replyReturnMessageID = nil
@@ -333,6 +396,8 @@ struct MessageListView: View {
         using proxy: ScrollViewProxy
     ) {
         restorationID = UUID()
+        activeTimelineShift = nil
+        pendingTimelineShift = nil
         isRestoringPosition = true
         isAtBeginning = false
         scrollPosition = nil
@@ -375,4 +440,18 @@ struct MessageListView: View {
         case beginning
         case end
     }
+
+    private enum TimelineShiftRequest {
+        case earlier(preserving: Int)
+        case later(preserving: Int)
+
+        var messageID: Int {
+            switch self {
+            case .earlier(let messageID), .later(let messageID):
+                messageID
+            }
+        }
+    }
+
+    private static let timelinePreloadThreshold = 150
 }

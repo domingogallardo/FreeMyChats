@@ -106,7 +106,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.3.0
+cd ~/Documents/FreeMyChats-1.3.1
 ```
 
 ### 4. Compilar y abrir la aplicación
