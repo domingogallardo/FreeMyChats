@@ -24,19 +24,18 @@ struct ConversationView: View {
             }
         }
         .confirmationDialog(
-            "¿Borrar este chat exportado?",
+            "¿Borrar esta conversación guardada?",
             isPresented: $isConfirmingExportDeletion,
             titleVisibility: .visible
         ) {
-            Button("Borrar chat exportado", role: .destructive) {
+            Button("Borrar conversación", role: .destructive) {
                 store.deleteSelectedExportedChat()
             }
             Button("Cancelar", role: .cancel) {}
         } message: {
             Text(
-                "Se borrarán permanentemente sus mensajes y archivos exportados. "
-                + "Si es el último chat de una copia cuya fuente ya fue eliminada, "
-                + "también se borrará esa copia de la biblioteca."
+                "Se borrarán permanentemente la conversación combinada y todas "
+                + "las aportaciones exportadas desde las distintas copias."
             )
         }
     }
@@ -45,14 +44,14 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ExportBackHeader(title: "Abriendo chat", action: store.showExportList)
             Divider()
-            ProgressView("Abriendo el chat exportado…")
+            ProgressView("Abriendo la conversación guardada…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private func exportErrorView(_ reason: String) -> some View {
         VStack(spacing: 0) {
-            ExportBackHeader(title: "Chat exportado", action: store.showExportList)
+            ExportBackHeader(title: "Conversación guardada", action: store.showExportList)
             Divider()
             UnavailableContentView(
                 "La exportación no es válida",
@@ -62,11 +61,13 @@ struct ConversationView: View {
         }
     }
 
-    private func conversation(_ exported: ExportedChat, selection: VersionChatID) -> some View {
+    private func conversation(
+        _ exported: ArchivedConversation,
+        selection: ConversationArchiveID
+    ) -> some View {
         VStack(spacing: 0) {
             ConversationHeaderView(
                 exported: exported,
-                state: store.openedExportState,
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
                 goBack: store.showExportList,
@@ -110,10 +111,10 @@ private struct ExportBackHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: action) {
-                Label("Volver a chats exportados", systemImage: "chevron.left")
+                Label("Volver a conversaciones guardadas", systemImage: "chevron.left")
             }
             .labelStyle(.iconOnly)
-            .help("Volver a chats exportados")
+            .help("Volver a conversaciones guardadas")
 
             Text(title)
                 .font(.title2.bold())
@@ -125,8 +126,7 @@ private struct ExportBackHeader: View {
 }
 
 private struct ConversationHeaderView: View {
-    let exported: ExportedChat
-    let state: ChatExportDisplayState
+    let exported: ArchivedConversation
     @Binding var isSearching: Bool
     @Binding var searchText: String
     let goBack: () -> Void
@@ -137,10 +137,10 @@ private struct ConversationHeaderView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Button(action: goBack) {
-                    Label("Volver a chats exportados", systemImage: "chevron.left")
+                    Label("Volver a conversaciones guardadas", systemImage: "chevron.left")
                 }
                 .labelStyle(.iconOnly)
-                .help("Volver a chats exportados")
+                .help("Volver a conversaciones guardadas")
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(exported.document.chat.name)
@@ -163,7 +163,7 @@ private struct ConversationHeaderView: View {
                 Menu {
                     Button("Abrir carpeta en Finder", action: revealInFinder)
                     Divider()
-                    Button("Borrar chat exportado…", role: .destructive, action: deleteExport)
+                    Button("Borrar conversación…", role: .destructive, action: deleteExport)
                 } label: {
                     Label("Opciones del chat", systemImage: "ellipsis.circle")
                 }
@@ -171,17 +171,6 @@ private struct ConversationHeaderView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
-
-            if case .stale = state {
-                HStack {
-                    Label("La copia fuente contiene una versión más reciente de este chat.", systemImage: "clock.arrow.circlepath")
-                    Spacer()
-                }
-                .font(.caption)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-                .background(.orange.opacity(0.12))
-            }
 
             if isSearching {
                 HStack {
@@ -210,8 +199,10 @@ private struct ConversationHeaderView: View {
     private var subtitle: String {
         let chat = exported.document.chat
         let type = chat.chatType == .group ? "Grupo" : "Conversación individual"
-        let date = Self.dateFormatter.string(from: exported.document.exportedAt)
-        return "Chat exportado · \(type) · \(chat.numberMessages.formatted()) mensajes · \(date)"
+        let date = Self.dateFormatter.string(from: exported.record.updatedAt)
+        let count = exported.record.contributions.count
+        let sources = count == 1 ? "1 copia" : "\(count) copias"
+        return "Conversación guardada · \(type) · \(chat.numberMessages.formatted()) mensajes · \(sources) · \(date)"
     }
 
     private static let dateFormatter: DateFormatter = {

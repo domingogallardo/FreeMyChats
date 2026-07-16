@@ -14,7 +14,16 @@ struct ChatSidebarView: View {
                 ForEach(store.versions) { version in
                     DisclosureGroup(isExpanded: expansionBinding(for: version.id)) {
                         let chats = store.visibleChats(in: version)
-                        if chats.isEmpty {
+                        if store.isLoadingSourceChats, chats.isEmpty, version.hasSourceBackup {
+                            HStack(spacing: 7) {
+                                ProgressView().controlSize(.small)
+                                Text("Leyendo conversaciones…")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 27)
+                            .padding(.vertical, 5)
+                        } else if chats.isEmpty {
                             Text(emptyMessage(for: version))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -45,7 +54,8 @@ struct ChatSidebarView: View {
                     } label: {
                         BackupVersionRow(
                             version: version,
-                            isExporting: store.exportingChatID?.versionID == version.id
+                            isExporting: store.exportingChatID?.versionID == version.id,
+                            isLoading: store.isLoadingSourceChats && version.hasSourceBackup
                         ) {
                             versionPendingDeletion = version
                         }
@@ -208,6 +218,7 @@ struct ChatSidebarView: View {
 private struct BackupVersionRow: View {
     let version: LibraryVersionSession
     let isExporting: Bool
+    let isLoading: Bool
     let deleteSource: () -> Void
 
     var body: some View {
@@ -249,6 +260,9 @@ private struct BackupVersionRow: View {
     }
 
     private var detail: String {
+        if isLoading {
+            return "Leyendo conversaciones…"
+        }
         if version.hasSourceBackup {
             let size = ByteCountFormatter.string(
                 fromByteCount: version.backupByteCount,
@@ -376,6 +390,18 @@ private struct ChatSidebarRow: View {
                 .help("Exportar y añadir al listado del panel derecho")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+            }
+        case .updateAvailable:
+            if canExport {
+                actionButton(
+                    "Actualizar",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    action: export
+                )
+                .help("Añadir los mensajes de esta copia a la conversación guardada")
+            } else {
+                Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
         case .exported:

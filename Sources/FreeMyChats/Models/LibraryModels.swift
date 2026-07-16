@@ -5,6 +5,7 @@ struct LibraryPaths: Equatable {
     let rootURL: URL
     let sourcesURL: URL
     let exportsURL: URL
+    let conversationsURL: URL
     let manifestURL: URL
 
     init(rootURL: URL) {
@@ -12,6 +13,7 @@ struct LibraryPaths: Equatable {
         self.rootURL = root
         self.sourcesURL = root.appendingPathComponent("Sources", isDirectory: true)
         self.exportsURL = root.appendingPathComponent("Exports", isDirectory: true)
+        self.conversationsURL = root.appendingPathComponent("Conversations", isDirectory: true)
         self.manifestURL = root.appendingPathComponent("library.json")
     }
 
@@ -123,16 +125,126 @@ struct LibraryVersionRecord: Codable, Equatable, Identifiable {
     }()
 }
 
-struct VersionChatID: Hashable {
+struct VersionChatID: Codable, Hashable {
     let versionID: String
     let chatID: Int
 }
 
-struct ExportedChatListItem: Identifiable {
+struct ConversationArchiveID: Codable, Hashable, Identifiable {
+    let rawValue: String
+
+    var id: String { rawValue }
+
+    init(rawValue: String = UUID().uuidString.lowercased()) {
+        self.rawValue = rawValue
+    }
+}
+
+struct ConversationIdentityKey: Codable, Hashable {
+    let chatType: ChatInfo.ChatType
+    let contactJID: String
+
+    init(chat: ChatInfo) {
+        self.init(chatType: chat.chatType, contactJID: chat.contactJid)
+    }
+
+    init(chatType: ChatInfo.ChatType, contactJID: String) {
+        self.chatType = chatType
+        self.contactJID = contactJID
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+}
+
+struct ConversationContribution: Codable, Equatable, Identifiable {
+    let id: String
+    let source: VersionChatID
+    let exportedAt: Date
+
+    init(
+        id: String = UUID().uuidString.lowercased(),
+        source: VersionChatID,
+        exportedAt: Date
+    ) {
+        self.id = id
+        self.source = source
+        self.exportedAt = exportedAt
+    }
+}
+
+struct ConversationArchiveRecord: Codable, Identifiable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let id: ConversationArchiveID
+    let key: ConversationIdentityKey
+    let createdAt: Date
+    var updatedAt: Date
+    var contributions: [ConversationContribution]
+    var summary: ChatInfo?
+    var contactJIDAliases: [String]?
+
+    init(
+        id: ConversationArchiveID = ConversationArchiveID(),
+        key: ConversationIdentityKey,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        contributions: [ConversationContribution] = [],
+        summary: ChatInfo? = nil,
+        contactJIDAliases: [String]? = nil
+    ) {
+        self.schemaVersion = Self.currentSchemaVersion
+        self.id = id
+        self.key = key
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.contributions = contributions
+        self.summary = summary
+        self.contactJIDAliases = contactJIDAliases
+    }
+
+    var identityKeys: Set<ConversationIdentityKey> {
+        var keys = Set([key])
+        for alias in contactJIDAliases ?? [] {
+            keys.insert(ConversationIdentityKey(chatType: key.chatType, contactJID: alias))
+        }
+        return keys
+    }
+
+    func matches(_ identity: ResolvedConversationIdentity) -> Bool {
+        !identityKeys.isDisjoint(with: identity.keys)
+    }
+
+    mutating func register(_ identity: ResolvedConversationIdentity) {
+        var aliases = Set(contactJIDAliases ?? [])
+        aliases.formUnion(identity.keys.map(\.contactJID))
+        aliases.remove(key.contactJID)
+        contactJIDAliases = aliases.isEmpty ? nil : aliases.sorted()
+    }
+}
+
+struct ArchivedConversation {
+    let record: ConversationArchiveRecord
+    let document: ExportedChatDocument
+    let directoryURL: URL
+    let documentURL: URL
+    let mediaDirectoryURL: URL
+}
+
+struct SourceExportListItem {
     let id: VersionChatID
     let chat: ChatInfo
     let exportedAt: Date
     let versionTitle: String
+    let directoryURL: URL
+    let photoURL: URL?
+}
+
+struct ExportedChatListItem: Identifiable {
+    let id: ConversationArchiveID
+    let chat: ChatInfo
+    let exportedAt: Date
+    let contributionCount: Int
     let directoryURL: URL
     let photoURL: URL?
 }
@@ -243,6 +355,7 @@ enum ChatListSortOrder: String, CaseIterable, Identifiable {
 enum ChatExportDisplayState: Equatable {
     case checking
     case notExported
+    case updateAvailable(Date)
     case exported(Date)
     case stale(Date)
     case invalid(String)
@@ -263,7 +376,7 @@ enum ChatExportDisplayState: Equatable {
     var isPhysicallyExported: Bool {
         switch self {
         case .exported, .stale, .invalid: return true
-        case .checking, .notExported: return false
+        case .checking, .notExported, .updateAvailable: return false
         }
     }
 }
@@ -276,7 +389,7 @@ struct AppOperation: Equatable {
         case addingBackup
         case deletingBackup(String)
         case deletingOriginalIPhoneBackup
-        case deletingExportedChat(VersionChatID)
+        case deletingExportedChat(ConversationArchiveID)
         case loadingChats
         case exportingChat(VersionChatID)
     }

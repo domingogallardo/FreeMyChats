@@ -47,6 +47,7 @@ enum LibraryService {
 
         try fileManager.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: paths.conversationsURL, withIntermediateDirectories: true)
         try write(LibraryManifest(), to: paths.manifestURL)
         return try open(paths: paths)
     }
@@ -58,6 +59,32 @@ enum LibraryService {
         let paths = LibraryPaths.resolvingSelection(selectedURL)
         try migrateLegacyLibraryIfNeeded(at: paths)
         return try open(paths: paths, progress: progress)
+    }
+
+    static func openMetadata(selectedURL: URL) throws -> LibrarySession {
+        let paths = LibraryPaths.resolvingSelection(selectedURL)
+        try migrateLegacyLibraryIfNeeded(at: paths)
+        return try open(paths: paths, loadSourceChats: false)
+    }
+
+    static func loadSourceChats(
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
+    ) throws -> LibrarySession {
+        let versions = try session.versions.map { version in
+            guard version.hasSourceBackup else { return version }
+            return try openVersion(
+                version.record,
+                paths: session.paths,
+                progress: progress,
+                loadSourceChats: true
+            )
+        }
+        return LibrarySession(
+            paths: session.paths,
+            manifest: session.manifest,
+            versions: versions
+        )
     }
 
     static func addBackup(
@@ -237,8 +264,8 @@ enum LibraryService {
         return try open(paths: session.paths)
     }
 
-    static func exportCatalog(in session: LibrarySession) -> [ExportedChatListItem] {
-        var items: [ExportedChatListItem] = []
+    static func exportCatalog(in session: LibrarySession) -> [SourceExportListItem] {
+        var items: [SourceExportListItem] = []
         let fileManager = FileManager.default
 
         for version in session.versions {
@@ -254,7 +281,7 @@ enum LibraryService {
                     fileManager.fileExists(atPath: $0.path) ? $0 : nil
                 }
                 items.append(
-                    ExportedChatListItem(
+                    SourceExportListItem(
                         id: VersionChatID(versionID: version.id, chatID: chatID),
                         chat: chat,
                         exportedAt: exported.document.exportedAt,
@@ -276,7 +303,8 @@ enum LibraryService {
 
     private static func open(
         paths: LibraryPaths,
-        progress: WABackupProgressHandler? = nil
+        progress: WABackupProgressHandler? = nil,
+        loadSourceChats: Bool = true
     ) throws -> LibrarySession {
         guard FileManager.default.fileExists(atPath: paths.manifestURL.path) else {
             throw LibraryServiceError.invalidLibrary(paths.rootURL)
@@ -289,10 +317,19 @@ enum LibraryService {
 
         try FileManager.default.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: paths.conversationsURL,
+            withIntermediateDirectories: true
+        )
         manifest = try migrateUserFacingLayout(paths: paths, manifest: manifest)
 
         let versions = try manifest.versions.map { record in
-            try openVersion(record, paths: paths, progress: progress)
+            try openVersion(
+                record,
+                paths: paths,
+                progress: progress,
+                loadSourceChats: loadSourceChats
+            )
         }
         return LibrarySession(paths: paths, manifest: manifest, versions: versions)
     }
@@ -300,7 +337,8 @@ enum LibraryService {
     private static func openVersion(
         _ record: LibraryVersionRecord,
         paths: LibraryPaths,
-        progress: WABackupProgressHandler?
+        progress: WABackupProgressHandler?,
+        loadSourceChats: Bool
     ) throws -> LibraryVersionSession {
         let backupURL = paths.backupURL(for: record.id)
         let exportsURL = paths.exportURL(for: record)
@@ -319,10 +357,12 @@ enum LibraryService {
                 at: profilePhotosURL,
                 withIntermediateDirectories: true
             )
-            let chats = try reader.getChats(
-                directoryToSavePhotos: profilePhotosURL,
-                progress: progress
-            )
+            let chats = loadSourceChats
+                ? try reader.getChats(
+                    directoryToSavePhotos: profilePhotosURL,
+                    progress: progress
+                )
+                : []
             return LibraryVersionSession(
                 record: record,
                 backupURL: backupURL,

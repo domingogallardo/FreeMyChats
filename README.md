@@ -10,8 +10,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
 - Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
-- La columna derecha mantiene un listado independiente de chats exportados. Al pulsar uno abre su `chat.json` y los archivos de `Media`; una flecha permite volver al listado.
-- La selección y navegación del panel derecho no cambian al explorar chats o copias en el panel izquierdo.
+- La columna derecha contiene el catálogo de chats exportados y muestra una sola conversación guardada aunque se haya actualizado desde varias copias. Al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
+- La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
 
 ## Funciones del MVP
@@ -19,18 +19,22 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Descubrimiento e inspección de copias de iPhone en MobileSync o en otra carpeta.
 - Creación y reapertura de bibliotecas locales con múltiples versiones de una copia.
 - Incorporación y eliminación de copias desde el navegador lateral.
-- Catálogo de chats con tamaño multimedia en GB, filtros por grupo, persona o archivado,
+- Listado de los chats de cada copia con tamaño multimedia en GB, filtros por grupo, persona o archivado,
   y orden por fecha o por tamaño de mayor a menor.
 - Vista previa de número de mensajes y fechas antes de exportar.
 - Exportación explícita desde la fila desplegada del chat.
+- Actualización incremental: si el mismo chat ya se guardó desde una copia anterior,
+  `Actualizar` incorpora los mensajes nuevos sin crear un duplicado en el catálogo.
+- Identificación por JID y tipo de chat, deduplicación de mensajes coincidentes y
+  conservación de cada copia como aportación reconstruible.
 - Indicador de actividad mientras se exporta un chat.
 - Detección de exportaciones vigentes, desactualizadas o inválidas.
 - Visor de mensajes, autores, respuestas con vista previa, reacciones, ubicaciones
   y adjuntos, con reproductor integrado para los audios.
 - Navegación entre los mensajes de respuesta y sus originales, con resaltado
   temporal y retorno al punto de partida.
-- Búsqueda de texto dentro del chat exportado.
-- Acciones para abrir la biblioteca, la carpeta del chat y sus archivos en Finder, o borrar una exportación.
+- Búsqueda de texto dentro de la conversación guardada.
+- Acciones para abrir la biblioteca, la carpeta de la conversación y sus archivos en Finder, o borrarla junto con sus aportaciones.
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
 - Guía para conceder acceso total al disco y reanudar la inspección tras reiniciar la app.
 - Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
@@ -48,19 +52,26 @@ Mi biblioteca Free My Chats/
 │       │   └── …
 │       └── Catalog/
 │           └── ChatProfilePhotos/
-└── Exports/
-    └── Copia 2026-04-03 21.26/
-        └── Chats/
-            └── <chatId>/
-                ├── chat.json
-                └── Media/
+├── Exports/
+│   └── Copia 2026-04-03 21.26/
+│       └── Chats/
+│           └── <chatId>/
+│               ├── chat.json
+│               └── Media/
+└── Conversations/
+    └── <conversationId>/
+        ├── archive.json
+        ├── chat.json
+        └── Media/
 ```
 
-`Exports` permanece vacío hasta que el usuario exporta un chat. Los recursos
-auxiliares del navegador, como las fotos de perfil, se guardan junto a su copia
-fuente. Las bibliotecas anteriores se reorganizan automáticamente al abrirse:
-se conservan sus exportaciones y los UUID visibles se sustituyen por nombres de
-carpeta basados en la fecha de la copia.
+`Exports` conserva cada aportación ligada a la copia de la que procede.
+`Conversations` contiene la vista combinada que aparece una sola vez en el catálogo
+de chats exportados del panel derecho. Al abrir una biblioteca existente, sus
+exportaciones se agrupan por identidad de conversación sin modificar las copias
+fuente. Cuando el sistema de
+archivos lo permite, la multimedia combinada usa enlaces internos para no ocupar
+espacio adicional.
 
 ## Descargar el código fuente
 

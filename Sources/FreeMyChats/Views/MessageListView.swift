@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftWABackupAPI
 
 struct MessageListView: View {
-    let exported: ExportedChat
+    let exported: ArchivedConversation
     let searchText: String
     let initialMessageID: Int?
     let saveReadingPosition: (Int) -> Void
@@ -22,7 +22,7 @@ struct MessageListView: View {
     @State private var pendingTimelineShift: TimelineShiftRequest?
 
     init(
-        exported: ExportedChat,
+        exported: ArchivedConversation,
         searchText: String,
         initialMessageID: Int?,
         saveReadingPosition: @escaping (Int) -> Void

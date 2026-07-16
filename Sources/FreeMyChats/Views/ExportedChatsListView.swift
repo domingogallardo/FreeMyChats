@@ -11,7 +11,7 @@ struct ExportedChatsListView: View {
             Divider()
 
             if store.isLoadingExportCatalog, store.exportedChats.isEmpty {
-                ProgressView("Leyendo chats exportados…")
+                ProgressView("Leyendo conversaciones guardadas…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = store.exportPanelError, store.exportedChats.isEmpty {
                 UnavailableContentView(
@@ -21,7 +21,7 @@ struct ExportedChatsListView: View {
                 )
             } else if store.exportedChats.isEmpty {
                 UnavailableContentView(
-                    "Todavía no hay chats exportados",
+                    "Todavía no hay conversaciones guardadas",
                     systemImage: "tray",
                     description:
                         "Despliega un chat en el panel izquierdo y pulsa Exportar. "
@@ -31,7 +31,7 @@ struct ExportedChatsListView: View {
                 UnavailableContentView(
                     "No hay resultados",
                     systemImage: "magnifyingglass",
-                    description: "No se han encontrado chats exportados que coincidan con la búsqueda."
+                    description: "No se han encontrado conversaciones que coincidan con la búsqueda."
                 )
             } else {
                 List(filteredChats) { item in
@@ -51,7 +51,7 @@ struct ExportedChatsListView: View {
     private var header: some View {
         HStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Chats exportados")
+                Text("Conversaciones guardadas")
                     .font(.title2.bold())
                 Text(exportCountDescription)
                     .font(.caption)
@@ -92,7 +92,7 @@ struct ExportedChatsListView: View {
         if !normalizedSearchText.isEmpty {
             return count == 1 ? "1 resultado" : "\(count) resultados"
         }
-        return count == 1 ? "1 chat disponible" : "\(count) chats disponibles"
+        return count == 1 ? "1 conversación" : "\(count) conversaciones"
     }
 
     private var normalizedSearchText: String {
@@ -106,7 +106,6 @@ struct ExportedChatsListView: View {
         return store.exportedChats.filter { item in
             item.chat.name.localizedCaseInsensitiveContains(query)
                 || item.chat.contactJid.localizedCaseInsensitiveContains(query)
-                || item.versionTitle.localizedCaseInsensitiveContains(query)
         }
     }
 }
@@ -133,7 +132,7 @@ private struct ExportedChatRow: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 Text(Self.exportDateFormatter.string(from: item.exportedAt))
-                Text(item.versionTitle)
+                Text("Actualizada")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -148,7 +147,10 @@ private struct ExportedChatRow: View {
 
     private var detail: String {
         let type = item.chat.chatType == .group ? "Grupo" : "Conversación"
-        return "\(type) · \(item.chat.numberMessages.formatted()) mensajes"
+        let sources = item.contributionCount == 1
+            ? "1 copia"
+            : "\(item.contributionCount) copias"
+        return "\(type) · \(item.chat.numberMessages.formatted()) mensajes · \(sources)"
     }
 
     private static let exportDateFormatter: DateFormatter = {

@@ -6,10 +6,11 @@ Diseño de una funcionalidad futura. No está implementada.
 
 ## Objetivo
 
-Permitir que una persona incorpore a una conversación exportada en FreeMyChats los
-mensajes presentes en otra exportación FreeMyChats de la misma conversación. Debe
-funcionar tanto con grupos como con conversaciones individuales, conservar la
-multimedia y permitir deshacer posteriormente cada importación.
+Permitir que una persona incorpore a una conversación del catálogo de chats
+exportados de FreeMyChats los mensajes presentes en otra exportación de la misma
+conversación. Debe funcionar tanto con grupos como con conversaciones
+individuales, conservar la multimedia y permitir deshacer posteriormente cada
+importación.
 
 La fusión afecta únicamente a la biblioteca local de FreeMyChats. No modifica una
 copia de iPhone ni intenta reinsertar mensajes en WhatsApp.
@@ -32,7 +33,7 @@ copia de iPhone ni intenta reinsertar mensajes en WhatsApp.
 
 ### Crear un archivo para compartir
 
-En el menú de una conversación exportada aparecerá:
+En el menú de una conversación del catálogo aparecerá:
 
 > Crear archivo para compartir…
 
@@ -439,7 +440,8 @@ FreeMyChats no debe implementar un segundo motor de fusión manipulando JSON.
   y `removingImport` a `FreeMyChatsStore`.
 - Incorporar un servicio delgado para elegir destinos y archivos mediante paneles
   de macOS.
-- Refrescar catálogo, exportación abierta y posición de lectura tras materializar.
+- Refrescar el catálogo de chats exportados, la conversación abierta y la posición
+  de lectura tras materializar.
 - Persistir el propietario canónico de la biblioteca o versión cuando sea
   necesario para recalcular `isFromMe`.
 
