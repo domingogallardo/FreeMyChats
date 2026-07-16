@@ -233,6 +233,69 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(catalog.first?.contributionCount, 1)
     }
 
+    func testRemovingContributionSucceedsWhenMaterializedArchiveIsDamaged() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 1,
+                            text: "Audio antiguo",
+                            date: "2026-01-01T10:00:00Z",
+                            mediaFilename: "old.opus",
+                            mediaData: Data("old-audio".utf8)
+                        )
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 2,
+                            text: "Audio nuevo",
+                            date: "2026-02-01T10:00:00Z",
+                            mediaFilename: "new.opus",
+                            mediaData: Data("new-audio".utf8)
+                        )
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let item = try XCTUnwrap(
+            ConversationArchiveService.synchronize(in: fixture.session).first
+        )
+        let archived = try ConversationArchiveService.open(
+            id: item.id,
+            paths: fixture.session.paths
+        )
+        let missingFilename = try XCTUnwrap(archived.document.messages.first?.mediaFilename)
+        try FileManager.default.removeItem(
+            at: archived.mediaDirectoryURL.appendingPathComponent(missingFilename)
+        )
+
+        let removal = try ConversationArchiveService.removeContribution(
+            source: VersionChatID(versionID: "old", chatID: 7),
+            from: fixture.session
+        )
+        let conversation = try XCTUnwrap(removal.conversation)
+
+        XCTAssertEqual(conversation.document.messages.map(\.message), ["Audio nuevo"])
+        XCTAssertEqual(conversation.record.contributions.count, 1)
+        XCTAssertNil(removal.session.version(id: "old"))
+        XCTAssertNotNil(removal.session.version(id: "new"))
+    }
+
     func testRemovingNewerContributionRestoresTheOlderConversation() throws {
         let fixture = try makeLibrary(
             exports: [
@@ -500,9 +563,87 @@ final class ConversationArchiveServiceTests: XCTestCase {
         let contents = try Set(filenames.map {
             try Data(contentsOf: archived.mediaDirectoryURL.appendingPathComponent($0))
         })
+        let oldMaterializedFilename = try XCTUnwrap(filenames.first {
+            (try? Data(contentsOf: archived.mediaDirectoryURL.appendingPathComponent($0)))
+                == Data("old-photo".utf8)
+        })
+        let oldSourceURL = try XCTUnwrap(fixture.session.version(id: "old"))
+            .exportsURL
+            .appendingPathComponent("Chats/3/Media/photo.jpg")
+        let sourceFileNumber = try FileManager.default.attributesOfItem(
+            atPath: oldSourceURL.path
+        )[.systemFileNumber] as? NSNumber
+        let materializedFileNumber = try FileManager.default.attributesOfItem(
+            atPath: archived.mediaDirectoryURL.appendingPathComponent(oldMaterializedFilename).path
+        )[.systemFileNumber] as? NSNumber
 
         XCTAssertEqual(Set(filenames).count, 2)
         XCTAssertEqual(contents, [Data("old-photo".utf8), Data("new-photo".utf8)])
+        XCTAssertNotEqual(sourceFileNumber, materializedFileNumber)
+    }
+
+    func testOpenRepairingRebuildsMissingMediaFromContributions() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 3,
+                    jid: "media@g.us",
+                    name: "Media",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 1,
+                            text: "Audio",
+                            date: "2026-01-01T10:00:00Z",
+                            mediaFilename: "voice.opus",
+                            mediaData: Data("audio".utf8)
+                        )
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 4,
+                    jid: "media@g.us",
+                    name: "Media",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 80,
+                            text: "Audio",
+                            date: "2026-01-01T10:00:00Z",
+                            mediaFilename: "voice.opus",
+                            mediaData: Data("audio".utf8)
+                        )
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let item = try XCTUnwrap(
+            ConversationArchiveService.synchronize(in: fixture.session).first
+        )
+        let archived = try ConversationArchiveService.open(
+            id: item.id,
+            paths: fixture.session.paths
+        )
+        let missingFilename = try XCTUnwrap(archived.document.messages.first?.mediaFilename)
+        let missingURL = archived.mediaDirectoryURL.appendingPathComponent(missingFilename)
+        try FileManager.default.removeItem(at: missingURL)
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.open(id: item.id, paths: fixture.session.paths)
+        )
+
+        let repaired = try ConversationArchiveService.openRepairing(
+            id: item.id,
+            in: fixture.session
+        )
+
+        XCTAssertEqual(repaired.document.messages.map(\.message), ["Audio"])
+        XCTAssertEqual(repaired.record.contributions.count, 2)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: missingURL.path))
     }
 
     private func makeLibrary(exports: [ExportFixture]) throws -> LibraryFixture {

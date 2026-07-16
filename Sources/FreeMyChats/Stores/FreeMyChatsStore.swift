@@ -313,7 +313,7 @@ final class FreeMyChatsStore: ObservableObject {
 
         workQueue.async { [weak self] in
             let result = Result {
-                try ConversationArchiveService.open(id: selection, paths: session.paths)
+                try ConversationArchiveService.openRepairing(id: selection, in: session)
             }
             DispatchQueue.main.async {
                 guard let self,

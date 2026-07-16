@@ -209,6 +209,22 @@ enum ConversationArchiveService {
         }
     }
 
+    static func openRepairing(
+        id: ConversationArchiveID,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        do {
+            return try open(id: id, paths: session.paths)
+        } catch let error as ConversationArchiveError {
+            guard case .invalidArchive = error,
+                  let record = try loadRecords(paths: session.paths).first(where: { $0.id == id })
+            else {
+                throw error
+            }
+            return try install(record: record, in: session)
+        }
+    }
+
     static func removeContribution(
         source: VersionChatID,
         from session: LibrarySession
@@ -220,7 +236,7 @@ enum ConversationArchiveService {
             throw ConversationArchiveError.contributionNotFound(source)
         }
 
-        let archived = try open(id: record.id, paths: session.paths)
+        let archiveDirectoryURL = archiveURL(id: record.id, paths: session.paths)
         record.contributions.removeAll { $0.source == source }
         record.updatedAt = Date()
 
@@ -235,7 +251,7 @@ enum ConversationArchiveService {
         )
         try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
         do {
-            try fileManager.moveItem(at: archived.directoryURL, to: stagedArchiveURL)
+            try fileManager.moveItem(at: archiveDirectoryURL, to: stagedArchiveURL)
         } catch {
             try? fileManager.removeItem(at: stagingURL)
             throw error
@@ -258,7 +274,7 @@ enum ConversationArchiveService {
                 try? fileManager.removeItem(at: replacementURL)
             }
             if fileManager.fileExists(atPath: stagedArchiveURL.path) {
-                try? fileManager.moveItem(at: stagedArchiveURL, to: archived.directoryURL)
+                try? fileManager.moveItem(at: stagedArchiveURL, to: archiveDirectoryURL)
             }
             try? fileManager.removeItem(at: stagingURL)
             throw error
@@ -452,12 +468,23 @@ enum ConversationArchiveService {
 
         let finalURL = archiveURL(id: record.id, paths: session.paths)
         if fileManager.fileExists(atPath: finalURL.path) {
-            _ = try fileManager.replaceItemAt(
-                finalURL,
-                withItemAt: temporaryURL,
-                backupItemName: nil,
-                options: []
+            let previousURL = session.paths.conversationsURL.appendingPathComponent(
+                ".replacing-\(record.id.rawValue)-\(UUID().uuidString)",
+                isDirectory: true
             )
+            try fileManager.moveItem(at: finalURL, to: previousURL)
+            do {
+                try fileManager.moveItem(at: temporaryURL, to: finalURL)
+                try fileManager.removeItem(at: previousURL)
+            } catch {
+                if fileManager.fileExists(atPath: finalURL.path) {
+                    try? fileManager.removeItem(at: finalURL)
+                }
+                if fileManager.fileExists(atPath: previousURL.path) {
+                    try? fileManager.moveItem(at: previousURL, to: finalURL)
+                }
+                throw error
+            }
         } else {
             try fileManager.moveItem(at: temporaryURL, to: finalURL)
         }
@@ -882,11 +909,7 @@ private final class MediaMaterializer {
         let safeName = URL(fileURLWithPath: filename).lastPathComponent
         let destinationName = "\(hash.prefix(12))-\(safeName)"
         let destinationFileURL = destinationURL.appendingPathComponent(destinationName)
-        do {
-            try FileManager.default.linkItem(at: sourceURL, to: destinationFileURL)
-        } catch {
-            try FileManager.default.copyItem(at: sourceURL, to: destinationFileURL)
-        }
+        try FileManager.default.copyItem(at: sourceURL, to: destinationFileURL)
         let byteCount = Int64(
             (try? destinationFileURL.resourceValues(
                 forKeys: [URLResourceKey.fileSizeKey]
@@ -917,11 +940,7 @@ private final class MediaMaterializer {
         }
         let sourceURL = contribution.exported.mediaDirectoryURL.appendingPathComponent(filename)
         let destinationFileURL = destinationURL.appendingPathComponent(safeName)
-        do {
-            try FileManager.default.linkItem(at: sourceURL, to: destinationFileURL)
-        } catch {
-            try FileManager.default.copyItem(at: sourceURL, to: destinationFileURL)
-        }
+        try FileManager.default.copyItem(at: sourceURL, to: destinationFileURL)
         let byteCount = Int64(
             (try? destinationFileURL.resourceValues(
                 forKeys: [URLResourceKey.fileSizeKey]

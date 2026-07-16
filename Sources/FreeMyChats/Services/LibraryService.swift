@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import SwiftWABackupAPI
 
 enum LibraryServiceError: Error, LocalizedError {
@@ -391,22 +392,25 @@ enum LibraryService {
 
     private static func exportedChatIDs(at exportsURL: URL) -> [Int] {
         let chatsURL = exportsURL.appendingPathComponent("Chats", isDirectory: true)
-        let fileManager = FileManager.default
-        guard let entries = try? fileManager.contentsOfDirectory(
-            at: chatsURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: []
-        ) else { return [] }
+        guard let directory = opendir(chatsURL.path) else { return [] }
+        defer { closedir(directory) }
 
-        return entries.compactMap { entry in
-            guard let chatID = Int(entry.lastPathComponent),
-                  entry.lastPathComponent == String(chatID) else { return nil }
-            var visibleEntry = entry
+        var ids: [Int] = []
+        while let entryPointer = readdir(directory) {
+            var entry = entryPointer.pointee
+            let name = withUnsafePointer(to: &entry.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.d_namlen) + 1) {
+                    String(cString: $0)
+                }
+            }
+            guard let chatID = Int(name), name == String(chatID) else { continue }
+            var visibleEntry = chatsURL.appendingPathComponent(name, isDirectory: true)
             var resourceValues = URLResourceValues()
             resourceValues.isHidden = false
             try? visibleEntry.setResourceValues(resourceValues)
-            return chatID
-        }.sorted()
+            ids.append(chatID)
+        }
+        return ids.sorted()
     }
 
     private static func restoreDeletedVersion(
@@ -538,16 +542,20 @@ enum LibraryService {
 
             let legacyExportsURL = paths.legacyExportURL(for: record.id)
             let readableExportsURL = paths.exportURL(for: migratedRecord)
+            var migratedExportContents = false
             if legacyExportsURL.standardizedFileURL != readableExportsURL.standardizedFileURL,
                FileManager.default.fileExists(atPath: legacyExportsURL.path) {
                 try mergeDirectory(at: legacyExportsURL, into: readableExportsURL)
+                migratedExportContents = true
             }
 
-            try moveProfilePhotoCatalog(
+            migratedExportContents = try moveProfilePhotoCatalog(
                 from: readableExportsURL,
                 to: paths.profilePhotosURL(for: record.id)
-            )
-            try removeDirectoryIfEffectivelyEmpty(readableExportsURL)
+            ) || migratedExportContents
+            if migratedExportContents {
+                try removeDirectoryIfEffectivelyEmpty(readableExportsURL)
+            }
             migratedVersions.append(migratedRecord)
         }
 
@@ -561,13 +569,14 @@ enum LibraryService {
     private static func moveProfilePhotoCatalog(
         from exportsURL: URL,
         to catalogURL: URL
-    ) throws {
+    ) throws -> Bool {
         let oldCatalogURL = exportsURL.appendingPathComponent(
             "ChatProfilePhotos",
             isDirectory: true
         )
-        guard FileManager.default.fileExists(atPath: oldCatalogURL.path) else { return }
+        guard FileManager.default.fileExists(atPath: oldCatalogURL.path) else { return false }
         try mergeDirectory(at: oldCatalogURL, into: catalogURL)
+        return true
     }
 
     private static func mergeDirectory(at sourceURL: URL, into destinationURL: URL) throws {
