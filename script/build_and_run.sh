@@ -44,6 +44,12 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+# Sign the completed bundle so macOS binds the CFBundleIdentifier from
+# Info.plist and privacy permissions can target this exact generated app.
+# Because this is an ad-hoc development signature, rebuilding a changed binary
+# may still require granting Full Disk Access again.
+/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
+
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
