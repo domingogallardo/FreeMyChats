@@ -11,7 +11,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
 - Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
 - Cada exportación de la columna izquierda se puede abrir en Finder o borrar de forma independiente.
-- La columna derecha contiene el catálogo de chats exportados y muestra una sola conversación guardada aunque se haya actualizado desde varias copias. Al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
+- La columna derecha contiene el catálogo de conversaciones y muestra una sola vista unificada aunque proceda de varias exportaciones. Al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
 
@@ -25,7 +25,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Vista previa de número de mensajes y fechas antes de exportar.
 - Exportación explícita desde la fila desplegada del chat.
 - Actualización incremental: si el mismo chat ya se guardó desde una copia anterior,
-  `Actualizar` incorpora los mensajes nuevos sin crear un duplicado en el catálogo.
+  `Añadir a conversación` incorpora la nueva exportación sin crear un duplicado en el catálogo.
 - Identificación por JID y tipo de chat, deduplicación de mensajes coincidentes y
   conservación de cada copia como aportación reconstruible.
 - Indicador de actividad mientras se exporta un chat.
@@ -36,7 +36,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
   temporal y retorno al punto de partida.
 - Búsqueda de texto dentro de la conversación guardada.
 - Acciones para abrir la biblioteca, cada exportación y la carpeta de la conversación combinada en Finder.
-- Borrado por exportación desde la columna izquierda: el catálogo reconstruye la conversación con las copias restantes y la retira si ya no queda ninguna.
+- Borrado por exportación desde la columna izquierda: el catálogo reconstruye la conversación con las exportaciones restantes y la retira si ya no queda ninguna.
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
 - Guía para conceder acceso total al disco y volver a intentar la inspección cuando sea necesario.
 - Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
@@ -68,7 +68,7 @@ Mi biblioteca Free My Chats/
 ```
 
 `Exports` conserva cada aportación ligada a la copia de la que procede.
-`Conversations` contiene la vista combinada que aparece una sola vez en el catálogo
+`Conversations` contiene la vista unificada que aparece una sola vez en el catálogo
 de chats exportados del panel derecho. Al abrir una biblioteca existente, sus
 exportaciones se agrupan por identidad de conversación sin modificar las copias
 fuente. Cuando el sistema de
@@ -144,7 +144,7 @@ Si vuelves a compilar una versión nueva, sustituye la copia de `Aplicaciones` p
 
 ### 6. Conceder acceso a las copias del iPhone
 
-Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, añade o activa la copia de **Free My Chats** que has trasladado a `Aplicaciones` y reinicia la aplicación. La app volverá a comprobar el acceso al arrancar. Si sustituyes la aplicación después de recompilar, macOS puede pedir que retires la entrada anterior y vuelvas a añadir la copia nueva.
+Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, añade o activa la copia de **Free My Chats** que has trasladado a `Aplicaciones` y reinicia la aplicación. Si la biblioteca está vacía, la comprobación continuará al arrancar; si ya contiene copias, pulsa `Añadir copia` para volver a intentarlo. Si sustituyes la aplicación después de recompilar, macOS puede pedir que retires la entrada anterior y vuelvas a añadir la copia nueva.
 
 ### Alternativa para personas familiarizadas con Git
 

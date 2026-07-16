@@ -133,7 +133,7 @@ struct ChatSidebarView: View {
                 Text(
                     "Se borrarán los mensajes y archivos de “\(request.chatName)” exportados "
                     + "desde la copia \(request.versionTitle). La conversación del catálogo se "
-                    + "reconstruirá con las demás copias; si esta es la última, desaparecerá."
+                    + "reconstruirá con las demás exportaciones; si esta es la última, desaparecerá."
                 )
             }
         }
@@ -448,7 +448,7 @@ private struct ChatSidebarRow: View {
         case .notExported:
             if canExport {
                 actionButton("Exportar", systemImage: "arrow.right", action: export)
-                .help("Exportar y añadir al listado del panel derecho")
+                .help("Exportar y crear una conversación en el catálogo")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
@@ -456,11 +456,11 @@ private struct ChatSidebarRow: View {
         case .updateAvailable:
             if canExport {
                 actionButton(
-                    "Actualizar",
-                    systemImage: "arrow.triangle.2.circlepath",
+                    "Añadir a conversación",
+                    systemImage: "plus",
                     action: export
                 )
-                .help("Añadir los mensajes de esta copia a la conversación guardada")
+                .help("Exportar este chat y añadirlo a la conversación del catálogo")
             } else {
                 Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
@@ -470,16 +470,24 @@ private struct ChatSidebarRow: View {
                 .foregroundStyle(.secondary)
         case .stale:
             if canExport {
-                actionButton("Actualizar", systemImage: "arrow.right", action: replaceExport)
-                    .help("Actualizar el chat del panel derecho")
+                actionButton(
+                    "Volver a exportar",
+                    systemImage: "arrow.clockwise",
+                    action: replaceExport
+                )
+                .help("Recrear esta exportación y actualizar la vista unificada")
             } else {
                 Label("Exportado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
         case .invalid:
             if canExport {
-                actionButton("Volver a exportar", systemImage: "arrow.right", action: replaceExport)
-                    .help("Reemplazar la exportación no válida del panel derecho")
+                actionButton(
+                    "Volver a exportar",
+                    systemImage: "arrow.clockwise",
+                    action: replaceExport
+                )
+                .help("Reemplazar la exportación no válida y actualizar la vista unificada")
             } else {
                 Label("Exportación no válida", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)

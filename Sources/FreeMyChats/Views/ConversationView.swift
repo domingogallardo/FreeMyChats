@@ -28,14 +28,14 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ExportBackHeader(title: "Abriendo chat", action: store.showExportList)
             Divider()
-            ProgressView("Abriendo la conversación guardada…")
+            ProgressView("Abriendo la vista unificada…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private func exportErrorView(_ reason: String) -> some View {
         VStack(spacing: 0) {
-            ExportBackHeader(title: "Conversación guardada", action: store.showExportList)
+            ExportBackHeader(title: "Vista unificada", action: store.showExportList)
             Divider()
             UnavailableContentView(
                 "La exportación no es válida",
@@ -94,10 +94,10 @@ private struct ExportBackHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: action) {
-                Label("Volver a conversaciones guardadas", systemImage: "chevron.left")
+                Label("Volver al catálogo de conversaciones", systemImage: "chevron.left")
             }
             .labelStyle(.iconOnly)
-            .help("Volver a conversaciones guardadas")
+            .help("Volver al catálogo de conversaciones")
 
             Text(title)
                 .font(.title2.bold())
@@ -119,10 +119,10 @@ private struct ConversationHeaderView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Button(action: goBack) {
-                    Label("Volver a conversaciones guardadas", systemImage: "chevron.left")
+                    Label("Volver al catálogo de conversaciones", systemImage: "chevron.left")
                 }
                 .labelStyle(.iconOnly)
-                .help("Volver a conversaciones guardadas")
+                .help("Volver al catálogo de conversaciones")
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(exported.document.chat.name)
@@ -180,8 +180,8 @@ private struct ConversationHeaderView: View {
         let type = chat.chatType == .group ? "Grupo" : "Conversación individual"
         let date = Self.dateFormatter.string(from: exported.record.updatedAt)
         let count = exported.record.contributions.count
-        let sources = count == 1 ? "1 copia" : "\(count) copias"
-        return "Conversación guardada · \(type) · \(chat.numberMessages.formatted()) mensajes · \(sources) · \(date)"
+        let exports = count == 1 ? "1 exportación" : "\(count) exportaciones"
+        return "Vista unificada · \(type) · \(chat.numberMessages.formatted()) mensajes · \(exports) · \(date)"
     }
 
     private static let dateFormatter: DateFormatter = {

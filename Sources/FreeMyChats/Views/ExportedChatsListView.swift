@@ -11,7 +11,7 @@ struct ExportedChatsListView: View {
             Divider()
 
             if store.isLoadingExportCatalog, store.exportedChats.isEmpty {
-                ProgressView("Leyendo conversaciones guardadas…")
+                ProgressView("Leyendo el catálogo de conversaciones…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = store.exportPanelError, store.exportedChats.isEmpty {
                 UnavailableContentView(
@@ -21,11 +21,11 @@ struct ExportedChatsListView: View {
                 )
             } else if store.exportedChats.isEmpty {
                 UnavailableContentView(
-                    "Todavía no hay conversaciones guardadas",
+                    "Todavía no hay conversaciones en el catálogo",
                     systemImage: "tray",
                     description:
                         "Despliega un chat en el panel izquierdo y pulsa Exportar. "
-                        + "Aparecerá aquí sin cambiar automáticamente esta pantalla."
+                        + "Aparecerá aquí como una vista unificada de sus exportaciones."
                 )
             } else if filteredChats.isEmpty {
                 UnavailableContentView(
@@ -51,7 +51,7 @@ struct ExportedChatsListView: View {
     private var header: some View {
         HStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Conversaciones guardadas")
+                Text("Catálogo de conversaciones")
                     .font(.title2.bold())
                 Text(exportCountDescription)
                     .font(.caption)
@@ -147,10 +147,10 @@ private struct ExportedChatRow: View {
 
     private var detail: String {
         let type = item.chat.chatType == .group ? "Grupo" : "Conversación"
-        let sources = item.contributionCount == 1
-            ? "1 copia"
-            : "\(item.contributionCount) copias"
-        return "\(type) · \(item.chat.numberMessages.formatted()) mensajes · \(sources)"
+        let exports = item.contributionCount == 1
+            ? "1 exportación"
+            : "\(item.contributionCount) exportaciones"
+        return "\(type) · \(item.chat.numberMessages.formatted()) mensajes · \(exports)"
     }
 
     private static let exportDateFormatter: DateFormatter = {

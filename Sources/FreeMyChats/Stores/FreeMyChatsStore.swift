@@ -367,7 +367,7 @@ final class FreeMyChatsStore: ObservableObject {
         let operationID = beginOperation(
             kind: .deletingExportedContribution(selection),
             title: "Borrando la exportación de “\(chatName)”…",
-            detail: "Reconstruyendo la conversación con las demás copias."
+            detail: "Reconstruyendo la conversación con las demás exportaciones."
         )
 
         workQueue.async { [weak self] in
@@ -403,8 +403,8 @@ final class FreeMyChatsStore: ObservableObject {
 
                     if let conversation = removal.conversation {
                         let count = conversation.record.contributions.count
-                        let copies = count == 1 ? "1 copia" : "\(count) copias"
-                        self.informationMessage = "Se ha borrado la exportación de “\(chatName)”. La conversación conserva \(copies)."
+                        let exports = count == 1 ? "1 exportación" : "\(count) exportaciones"
+                        self.informationMessage = "Se ha borrado la exportación de “\(chatName)”. La conversación conserva \(exports)."
                     } else {
                         self.informationMessage = "Se ha borrado la última exportación de “\(chatName)” y la conversación ha salido del catálogo."
                     }
@@ -486,12 +486,23 @@ final class FreeMyChatsStore: ObservableObject {
                 paths: session.paths
             )
         } ?? false
+        let operationTitle: String
+        let operationDetail: String
+        switch exportStates[selection] {
+        case .updateAvailable:
+            operationTitle = "Añadiendo “\(chatName)” a la conversación…"
+            operationDetail = "Exportando este chat e incorporándolo a la vista unificada."
+        case .stale, .invalid:
+            operationTitle = "Volviendo a exportar “\(chatName)”…"
+            operationDetail = "Recreando la exportación y actualizando la vista unificada."
+        default:
+            operationTitle = "Exportando “\(chatName)”…"
+            operationDetail = "Creando una conversación independiente con sus mensajes y archivos."
+        }
         let operationID = beginOperation(
             kind: .exportingChat(selection),
-            title: isUpdating ? "Actualizando “\(chatName)”…" : "Exportando “\(chatName)”…",
-            detail: isUpdating
-                ? "Añadiendo los mensajes nuevos a la conversación guardada."
-                : "Creando una conversación independiente con sus mensajes y archivos."
+            title: operationTitle,
+            detail: operationDetail
         )
 
         workQueue.async { [weak self] in
@@ -503,9 +514,7 @@ final class FreeMyChatsStore: ObservableObject {
                     self?.publish(
                         progress,
                         operationID: operationID,
-                        fallbackTitle: isUpdating
-                            ? "Actualizando “\(chatName)”…"
-                            : "Exportando “\(chatName)”…"
+                        fallbackTitle: operationTitle
                     )
                 }
                 let update = try ConversationArchiveService.incorporate(
