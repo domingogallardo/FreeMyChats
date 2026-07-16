@@ -106,7 +106,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.3.3
+cd ~/Documents/FreeMyChats-1.3.4
 ```
 
 ### 4. Compilar y abrir la aplicación
@@ -118,6 +118,8 @@ Ejecuta:
 ```
 
 La primera compilación puede tardar unos minutos porque Swift Package Manager descarga SwiftWABackupAPI y sus dependencias. Al terminar, el script crea `dist/FreeMyChats.app` y abre la aplicación automáticamente.
+
+La primera vez, crea una biblioteca donde guardar los chats extraídos. Si la biblioteca está vacía, Free My Chats abrirá automáticamente la pantalla para localizar y analizar las copias del iPhone.
 
 Puedes ejecutar esa copia directamente para comprobar que funciona o repetir el comando anterior cuando necesites volver a compilar.
 

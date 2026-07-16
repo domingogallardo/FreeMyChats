@@ -52,6 +52,13 @@ final class FreeMyChatsStore: ObservableObject {
         session?.versions ?? []
     }
 
+    nonisolated static func shouldPresentBackupImporter(
+        for session: LibrarySession,
+        resumeAfterPermission: Bool
+    ) -> Bool {
+        session.versions.isEmpty || resumeAfterPermission
+    }
+
     var selectedVersion: LibraryVersionSession? {
         guard let selectedChatID else { return nil }
         return session?.version(id: selectedChatID.versionID)
@@ -538,7 +545,13 @@ final class FreeMyChatsStore: ObservableObject {
         if let selectedChatID {
             selectChat(selectedChatID)
         }
-        if UserDefaults.standard.bool(forKey: DefaultsKey.resumeBackupImportAfterPermission) {
+        let resumeAfterPermission = UserDefaults.standard.bool(
+            forKey: DefaultsKey.resumeBackupImportAfterPermission
+        )
+        if Self.shouldPresentBackupImporter(
+            for: newSession,
+            resumeAfterPermission: resumeAfterPermission
+        ) {
             isShowingBackupImporter = true
             inspectBackups()
         }

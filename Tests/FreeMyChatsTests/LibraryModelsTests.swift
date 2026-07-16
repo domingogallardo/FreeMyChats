@@ -91,6 +91,60 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(session.versions.isEmpty)
     }
 
+    func testEmptyLibraryPresentsInitialBackupImporter() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let emptySession = try LibraryService.create(at: root)
+
+        XCTAssertTrue(
+            FreeMyChatsStore.shouldPresentBackupImporter(
+                for: emptySession,
+                resumeAfterPermission: false
+            )
+        )
+    }
+
+    func testPopulatedLibraryDoesNotPresentInitialBackupImporter() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let paths = LibraryPaths(rootURL: root)
+        let record = LibraryVersionRecord(
+            id: "july",
+            sourceBackupIdentifier: "iphone-id",
+            sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
+            importedAt: Date(timeIntervalSince1970: 1_720_000_100)
+        )
+        let version = LibraryVersionSession(
+            record: record,
+            backupURL: paths.backupURL(for: record.id),
+            exportsURL: paths.exportURL(for: record),
+            backup: nil,
+            reader: nil,
+            chats: [],
+            backupByteCount: 0
+        )
+        let populatedSession = LibrarySession(
+            paths: paths,
+            manifest: LibraryManifest(versions: [record]),
+            versions: [version]
+        )
+
+        XCTAssertFalse(
+            FreeMyChatsStore.shouldPresentBackupImporter(
+                for: populatedSession,
+                resumeAfterPermission: false
+            )
+        )
+        XCTAssertTrue(
+            FreeMyChatsStore.shouldPresentBackupImporter(
+                for: populatedSession,
+                resumeAfterPermission: true
+            )
+        )
+    }
+
     func testLibraryOpensExportsAfterSourceBackupWasDeleted() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
