@@ -447,7 +447,7 @@ private struct ChatSidebarRow: View {
             }
         case .notExported:
             if canExport {
-                actionButton("Exportar", systemImage: "arrow.right", action: export)
+                actionButton("Exportar", action: export)
                 .help("Exportar y crear una conversación en el catálogo")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
@@ -497,15 +497,17 @@ private struct ChatSidebarRow: View {
 
     private func actionButton(
         _ title: String,
-        systemImage: String,
+        systemImage: String? = nil,
         tint: Color = Color.accentColor,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Text(title)
-                Image(systemName: systemImage)
-                    .font(.caption2.weight(.semibold))
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption2.weight(.semibold))
+                }
             }
             .font(.caption.weight(.semibold))
             .foregroundStyle(tint)
