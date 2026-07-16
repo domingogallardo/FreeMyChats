@@ -620,14 +620,39 @@ enum ConversationArchiveService {
             messageType: message.messageType,
             message: message.message,
             caption: message.caption,
-            authorJID: message.author?.jid?.lowercased(),
-            authorPhone: message.author?.phone,
+            authorIdentity: authorFingerprintIdentity(message.author),
             mediaHash: mediaHash,
             seconds: message.seconds,
             latitude: message.latitude,
             longitude: message.longitude
         )
-        return sha256Hex(try JSONEncoder().encode(payload))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return sha256Hex(try encoder.encode(payload))
+    }
+
+    private static func authorFingerprintIdentity(_ author: MessageAuthor?) -> String? {
+        guard let author else { return nil }
+
+        if let phone = normalizedPhone(author.phone) {
+            return "phone:\(phone)"
+        }
+
+        guard let jid = author.jid?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+              !jid.isEmpty else { return nil }
+        if jid.hasSuffix("@s.whatsapp.net"),
+           let phone = normalizedPhone(String(jid.prefix { $0 != "@" })) {
+            return "phone:\(phone)"
+        }
+        return "jid:\(jid)"
+    }
+
+    private static func normalizedPhone(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let digits = value.filter(\.isNumber)
+        return digits.isEmpty ? nil : digits
     }
 
     private static func transformedMessage(
@@ -813,8 +838,7 @@ private struct MessageFingerprint: Encodable {
     let messageType: String
     let message: String?
     let caption: String?
-    let authorJID: String?
-    let authorPhone: String?
+    let authorIdentity: String?
     let mediaHash: String?
     let seconds: Int?
     let latitude: Double?

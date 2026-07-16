@@ -126,6 +126,67 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(archived.record.contributions.count, 2)
     }
 
+    func testAuthorLIDChangeDoesNotDuplicateMessages() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 1,
+                            text: "Mensaje compartido",
+                            date: "2026-01-01T10:00:00Z",
+                            authorJID: "34600111222@s.whatsapp.net",
+                            authorPhone: "34600111222"
+                        )
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 99,
+                            text: "Mensaje compartido",
+                            date: "2026-01-01T10:00:00Z",
+                            authorJID: "90099974987905@lid",
+                            authorPhone: "34600111222"
+                        ),
+                        MessageFixture(
+                            id: 100,
+                            text: "Mensaje nuevo",
+                            date: "2026-02-01T10:00:00Z",
+                            authorJID: "90099974987905@lid",
+                            authorPhone: "34600111222"
+                        )
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let item = try XCTUnwrap(
+            ConversationArchiveService.synchronize(in: fixture.session).first
+        )
+        let archived = try ConversationArchiveService.open(
+            id: item.id,
+            paths: fixture.session.paths
+        )
+
+        XCTAssertEqual(archived.document.messages.map(\.message), [
+            "Mensaje compartido",
+            "Mensaje nuevo"
+        ])
+        XCTAssertEqual(archived.record.contributions.count, 2)
+    }
+
     func testRemovingOlderContributionKeepsTheNewerCompleteConversation() throws {
         let fixture = try makeLibrary(
             exports: [
@@ -497,6 +558,15 @@ final class ConversationArchiveServiceTests: XCTestCase {
             if let mediaFilename = message.mediaFilename {
                 object["mediaFilename"] = mediaFilename
             }
+            if let authorJID = message.authorJID, let authorPhone = message.authorPhone {
+                object["author"] = [
+                    "kind": "participant",
+                    "displayName": "Participante",
+                    "phone": authorPhone,
+                    "jid": authorJID,
+                    "source": authorJID.hasSuffix("@lid") ? "lidAccount" : "chatSession"
+                ]
+            }
             return object
         }
         for message in fixture.messages {
@@ -586,18 +656,24 @@ private struct MessageFixture {
     let date: String
     let mediaFilename: String?
     let mediaData: Data?
+    let authorJID: String?
+    let authorPhone: String?
 
     init(
         id: Int,
         text: String,
         date: String,
         mediaFilename: String? = nil,
-        mediaData: Data? = nil
+        mediaData: Data? = nil,
+        authorJID: String? = nil,
+        authorPhone: String? = nil
     ) {
         self.id = id
         self.text = text
         self.date = date
         self.mediaFilename = mediaFilename
         self.mediaData = mediaData
+        self.authorJID = authorJID
+        self.authorPhone = authorPhone
     }
 }
