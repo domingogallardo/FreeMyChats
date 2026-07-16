@@ -10,7 +10,8 @@ final class FreeMyChatsStore: ObservableObject {
     private enum DefaultsKey {
         static let lastLibraryPath = "lastLibraryPath"
         static let backupSearchPath = "backupSearchPath"
-        static let resumeBackupImportAfterPermission = "resumeBackupImportAfterPermission"
+        static let obsoleteResumeBackupImportAfterPermission =
+            "resumeBackupImportAfterPermission"
     }
 
     @Published var backupSearchPath: String
@@ -50,6 +51,9 @@ final class FreeMyChatsStore: ObservableObject {
     init() {
         backupSearchPath = UserDefaults.standard.string(forKey: DefaultsKey.backupSearchPath)
             ?? Self.defaultBackupPath
+        UserDefaults.standard.removeObject(
+            forKey: DefaultsKey.obsoleteResumeBackupImportAfterPermission
+        )
     }
 
     var versions: [LibraryVersionSession] {
@@ -57,10 +61,9 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     nonisolated static func shouldPresentBackupImporter(
-        for session: LibrarySession,
-        resumeAfterPermission: Bool
+        for session: LibrarySession
     ) -> Bool {
-        session.versions.isEmpty || resumeAfterPermission
+        session.versions.isEmpty
     }
 
     var selectedVersion: LibraryVersionSession? {
@@ -164,7 +167,6 @@ final class FreeMyChatsStore: ObservableObject {
         discoveryIssue = nil
         importedBackupCleanupPrompt = nil
         isShowingBackupImporter = false
-        UserDefaults.standard.removeObject(forKey: DefaultsKey.resumeBackupImportAfterPermission)
         UserDefaults.standard.removeObject(forKey: DefaultsKey.lastLibraryPath)
     }
 
@@ -197,23 +199,10 @@ final class FreeMyChatsStore: ObservableObject {
                 case .success(let rows):
                     self.backupRows = rows
                     self.discoveryIssue = nil
-                    UserDefaults.standard.removeObject(
-                        forKey: DefaultsKey.resumeBackupImportAfterPermission
-                    )
                 case .failure(let error):
                     self.backupRows = []
                     let issue = BackupDiscoveryIssue(error: error)
                     self.discoveryIssue = issue
-                    if issue == .permissionRequired {
-                        UserDefaults.standard.set(
-                            true,
-                            forKey: DefaultsKey.resumeBackupImportAfterPermission
-                        )
-                    } else {
-                        UserDefaults.standard.removeObject(
-                            forKey: DefaultsKey.resumeBackupImportAfterPermission
-                        )
-                    }
                 }
             }
         }
@@ -619,13 +608,7 @@ final class FreeMyChatsStore: ObservableObject {
         if let selectedChatID {
             selectChat(selectedChatID)
         }
-        let resumeAfterPermission = UserDefaults.standard.bool(
-            forKey: DefaultsKey.resumeBackupImportAfterPermission
-        )
-        if Self.shouldPresentBackupImporter(
-            for: newSession,
-            resumeAfterPermission: resumeAfterPermission
-        ) {
+        if Self.shouldPresentBackupImporter(for: newSession) {
             isShowingBackupImporter = true
             inspectBackups()
         }

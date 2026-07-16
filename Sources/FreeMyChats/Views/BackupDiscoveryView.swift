@@ -89,10 +89,7 @@ struct BackupDiscoveryView: View {
             UnavailableContentView(
                 "Free My Chats necesita permiso",
                 systemImage: "lock.trianglebadge.exclamationmark",
-                description:
-                    "En Ajustes del Sistema, abre Privacidad y seguridad > Acceso total al disco "
-                    + "y activa Free My Chats. Después sal completamente de la app y vuelve a abrirla. "
-                    + "La comprobación continuará automáticamente al reiniciar."
+                description: permissionDescription
             ) {
                 HStack {
                     Button("Abrir Ajustes del Sistema") {
@@ -125,5 +122,15 @@ struct BackupDiscoveryView: View {
                 }
             }
         }
+    }
+
+    private var permissionDescription: String {
+        let instructions =
+            "En Ajustes del Sistema, abre Privacidad y seguridad > Acceso total al disco "
+            + "y activa Free My Chats. Después sal completamente de la app y vuelve a abrirla. "
+        if store.versions.isEmpty {
+            return instructions + "La comprobación continuará automáticamente al reiniciar."
+        }
+        return instructions + "Pulsa Añadir copia para volver a intentarlo."
     }
 }

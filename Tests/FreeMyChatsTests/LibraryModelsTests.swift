@@ -100,10 +100,7 @@ final class LibraryModelsTests: XCTestCase {
         let emptySession = try LibraryService.create(at: root)
 
         XCTAssertTrue(
-            FreeMyChatsStore.shouldPresentBackupImporter(
-                for: emptySession,
-                resumeAfterPermission: false
-            )
+            FreeMyChatsStore.shouldPresentBackupImporter(for: emptySession)
         )
     }
 
@@ -133,16 +130,7 @@ final class LibraryModelsTests: XCTestCase {
         )
 
         XCTAssertFalse(
-            FreeMyChatsStore.shouldPresentBackupImporter(
-                for: populatedSession,
-                resumeAfterPermission: false
-            )
-        )
-        XCTAssertTrue(
-            FreeMyChatsStore.shouldPresentBackupImporter(
-                for: populatedSession,
-                resumeAfterPermission: true
-            )
+            FreeMyChatsStore.shouldPresentBackupImporter(for: populatedSession)
         )
     }
 

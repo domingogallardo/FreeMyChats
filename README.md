@@ -38,7 +38,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Acciones para abrir la biblioteca, cada exportación y la carpeta de la conversación combinada en Finder.
 - Borrado por exportación desde la columna izquierda: el catálogo reconstruye la conversación con las copias restantes y la retira si ya no queda ninguna.
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
-- Guía para conceder acceso total al disco y reanudar la inspección tras reiniciar la app.
+- Guía para conceder acceso total al disco y volver a intentar la inspección cuando sea necesario.
 - Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
 
 ## Estructura de una biblioteca
