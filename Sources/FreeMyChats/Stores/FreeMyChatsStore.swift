@@ -359,29 +359,66 @@ final class FreeMyChatsStore: ObservableObject {
         WorkspaceService.reveal(selectedExport.directoryURL)
     }
 
-    func deleteSelectedExportedChat() {
-        guard let selection = selectedExportID, let session else { return }
-        let chatName = selectedExport?.document.chat.name ?? "chat"
+    func revealExport(_ selection: VersionChatID) {
+        guard let version = session?.version(id: selection.versionID) else { return }
+        let exportURL = version.exportsURL
+            .appendingPathComponent("Chats", isDirectory: true)
+            .appendingPathComponent(String(selection.chatID), isDirectory: true)
+        guard FileManager.default.fileExists(atPath: exportURL.path) else {
+            errorMessage = "La carpeta de esta exportación ya no está disponible."
+            return
+        }
+        WorkspaceService.reveal(exportURL)
+    }
+
+    func deleteExportedContribution(_ selection: VersionChatID) {
+        guard let session,
+              exportStates[selection]?.isPhysicallyExported == true else { return }
+        let chatName = session.chat(for: selection)?.name ?? "chat"
         let operationID = beginOperation(
-            kind: .deletingExportedChat(selection),
-            title: "Borrando “\(chatName)”…",
-            detail: "Eliminando sus mensajes y archivos exportados."
+            kind: .deletingExportedContribution(selection),
+            title: "Borrando la exportación de “\(chatName)”…",
+            detail: "Reconstruyendo la conversación con las demás copias."
         )
 
         workQueue.async { [weak self] in
             let result = Result {
-                try ConversationArchiveService.delete(id: selection, from: session)
+                try ConversationArchiveService.removeContribution(
+                    source: selection,
+                    from: session
+                )
             }
             DispatchQueue.main.async {
                 guard let self, self.operation?.id == operationID else { return }
                 self.operation = nil
                 switch result {
-                case .success(let newSession):
-                    self.readingPositionStore.remove(
-                        conversation: selection,
-                        in: session.paths.rootURL
-                    )
-                    self.install(newSession, preservingSelection: true)
+                case .success(let removal):
+                    let previousExportID = self.selectedExportID
+                    let previousExport = self.selectedExport
+                    self.install(removal.session, preservingSelection: true)
+
+                    if previousExportID == removal.conversationID {
+                        if let conversation = removal.conversation {
+                            self.selectedExportID = conversation.record.id
+                            self.selectedExport = conversation
+                        } else {
+                            self.readingPositionStore.remove(
+                                conversation: removal.conversationID,
+                                in: session.paths.rootURL
+                            )
+                        }
+                    } else if let previousExportID, let previousExport {
+                        self.selectedExportID = previousExportID
+                        self.selectedExport = previousExport
+                    }
+
+                    if let conversation = removal.conversation {
+                        let count = conversation.record.contributions.count
+                        let copies = count == 1 ? "1 copia" : "\(count) copias"
+                        self.informationMessage = "Se ha borrado la exportación de “\(chatName)”. La conversación conserva \(copies)."
+                    } else {
+                        self.informationMessage = "Se ha borrado la última exportación de “\(chatName)” y la conversación ha salido del catálogo."
+                    }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
                 }

@@ -5,6 +5,7 @@ import SwiftWABackupAPI
 enum ConversationArchiveError: Error, LocalizedError {
     case invalidArchive(URL, String)
     case missingSource(VersionChatID)
+    case contributionNotFound(VersionChatID)
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,8 @@ enum ConversationArchiveError: Error, LocalizedError {
             return "La conversación guardada en \(url.lastPathComponent) no es válida: \(reason)"
         case .missingSource(let selection):
             return "Falta la exportación de origen \(selection.versionID)/\(selection.chatID)."
+        case .contributionNotFound(let selection):
+            return "La exportación \(selection.versionID)/\(selection.chatID) no forma parte de ninguna conversación guardada."
         }
     }
 }
@@ -19,6 +22,12 @@ enum ConversationArchiveError: Error, LocalizedError {
 struct ConversationArchiveUpdate {
     let conversation: ArchivedConversation
     let addedMessageCount: Int
+}
+
+struct ConversationContributionRemoval {
+    let session: LibrarySession
+    let conversationID: ConversationArchiveID
+    let conversation: ArchivedConversation?
 }
 
 enum ConversationArchiveService {
@@ -200,29 +209,60 @@ enum ConversationArchiveService {
         }
     }
 
-    static func delete(
-        id: ConversationArchiveID,
+    static func removeContribution(
+        source: VersionChatID,
         from session: LibrarySession
-    ) throws -> LibrarySession {
-        let archived = try open(id: id, paths: session.paths)
-        var updatedSession = session
-
-        for contribution in archived.record.contributions {
-            guard let version = updatedSession.version(id: contribution.source.versionID) else {
-                continue
-            }
-            let sourceURL = version.exportsURL
-                .appendingPathComponent("Chats", isDirectory: true)
-                .appendingPathComponent(String(contribution.source.chatID), isDirectory: true)
-            guard FileManager.default.fileExists(atPath: sourceURL.path) else { continue }
-            updatedSession = try LibraryService.deleteExportedChat(
-                contribution.source,
-                from: updatedSession
-            )
+    ) throws -> ConversationContributionRemoval {
+        let record = try loadRecords(paths: session.paths).first {
+            $0.contributions.contains(where: { $0.source == source })
+        }
+        guard var record else {
+            throw ConversationArchiveError.contributionNotFound(source)
         }
 
-        try FileManager.default.removeItem(at: archived.directoryURL)
-        return updatedSession
+        let archived = try open(id: record.id, paths: session.paths)
+        record.contributions.removeAll { $0.source == source }
+        record.updatedAt = Date()
+
+        let fileManager = FileManager.default
+        let stagingURL = session.paths.rootURL.appendingPathComponent(
+            ".removing-contribution-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let stagedArchiveURL = stagingURL.appendingPathComponent(
+            "Conversation",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
+        do {
+            try fileManager.moveItem(at: archived.directoryURL, to: stagedArchiveURL)
+        } catch {
+            try? fileManager.removeItem(at: stagingURL)
+            throw error
+        }
+
+        do {
+            let rebuilt = record.contributions.isEmpty
+                ? nil
+                : try install(record: record, in: session)
+            let updatedSession = try LibraryService.deleteExportedChat(source, from: session)
+            try? fileManager.removeItem(at: stagingURL)
+            return ConversationContributionRemoval(
+                session: updatedSession,
+                conversationID: record.id,
+                conversation: rebuilt
+            )
+        } catch {
+            let replacementURL = archiveURL(id: record.id, paths: session.paths)
+            if fileManager.fileExists(atPath: replacementURL.path) {
+                try? fileManager.removeItem(at: replacementURL)
+            }
+            if fileManager.fileExists(atPath: stagedArchiveURL.path) {
+                try? fileManager.moveItem(at: stagedArchiveURL, to: archived.directoryURL)
+            }
+            try? fileManager.removeItem(at: stagingURL)
+            throw error
+        }
     }
 
     private static func catalog(paths: LibraryPaths) throws -> [ExportedChatListItem] {

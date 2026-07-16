@@ -6,7 +6,6 @@ struct ConversationView: View {
     @State private var isSearching = false
     @State private var messageSearchText = ""
     @State private var appliedMessageSearchText = ""
-    @State private var isConfirmingExportDeletion = false
 
     var body: some View {
         Group {
@@ -22,21 +21,6 @@ struct ConversationView: View {
             } else {
                 exportLoadingView
             }
-        }
-        .confirmationDialog(
-            "¿Borrar esta conversación guardada?",
-            isPresented: $isConfirmingExportDeletion,
-            titleVisibility: .visible
-        ) {
-            Button("Borrar conversación", role: .destructive) {
-                store.deleteSelectedExportedChat()
-            }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text(
-                "Se borrarán permanentemente la conversación combinada y todas "
-                + "las aportaciones exportadas desde las distintas copias."
-            )
         }
     }
 
@@ -71,8 +55,7 @@ struct ConversationView: View {
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
                 goBack: store.showExportList,
-                revealInFinder: store.revealSelectedChat,
-                deleteExport: { isConfirmingExportDeletion = true }
+                revealInFinder: store.revealSelectedChat
             )
             Divider()
             MessageListView(
@@ -131,7 +114,6 @@ private struct ConversationHeaderView: View {
     @Binding var searchText: String
     let goBack: () -> Void
     let revealInFinder: () -> Void
-    let deleteExport: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -160,14 +142,11 @@ private struct ConversationHeaderView: View {
                 }
                 .labelStyle(.iconOnly)
 
-                Menu {
-                    Button("Abrir carpeta en Finder", action: revealInFinder)
-                    Divider()
-                    Button("Borrar conversación…", role: .destructive, action: deleteExport)
-                } label: {
-                    Label("Opciones del chat", systemImage: "ellipsis.circle")
+                Button(action: revealInFinder) {
+                    Label("Abrir conversación en Finder", systemImage: "folder")
                 }
                 .labelStyle(.iconOnly)
+                .help("Abrir la carpeta de esta conversación en Finder")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)

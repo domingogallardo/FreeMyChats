@@ -6,6 +6,7 @@ struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
     @State private var versionPendingDeletion: LibraryVersionSession?
+    @State private var exportPendingDeletion: ExportDeletionRequest?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,7 +47,15 @@ struct ChatSidebarView: View {
                                             : selection
                                     },
                                     export: { store.exportChat(selection) },
-                                    replaceExport: { store.replaceExport(selection) }
+                                    replaceExport: { store.replaceExport(selection) },
+                                    revealExport: { store.revealExport(selection) },
+                                    deleteExport: {
+                                        exportPendingDeletion = ExportDeletionRequest(
+                                            selection: selection,
+                                            chatName: chat.name,
+                                            versionTitle: version.record.title
+                                        )
+                                    }
                                 )
                                 .tag(selection)
                             }
@@ -101,6 +110,32 @@ struct ChatSidebarView: View {
                 "Se liberará el espacio ocupado por el backup. Las conversaciones ya exportadas "
                 + "seguirán disponibles, pero no se podrán exportar otros chats de esta versión."
             )
+        }
+        .confirmationDialog(
+            "¿Borrar esta exportación?",
+            isPresented: Binding(
+                get: { exportPendingDeletion != nil },
+                set: { if !$0 { exportPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Borrar exportación", role: .destructive) {
+                if let request = exportPendingDeletion {
+                    store.deleteExportedContribution(request.selection)
+                }
+                exportPendingDeletion = nil
+            }
+            Button("Cancelar", role: .cancel) {
+                exportPendingDeletion = nil
+            }
+        } message: {
+            if let request = exportPendingDeletion {
+                Text(
+                    "Se borrarán los mensajes y archivos de “\(request.chatName)” exportados "
+                    + "desde la copia \(request.versionTitle). La conversación del catálogo se "
+                    + "reconstruirá con las demás copias; si esta es la última, desaparecerá."
+                )
+            }
         }
     }
 
@@ -215,6 +250,12 @@ struct ChatSidebarView: View {
     }
 }
 
+private struct ExportDeletionRequest {
+    let selection: VersionChatID
+    let chatName: String
+    let versionTitle: String
+}
+
 private struct BackupVersionRow: View {
     let version: LibraryVersionSession
     let isExporting: Bool
@@ -285,6 +326,8 @@ private struct ChatSidebarRow: View {
     let toggleExpansion: () -> Void
     let export: () -> Void
     let replaceExport: () -> Void
+    let revealExport: () -> Void
+    let deleteExport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -347,6 +390,24 @@ private struct ChatSidebarRow: View {
                 Spacer(minLength: 8)
             }
             .padding(.top, 3)
+
+            if exportState.isPhysicallyExported, !isExporting {
+                HStack(spacing: 6) {
+                    actionButton(
+                        "Abrir carpeta",
+                        systemImage: "folder",
+                        action: revealExport
+                    )
+                    .help("Abrir esta exportación en Finder")
+                    actionButton(
+                        "Borrar",
+                        systemImage: "trash",
+                        tint: .red,
+                        action: deleteExport
+                    )
+                    .help("Borrar únicamente la exportación de esta copia")
+                }
+            }
         }
         .font(.caption)
     }
@@ -429,6 +490,7 @@ private struct ChatSidebarRow: View {
     private func actionButton(
         _ title: String,
         systemImage: String,
+        tint: Color = Color.accentColor,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -438,13 +500,13 @@ private struct ChatSidebarRow: View {
                     .font(.caption2.weight(.semibold))
             }
             .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(tint)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(.white.opacity(0.92), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(Color.accentColor.opacity(0.22), lineWidth: 0.75)
+                    .stroke(tint.opacity(0.22), lineWidth: 0.75)
             }
         }
         .buttonStyle(.plain)

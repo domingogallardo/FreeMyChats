@@ -10,6 +10,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
 - Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
+- Cada exportación de la columna izquierda se puede abrir en Finder o borrar de forma independiente.
 - La columna derecha contiene el catálogo de chats exportados y muestra una sola conversación guardada aunque se haya actualizado desde varias copias. Al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
@@ -34,7 +35,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Navegación entre los mensajes de respuesta y sus originales, con resaltado
   temporal y retorno al punto de partida.
 - Búsqueda de texto dentro de la conversación guardada.
-- Acciones para abrir la biblioteca, la carpeta de la conversación y sus archivos en Finder, o borrarla junto con sus aportaciones.
+- Acciones para abrir la biblioteca, cada exportación y la carpeta de la conversación combinada en Finder.
+- Borrado por exportación desde la columna izquierda: el catálogo reconstruye la conversación con las copias restantes y la retira si ya no queda ninguna.
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
 - Guía para conceder acceso total al disco y reanudar la inspección tras reiniciar la app.
 - Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.

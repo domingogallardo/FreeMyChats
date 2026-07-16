@@ -389,7 +389,7 @@ struct AppOperation: Equatable {
         case addingBackup
         case deletingBackup(String)
         case deletingOriginalIPhoneBackup
-        case deletingExportedChat(ConversationArchiveID)
+        case deletingExportedContribution(VersionChatID)
         case loadingChats
         case exportingChat(VersionChatID)
     }

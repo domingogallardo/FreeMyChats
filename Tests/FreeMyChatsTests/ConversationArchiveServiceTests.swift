@@ -126,6 +126,131 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(archived.record.contributions.count, 2)
     }
 
+    func testRemovingOlderContributionKeepsTheNewerCompleteConversation() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
+                        MessageFixture(id: 12, text: "C", date: "2026-02-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        _ = try ConversationArchiveService.synchronize(in: fixture.session)
+
+        let removal = try ConversationArchiveService.removeContribution(
+            source: VersionChatID(versionID: "old", chatID: 7),
+            from: fixture.session
+        )
+        let conversation = try XCTUnwrap(removal.conversation)
+        let catalog = try ConversationArchiveService.synchronize(in: removal.session)
+
+        XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertEqual(conversation.record.contributions.count, 1)
+        XCTAssertNil(removal.session.version(id: "old"))
+        XCTAssertNotNil(removal.session.version(id: "new"))
+        XCTAssertEqual(catalog.count, 1)
+        XCTAssertEqual(catalog.first?.contributionCount, 1)
+    }
+
+    func testRemovingNewerContributionRestoresTheOlderConversation() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
+                        MessageFixture(id: 12, text: "C", date: "2026-02-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        _ = try ConversationArchiveService.synchronize(in: fixture.session)
+
+        let removal = try ConversationArchiveService.removeContribution(
+            source: VersionChatID(versionID: "new", chatID: 7),
+            from: fixture.session
+        )
+        let conversation = try XCTUnwrap(removal.conversation)
+
+        XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "B"])
+        XCTAssertEqual(conversation.record.contributions.count, 1)
+        XCTAssertNotNil(removal.session.version(id: "old"))
+        XCTAssertNil(removal.session.version(id: "new"))
+    }
+
+    func testRemovingLastContributionRemovesTheConversation() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "only",
+                    chatID: 7,
+                    jid: "34600111222@s.whatsapp.net",
+                    name: "Ana",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        _ = try ConversationArchiveService.synchronize(in: fixture.session)
+
+        let removal = try ConversationArchiveService.removeContribution(
+            source: VersionChatID(versionID: "only", chatID: 7),
+            from: fixture.session
+        )
+
+        XCTAssertNil(removal.conversation)
+        XCTAssertTrue(removal.session.versions.isEmpty)
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.conversationsURL.path
+            ).isEmpty
+        )
+        XCTAssertFalse(
+            try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
+                .contains { $0.hasPrefix(".removing-contribution-") }
+        )
+    }
+
     func testSynchronizeConsolidatesDuplicateArchiveRecords() throws {
         let fixture = try makeLibrary(
             exports: [
@@ -262,40 +387,6 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
         XCTAssertEqual(catalog.count, 2)
         XCTAssertEqual(Set(catalog.map { $0.chat.contactJid }), ["first@g.us", "second@g.us"])
-    }
-
-    func testDeletingConversationRemovesItsContributionsAndOrphanedVersion() throws {
-        let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
-                    versionID: "only-version",
-                    chatID: 27,
-                    jid: "34600123456@s.whatsapp.net",
-                    name: "Eva",
-                    exportedAt: "2026-05-10T12:00:00Z",
-                    messages: [
-                        MessageFixture(id: 1, text: "Hola", date: "2026-05-01T10:00:00Z")
-                    ]
-                )
-            ]
-        )
-        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-
-        let item = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
-        )
-        let updatedSession = try ConversationArchiveService.delete(
-            id: item.id,
-            from: fixture.session
-        )
-
-        XCTAssertTrue(updatedSession.versions.isEmpty)
-        XCTAssertTrue(updatedSession.manifest.versions.isEmpty)
-        XCTAssertTrue(
-            try FileManager.default.contentsOfDirectory(
-                atPath: fixture.session.paths.conversationsURL.path
-            ).isEmpty
-        )
     }
 
     func testMediaWithSameFilenameAndDifferentContentsRemainDistinct() throws {
