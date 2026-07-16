@@ -119,11 +119,17 @@ Ejecuta:
 
 La primera compilación puede tardar unos minutos porque Swift Package Manager descarga SwiftWABackupAPI y sus dependencias. Al terminar, el script crea `dist/FreeMyChats.app` y abre la aplicación automáticamente.
 
-Las siguientes ejecuciones se pueden hacer con doble clic sobre `FreeMyChats.app`, dentro de la carpeta `dist`, o repitiendo el comando anterior para volver a compilar.
+Puedes ejecutar esa copia directamente para comprobar que funciona o repetir el comando anterior cuando necesites volver a compilar.
 
-### 5. Conceder acceso a las copias del iPhone
+### 5. Mover la aplicación a Aplicaciones
 
-Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, activa el permiso para **Free My Chats** y reinicia la aplicación. La app volverá a comprobar el acceso al arrancar.
+Una vez compilada, abre la carpeta `dist` y arrastra `FreeMyChats.app` a la carpeta `Aplicaciones` del Mac. A partir de ese momento podrás abrirla normalmente desde Finder, Launchpad o Spotlight sin conservar la aplicación dentro de la carpeta del código fuente.
+
+Si vuelves a compilar una versión nueva, sustituye la copia de `Aplicaciones` por la nueva `dist/FreeMyChats.app`.
+
+### 6. Conceder acceso a las copias del iPhone
+
+Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, añade o activa la copia de **Free My Chats** que has trasladado a `Aplicaciones` y reinicia la aplicación. La app volverá a comprobar el acceso al arrancar. Si sustituyes la aplicación después de recompilar, macOS puede pedir que retires la entrada anterior y vuelvas a añadir la copia nueva.
 
 ### Alternativa para personas familiarizadas con Git
 
