@@ -2,7 +2,7 @@
 
 **Free My Chats** es una aplicación nativa para macOS que extrae tu WhatsApp de tu copia de seguridad de iPhone y la convierte en una biblioteca local persistente en tu disco duro.
 
-¿Tienes chats de WhatsApp que ocupan varios gigas y que no vas a volver a consultar, pero que no quieres eliminar por el miedo a necesitarlos en el futuro? Ahora con **Free My Chats** puedes guardarlos en el disco duro de tu Mac, con todas sus imágenes y audios, listos para ser explorados y consultados en cualquier momento y para incluirlos en tus copias de seguridad. Y puedes borrarlos por fin de tu móvil y recuperar esos gigas preciosos que necesitas urgentemente.
+¿Tienes chats de WhatsApp que ocupan varios gigas y que no vas a volver a consultar, pero que no quieres eliminar por el miedo a necesitarlos en el futuro? Ahora con **Free My Chats** puedes guardarlos en el disco duro de tu Mac, con todas sus imágenes y audios, listos para ser explorados y consultados en cualquier momento y para incluirlos en tus copias de seguridad. Una vez copiados en tu biblioteca de Free My Chats, puedes usar la opción `Vaciar chat` en WhatsApp y recuperar esos gigas preciosos que necesitas urgentemente.
 
 ![Vista general de Free My Chats](docs/images/free-my-chats-overview.png)
 
@@ -40,6 +40,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
 - Guía para conceder acceso total al disco y volver a intentar la inspección cuando sea necesario.
 - Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
+- Recordatorio de que, tras guardar un chat en la biblioteca, puedes usar `Vaciar chat` en WhatsApp para liberar espacio en el iPhone.
 
 ## Estructura de una biblioteca
 

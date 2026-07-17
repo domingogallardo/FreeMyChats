@@ -54,7 +54,7 @@ struct LibraryView: View {
     private var cleanupPromptMessage: String {
         guard let prompt = store.importedBackupCleanupPrompt else { return "" }
         let date = prompt.creationDate.map(Self.dateFormatter.string) ?? "seleccionada"
-        return "La copia de WhatsApp ya está guardada en la biblioteca. Puedes conservar la copia completa del iPhone correspondiente al \(date), borrarla más tarde desde Finder (Gestionar copias…) o moverla ahora a la Papelera para liberar espacio."
+        return "La copia de WhatsApp ya está guardada en la biblioteca. Cuando hayas copiado aquí los chats que quieres conservar, puedes usar “Vaciar chat” en WhatsApp para recuperar espacio en el iPhone. También puedes conservar la copia completa del iPhone correspondiente al \(date), borrarla más tarde desde Finder (Gestionar copias…) o moverla ahora a la Papelera."
     }
 
     private static let dateFormatter: DateFormatter = {
