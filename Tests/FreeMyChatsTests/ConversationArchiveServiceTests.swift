@@ -55,12 +55,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
-                atPath: fixture.session.paths.conversationsURL.path
+                atPath: fixture.session.paths.mergedChatsURL.path
             ).isEmpty
         )
     }
 
-    func testCatalogOpensCombinedConversationFromConversationsDirectory() throws {
+    func testCatalogOpensCombinedConversationFromMergedChatsDirectory() throws {
         let fixture = try makeLibrary(
             exports: [
                 ExportFixture(
@@ -96,7 +96,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(item.contributionCount, 2)
         XCTAssertEqual(
             item.directoryURL.standardizedFileURL,
-            fixture.session.paths.conversationsURL
+            fixture.session.paths.mergedChatsURL
                 .appendingPathComponent(item.id.rawValue, isDirectory: true)
                 .standardizedFileURL
         )
@@ -339,7 +339,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: fixture.session.paths.conversationsURL
+                atPath: fixture.session.paths.mergedChatsURL
                     .appendingPathComponent(original.id.rawValue, isDirectory: true).path
             )
         )
@@ -501,7 +501,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "C"])
         XCTAssertEqual(
             conversation.directoryURL,
-            fixture.session.paths.conversationsURL.appendingPathComponent(
+            fixture.session.paths.mergedChatsURL.appendingPathComponent(
                 original.id.rawValue,
                 isDirectory: true
             )
@@ -559,13 +559,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: onlyDirectory.path))
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: fixture.session.paths.conversationsURL
+                atPath: fixture.session.paths.mergedChatsURL
                     .appendingPathComponent(original.id.rawValue, isDirectory: true).path
             )
         )
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
-                atPath: fixture.session.paths.conversationsURL.path
+                atPath: fixture.session.paths.mergedChatsURL.path
             ).isEmpty
         )
         XCTAssertFalse(
@@ -613,7 +613,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
-                atPath: fixture.session.paths.conversationsURL.path
+                atPath: fixture.session.paths.mergedChatsURL.path
             ).isEmpty
         )
     }
@@ -656,7 +656,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
-                atPath: fixture.session.paths.conversationsURL.path
+                atPath: fixture.session.paths.mergedChatsURL.path
             ).isEmpty
         )
     }
@@ -739,7 +739,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            try FileManager.default.contentsOfDirectory(atPath: fixture.session.paths.conversationsURL.path)
+            try FileManager.default.contentsOfDirectory(atPath: fixture.session.paths.mergedChatsURL.path)
                 .contains { $0.hasPrefix(".building-") }
         )
     }
@@ -807,7 +807,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(update.conversation.document.messages.map(\.message), ["A", "B", "C"])
         XCTAssertEqual(
             update.conversation.directoryURL,
-            fixture.session.paths.conversationsURL.appendingPathComponent(
+            fixture.session.paths.mergedChatsURL.appendingPathComponent(
                 original.id.rawValue,
                 isDirectory: true
             )
@@ -822,7 +822,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             )
         }
         let conversationEntries = try FileManager.default.contentsOfDirectory(
-            atPath: fixture.session.paths.conversationsURL.path
+            atPath: fixture.session.paths.mergedChatsURL.path
         )
         XCTAssertFalse(conversationEntries.contains { $0.hasPrefix(".building-") })
         XCTAssertFalse(conversationEntries.contains { $0.hasPrefix(".replacing-") })

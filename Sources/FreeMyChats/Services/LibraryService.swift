@@ -48,7 +48,7 @@ enum LibraryService {
 
         try fileManager.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: paths.conversationsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: paths.mergedChatsURL, withIntermediateDirectories: true)
         try write(LibraryManifest(), to: paths.manifestURL)
         return try open(paths: paths)
     }
@@ -319,7 +319,7 @@ enum LibraryService {
         try FileManager.default.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
-            at: paths.conversationsURL,
+            at: paths.mergedChatsURL,
             withIntermediateDirectories: true
         )
         manifest = try migrateUserFacingLayout(paths: paths, manifest: manifest)

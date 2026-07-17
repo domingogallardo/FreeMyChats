@@ -5,7 +5,7 @@ struct LibraryPaths: Equatable {
     let rootURL: URL
     let sourcesURL: URL
     let exportsURL: URL
-    let conversationsURL: URL
+    let mergedChatsURL: URL
     let manifestURL: URL
 
     init(rootURL: URL) {
@@ -13,7 +13,7 @@ struct LibraryPaths: Equatable {
         self.rootURL = root
         self.sourcesURL = root.appendingPathComponent("Sources", isDirectory: true)
         self.exportsURL = root.appendingPathComponent("Exports", isDirectory: true)
-        self.conversationsURL = root.appendingPathComponent("Conversations", isDirectory: true)
+        self.mergedChatsURL = root.appendingPathComponent("MergedChats", isDirectory: true)
         self.manifestURL = root.appendingPathComponent("library.json")
     }
 

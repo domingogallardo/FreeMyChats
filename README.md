@@ -61,7 +61,7 @@ Mi biblioteca Free My Chats/
 │               ├── archive.json  # Solo si es la única aportación
 │               ├── chat.json
 │               └── Media/
-└── Conversations/
+└── MergedChats/
     └── <conversationId>/         # Solo si reúne varias aportaciones
         ├── archive.json
         ├── chat.json
@@ -72,9 +72,9 @@ Mi biblioteca Free My Chats/
 
 Si una conversación solo tiene una aportación, su `archive.json` se guarda dentro
 de la propia exportación y el panel derecho abre directamente ese `chat.json` y
-su carpeta `Media`. No se crea una segunda carpeta para ella en `Conversations`.
+su carpeta `Media`. No se crea una segunda carpeta para ella en `MergedChats`.
 
-`Conversations` contiene únicamente conversaciones que reúnen varias
+`MergedChats` contiene únicamente conversaciones que reúnen varias
 aportaciones. Cada una es una materialización completa: su `chat.json` combina
 los mensajes, los ordena cronológicamente, elimina los coincidentes y reconstruye
 sus identificadores y respuestas. La vista abre ese único documento y su carpeta
@@ -128,7 +128,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.3.6
+cd ~/Documents/FreeMyChats-1.3.7
 ```
 
 ### 4. Compilar y abrir la aplicación

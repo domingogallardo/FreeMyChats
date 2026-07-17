@@ -44,7 +44,7 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(paths.rootURL.path, "/tmp/My Library")
         XCTAssertEqual(paths.sourcesURL.path, "/tmp/My Library/Sources")
         XCTAssertEqual(paths.exportsURL.path, "/tmp/My Library/Exports")
-        XCTAssertEqual(paths.conversationsURL.path, "/tmp/My Library/Conversations")
+        XCTAssertEqual(paths.mergedChatsURL.path, "/tmp/My Library/MergedChats")
         XCTAssertEqual(paths.manifestURL.path, "/tmp/My Library/library.json")
         XCTAssertEqual(paths.backupURL(for: "july").path, "/tmp/My Library/Sources/july/Backup")
         XCTAssertEqual(

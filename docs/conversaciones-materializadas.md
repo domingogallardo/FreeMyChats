@@ -22,7 +22,7 @@ Una conversación con varias exportaciones dispone además de una representació
 combinada:
 
 ```text
-Conversations/<conversationId>/
+MergedChats/<conversationId>/
 ├── archive.json
 ├── chat.json
 └── Media/
@@ -32,7 +32,7 @@ Conversations/<conversationId>/
 copia de WhatsApp. Cuando es la única aportación, su misma carpeta es la
 representación que muestra el catálogo del panel derecho.
 
-`Conversations` solo contiene representaciones materializadas de conversaciones
+`MergedChats` solo contiene representaciones materializadas de conversaciones
 con varias aportaciones. No contiene referencias para que la interfaz alterne
 entre distintos `chat.json`: guarda un nuevo `chat.json` completo y una carpeta
 `Media` directamente utilizable.
@@ -56,7 +56,7 @@ Cuando existen varias aportaciones, Free My Chats:
 5. Asigna identificadores correlativos a la cronología resultante.
 6. Reescribe `replyTo` para que las respuestas apunten a los nuevos
    identificadores.
-7. Escribe el documento combinado en `Conversations/<conversationId>/chat.json`.
+7. Escribe el documento combinado en `MergedChats/<conversationId>/chat.json`.
 
 La huella de un mensaje incluye:
 
@@ -93,9 +93,9 @@ La estructura física cambia automáticamente sin introducir ninguna distinción
 adicional en la interfaz:
 
 1. La primera exportación de un chat recibe su `archive.json` dentro de su propia
-   carpeta. No se crea nada en `Conversations`.
+   carpeta. No se crea nada en `MergedChats`.
 2. Al incorporar una segunda exportación de la misma conversación, se construye
-   la cronología combinada y se instala en `Conversations/<conversationId>/`.
+   la cronología combinada y se instala en `MergedChats/<conversationId>/`.
    Los `archive.json` individuales dejan de ser necesarios y se retiran de las
    exportaciones.
 3. Al actualizar una exportación existente, la aplicación conserva previamente
@@ -115,7 +115,7 @@ anterior para no dejar el catálogo a medio actualizar.
 
 Una conversación individual utiliza directamente la carpeta `Media` de su
 exportación. En una conversación combinada, cada archivo multimedia referenciado
-por la cronología se materializa dentro de `Conversations`. Cuando varias
+por la cronología se materializa dentro de `MergedChats`. Cuando varias
 aportaciones contienen exactamente el mismo archivo, su SHA-256 permite
 almacenarlo una sola vez en esa carpeta. Los archivos distintos que tengan el
 mismo nombre reciben nombres separados y deterministas.
@@ -126,13 +126,13 @@ resuelve los adjuntos contra las carpetas de las aportaciones originales.
 ## Qué datos se materializan de nuevo
 
 - Una conversación con una sola aportación no duplica sus mensajes ni su
-  multimedia en `Conversations`.
+  multimedia en `MergedChats`.
 - En una conversación combinada, los mensajes permanecen en sus exportaciones y
   también forman parte del nuevo documento unificado.
 - Un mensaje repetido en varias aportaciones se conserva una sola vez en el
   `chat.json` combinado.
 - La multimedia de una conversación combinada está presente en `Exports` y en
-  `Conversations`; dentro de esta última, los archivos idénticos de varias
+  `MergedChats`; dentro de esta última, los archivos idénticos de varias
   aportaciones se materializan una sola vez.
 - La eliminación manual de `Exports` impide reconstruir la conversación, aunque
   la materialización instalada todavía pudiera abrirse. Las aportaciones deben

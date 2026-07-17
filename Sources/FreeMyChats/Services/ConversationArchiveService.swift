@@ -314,9 +314,9 @@ enum ConversationArchiveService {
 
     private static func loadRecords(paths: LibraryPaths) throws -> [ConversationArchiveRecord] {
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: paths.conversationsURL.path) else { return [] }
+        guard fileManager.fileExists(atPath: paths.mergedChatsURL.path) else { return [] }
         let entries = try fileManager.contentsOfDirectory(
-            at: paths.conversationsURL,
+            at: paths.mergedChatsURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: []
         )
@@ -607,10 +607,10 @@ enum ConversationArchiveService {
 
         let fileManager = FileManager.default
         try fileManager.createDirectory(
-            at: session.paths.conversationsURL,
+            at: session.paths.mergedChatsURL,
             withIntermediateDirectories: true
         )
-        let temporaryURL = session.paths.conversationsURL.appendingPathComponent(
+        let temporaryURL = session.paths.mergedChatsURL.appendingPathComponent(
             ".building-\(record.id.rawValue)-\(UUID().uuidString)",
             isDirectory: true
         )
@@ -641,7 +641,7 @@ enum ConversationArchiveService {
 
         let finalURL = archiveURL(id: record.id, paths: session.paths)
         if fileManager.fileExists(atPath: finalURL.path) {
-            let previousURL = session.paths.conversationsURL.appendingPathComponent(
+            let previousURL = session.paths.mergedChatsURL.appendingPathComponent(
                 ".replacing-\(record.id.rawValue)-\(UUID().uuidString)",
                 isDirectory: true
             )
@@ -968,7 +968,7 @@ enum ConversationArchiveService {
     }
 
     private static func archiveURL(id: ConversationArchiveID, paths: LibraryPaths) -> URL {
-        paths.conversationsURL.appendingPathComponent(id.rawValue, isDirectory: true)
+        paths.mergedChatsURL.appendingPathComponent(id.rawValue, isDirectory: true)
     }
 
     private static func sourceDirectoryURL(

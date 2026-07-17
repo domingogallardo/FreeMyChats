@@ -6,7 +6,7 @@ Diseño de una funcionalidad futura. No está implementada.
 
 Este documento no describe la unificación incremental que ya realiza la
 aplicación con varias exportaciones locales. El funcionamiento vigente de
-`Exports` y `Conversations`, incluida su estrategia de mensajes y multimedia, se
+`Exports` y `MergedChats`, incluida su estrategia de mensajes y multimedia, se
 explica en [Conversaciones materializadas](conversaciones-materializadas.md).
 
 ## Objetivo
