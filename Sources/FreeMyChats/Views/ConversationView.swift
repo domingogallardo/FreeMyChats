@@ -28,14 +28,19 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ExportBackHeader(title: "Abriendo chat", action: store.showExportList)
             Divider()
-            ProgressView("Abriendo la vista unificada…")
+            ProgressView("Abriendo la conversación…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private func exportErrorView(_ reason: String) -> some View {
         VStack(spacing: 0) {
-            ExportBackHeader(title: "Vista unificada", action: store.showExportList)
+            ExportBackHeader(
+                title: ConversationPresentation.headerTitle(
+                    contributionCount: selectedContributionCount
+                ),
+                action: store.showExportList
+            )
             Divider()
             UnavailableContentView(
                 "La exportación no es válida",
@@ -43,6 +48,14 @@ struct ConversationView: View {
                 description: reason
             )
         }
+    }
+
+    private var selectedContributionCount: Int {
+        if let selected = store.selectedExport {
+            return selected.record.contributions.count
+        }
+        guard let selection = store.selectedExportID else { return 1 }
+        return store.exportedChats.first(where: { $0.id == selection })?.contributionCount ?? 1
     }
 
     private func conversation(
@@ -177,11 +190,13 @@ private struct ConversationHeaderView: View {
 
     private var subtitle: String {
         let chat = exported.document.chat
-        let type = chat.chatType == .group ? "Grupo" : "Conversación individual"
         let date = Self.dateFormatter.string(from: exported.record.updatedAt)
-        let count = exported.record.contributions.count
-        let exports = count == 1 ? "1 exportación" : "\(count) exportaciones"
-        return "Vista unificada · \(type) · \(chat.numberMessages.formatted()) mensajes · \(exports) · \(date)"
+        return ConversationPresentation.subtitle(
+            chatType: chat.chatType,
+            messageCount: chat.numberMessages,
+            contributionCount: exported.record.contributions.count,
+            date: date
+        )
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -191,4 +206,36 @@ private struct ConversationHeaderView: View {
         formatter.doesRelativeDateFormatting = true
         return formatter
     }()
+}
+
+enum ConversationPresentation {
+    static func cellTypeLabel(chatType: ChatInfo.ChatType) -> String {
+        chatType == .group ? "Grupo" : "Individual"
+    }
+
+    static func headerTitle(contributionCount: Int) -> String {
+        contributionCount > 1 ? "Vista unificada" : "Conversación"
+    }
+
+    static func subtitle(
+        chatType: ChatInfo.ChatType,
+        messageCount: Int,
+        contributionCount: Int,
+        date: String
+    ) -> String {
+        let type = chatType == .group ? "Grupo" : "Conversación individual"
+        let exports = contributionCount == 1
+            ? "1 exportación"
+            : "\(contributionCount) exportaciones"
+        let unified = contributionCount > 1 ? "Vista unificada" : nil
+        return [
+            unified,
+            type,
+            "\(messageCount.formatted()) mensajes",
+            exports,
+            date
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
+    }
 }

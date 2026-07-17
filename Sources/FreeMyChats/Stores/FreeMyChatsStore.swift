@@ -302,7 +302,7 @@ final class FreeMyChatsStore: ObservableObject {
 
     func openExport(_ selection: ConversationArchiveID) {
         guard let session,
-              exportedChats.contains(where: { $0.id == selection }) else { return }
+              let item = exportedChats.first(where: { $0.id == selection }) else { return }
 
         let requestID = UUID()
         openExportRequestID = requestID
@@ -313,7 +313,7 @@ final class FreeMyChatsStore: ObservableObject {
 
         workQueue.async { [weak self] in
             let result = Result {
-                try ConversationArchiveService.openRepairing(id: selection, in: session)
+                try ConversationArchiveService.openRepairing(item: item, in: session)
             }
             DispatchQueue.main.async {
                 guard let self,
@@ -489,10 +489,10 @@ final class FreeMyChatsStore: ObservableObject {
         switch exportStates[selection] {
         case .updateAvailable:
             operationTitle = "Añadiendo “\(chatName)” a la conversación…"
-            operationDetail = "Exportando este chat e incorporándolo a la vista unificada."
+            operationDetail = "Exportando este chat e incorporándolo a la conversación guardada."
         case .stale, .invalid:
             operationTitle = "Volviendo a exportar “\(chatName)”…"
-            operationDetail = "Recreando la exportación y actualizando la vista unificada."
+            operationDetail = "Recreando la exportación y actualizando la conversación guardada."
         default:
             operationTitle = "Exportando “\(chatName)”…"
             operationDetail = "Creando una conversación independiente con sus mensajes y archivos."

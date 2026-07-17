@@ -5,6 +5,43 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
+    func testConversationPresentationOnlyCallsMultipleExportsUnified() {
+        XCTAssertEqual(
+            ConversationPresentation.cellTypeLabel(chatType: .individual),
+            "Individual"
+        )
+        XCTAssertEqual(
+            ConversationPresentation.cellTypeLabel(chatType: .group),
+            "Grupo"
+        )
+        XCTAssertEqual(
+            ConversationPresentation.headerTitle(contributionCount: 1),
+            "Conversación"
+        )
+        XCTAssertEqual(
+            ConversationPresentation.subtitle(
+                chatType: .group,
+                messageCount: 820,
+                contributionCount: 1,
+                date: "hoy, 10:10"
+            ),
+            "Grupo · 820 mensajes · 1 exportación · hoy, 10:10"
+        )
+        XCTAssertEqual(
+            ConversationPresentation.headerTitle(contributionCount: 2),
+            "Vista unificada"
+        )
+        XCTAssertEqual(
+            ConversationPresentation.subtitle(
+                chatType: .group,
+                messageCount: 900,
+                contributionCount: 2,
+                date: "hoy, 10:10"
+            ),
+            "Vista unificada · Grupo · 900 mensajes · 2 exportaciones · hoy, 10:10"
+        )
+    }
+
     func testAudioTimeFormatterUsesClockStyleDurations() {
         XCTAssertEqual(AudioTimeFormatter.string(from: 0), "0:00")
         XCTAssertEqual(AudioTimeFormatter.string(from: 9.9), "0:09")

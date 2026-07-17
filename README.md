@@ -11,7 +11,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
 - Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
 - Cada exportación de la columna izquierda se puede abrir en Finder o borrar de forma independiente.
-- La columna derecha contiene el catálogo de conversaciones y muestra una sola vista unificada aunque proceda de varias exportaciones. Al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
+- La columna derecha contiene el catálogo y muestra cada conversación una sola vez. Si procede de varias exportaciones, al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
 
@@ -128,7 +128,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.3.7
+cd ~/Documents/FreeMyChats-1.3.8
 ```
 
 ### 4. Compilar y abrir la aplicación

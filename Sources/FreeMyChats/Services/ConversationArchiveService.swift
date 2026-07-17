@@ -182,6 +182,39 @@ enum ConversationArchiveService {
     }
 
     static func openRepairing(
+        item: ExportedChatListItem,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        guard item.contributionCount == 1 else {
+            return try openRepairing(id: item.id, in: session)
+        }
+
+        let recordURL = item.directoryURL.appendingPathComponent(recordFilename)
+        do {
+            let record = try decoder().decode(
+                ConversationArchiveRecord.self,
+                from: Data(contentsOf: recordURL)
+            )
+            guard record.schemaVersion == ConversationArchiveRecord.currentSchemaVersion,
+                  record.id == item.id,
+                  record.contributions.count == 1 else {
+                throw ConversationArchiveError.invalidArchive(
+                    item.directoryURL,
+                    "El manifiesto individual no corresponde a la conversación seleccionada."
+                )
+            }
+            return try openSourceConversation(record: record, in: session)
+        } catch let error as ConversationArchiveError {
+            throw error
+        } catch {
+            throw ConversationArchiveError.invalidArchive(
+                item.directoryURL,
+                error.localizedDescription
+            )
+        }
+    }
+
+    static func openRepairing(
         id: ConversationArchiveID,
         in session: LibrarySession
     ) throws -> ArchivedConversation {

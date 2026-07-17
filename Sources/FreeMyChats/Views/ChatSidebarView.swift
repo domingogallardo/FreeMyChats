@@ -475,7 +475,7 @@ private struct ChatSidebarRow: View {
                     systemImage: "arrow.clockwise",
                     action: replaceExport
                 )
-                .help("Recrear esta exportación y actualizar la vista unificada")
+                .help("Recrear esta exportación y actualizar la conversación guardada")
             } else {
                 Label("Exportado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
@@ -487,7 +487,7 @@ private struct ChatSidebarRow: View {
                     systemImage: "arrow.clockwise",
                     action: replaceExport
                 )
-                .help("Reemplazar la exportación no válida y actualizar la vista unificada")
+                .help("Reemplazar la exportación no válida y actualizar la conversación guardada")
             } else {
                 Label("Exportación no válida", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
@@ -524,10 +524,8 @@ private struct ChatSidebarRow: View {
     }
 
     private var summary: String {
-        var parts: [String] = []
-        if chat.chatType == .group { parts.append("Grupo") }
+        var parts = [ConversationPresentation.cellTypeLabel(chatType: chat.chatType)]
         if chat.isArchived { parts.append("Archivado") }
-        if parts.isEmpty { parts.append("Conversación") }
         return parts.joined(separator: " · ")
     }
 

@@ -43,7 +43,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         let catalog = try ConversationArchiveService.catalog(in: fixture.session)
         let item = try XCTUnwrap(catalog.first)
         let opened = try ConversationArchiveService.openRepairing(
-            id: update.conversation.record.id,
+            item: item,
             in: fixture.session
         )
 
@@ -88,11 +88,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let catalog = try incorporateAllExports(in: fixture)
-        let materialized = try XCTUnwrap(catalog.first)
         let item = try XCTUnwrap(catalog.first)
+        let opened = try ConversationArchiveService.openRepairing(
+            item: item,
+            in: fixture.session
+        )
 
         XCTAssertEqual(catalog.count, 1)
-        XCTAssertEqual(item.id, materialized.id)
         XCTAssertEqual(item.contributionCount, 2)
         XCTAssertEqual(
             item.directoryURL.standardizedFileURL,
@@ -100,6 +102,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
                 .appendingPathComponent(item.id.rawValue, isDirectory: true)
                 .standardizedFileURL
         )
+        XCTAssertEqual(opened.document.messages.map(\.message), ["A", "B"])
     }
 
     func testLIDIdentityResolvesToTheSamePhoneConversation() throws {

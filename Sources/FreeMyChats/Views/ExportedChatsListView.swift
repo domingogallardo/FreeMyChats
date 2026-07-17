@@ -25,7 +25,7 @@ struct ExportedChatsListView: View {
                     systemImage: "tray",
                     description:
                         "Despliega un chat en el panel izquierdo y pulsa Exportar. "
-                        + "Aparecerá aquí como una vista unificada de sus exportaciones."
+                        + "Aparecerá aquí como una conversación guardada."
                 )
             } else if filteredChats.isEmpty {
                 UnavailableContentView(
@@ -146,7 +146,7 @@ private struct ExportedChatRow: View {
     }
 
     private var detail: String {
-        let type = item.chat.chatType == .group ? "Grupo" : "Conversación"
+        let type = ConversationPresentation.cellTypeLabel(chatType: item.chat.chatType)
         let exports = item.contributionCount == 1
             ? "1 exportación"
             : "\(item.contributionCount) exportaciones"
