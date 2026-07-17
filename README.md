@@ -2,7 +2,7 @@
 
 **Free My Chats** es una aplicación nativa para macOS que extrae tu WhatsApp de tu copia de seguridad de iPhone y la convierte en una biblioteca local persistente en tu disco duro.
 
-¿Tienes chats de WhatsApp que ocupan varios gigas y que no vas a volver a consultar, pero que no quieres eliminar por el miedo a necesitarlos en el futuro? Ahora con **Free My Chats** puedes guardarlos en el disco duro de tu Mac, con todas sus imágenes y audios, listos para ser explorados y consultados en cualquier momento (y ser guardados para siempre en la copia de seguridad de Time Machine o en tu iCloud). Y puedes borrarlos por fin de tu móvil y recuperar esos gigas preciosos que necesitas urgentemente.
+¿Tienes chats de WhatsApp que ocupan varios gigas y que no vas a volver a consultar, pero que no quieres eliminar por el miedo a necesitarlos en el futuro? Ahora con **Free My Chats** puedes guardarlos en el disco duro de tu Mac, con todas sus imágenes y audios, listos para ser explorados y consultados en cualquier momento y para incluirlos en tus copias de seguridad. Y puedes borrarlos por fin de tu móvil y recuperar esos gigas preciosos que necesitas urgentemente.
 
 ![Vista general de Free My Chats](docs/images/free-my-chats-overview.png)
 
@@ -58,22 +58,31 @@ Mi biblioteca Free My Chats/
 │   └── Copia 2026-04-03 21.26/
 │       └── Chats/
 │           └── <chatId>/
+│               ├── archive.json  # Solo si es la única aportación
 │               ├── chat.json
 │               └── Media/
 └── Conversations/
-    └── <conversationId>/
+    └── <conversationId>/         # Solo si reúne varias aportaciones
         ├── archive.json
         ├── chat.json
         └── Media/
 ```
 
 `Exports` conserva cada aportación ligada a la copia de la que procede.
-`Conversations` contiene la vista unificada que aparece una sola vez en el catálogo
-de chats exportados del panel derecho. Al abrir una biblioteca existente, sus
-exportaciones se agrupan por identidad de conversación sin modificar las copias
-fuente. Cuando el sistema de
-archivos lo permite, la multimedia combinada usa enlaces internos para no ocupar
-espacio adicional.
+
+Si una conversación solo tiene una aportación, su `archive.json` se guarda dentro
+de la propia exportación y el panel derecho abre directamente ese `chat.json` y
+su carpeta `Media`. No se crea una segunda carpeta para ella en `Conversations`.
+
+`Conversations` contiene únicamente conversaciones que reúnen varias
+aportaciones. Cada una es una materialización completa: su `chat.json` combina
+los mensajes, los ordena cronológicamente, elimina los coincidentes y reconstruye
+sus identificadores y respuestas. La vista abre ese único documento y su carpeta
+`Media`; no va saltando entre exportaciones. Si varias aportaciones contienen un
+archivo idéntico, la conversación combinada lo guarda una sola vez.
+
+La descripción técnica completa está en
+[Conversaciones materializadas](docs/conversaciones-materializadas.md).
 
 ## Descargar el código fuente
 
@@ -119,7 +128,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
 
 ```bash
-cd ~/Documents/FreeMyChats-1.3.5
+cd ~/Documents/FreeMyChats-1.3.6
 ```
 
 ### 4. Compilar y abrir la aplicación

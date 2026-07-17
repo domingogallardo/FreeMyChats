@@ -473,19 +473,17 @@ final class FreeMyChatsStore: ObservableObject {
     private func performExport(_ selection: VersionChatID, overwriteExisting: Bool) {
         guard let session,
               let version = session.version(id: selection.versionID),
-              let reader = version.reader else {
+              let reader = version.reader,
+              let chat = version.chats.first(where: { $0.id == selection.chatID }) else {
             errorMessage = "La copia fuente fue eliminada; este chat no se puede volver a exportar."
             return
         }
-        let chat = version.chats.first { $0.id == selection.chatID }
-        let chatName = chat?.name ?? "chat"
-        let isUpdating = chat.map {
-            ConversationArchiveService.hasArchive(
-                for: $0,
-                in: version,
-                paths: session.paths
-            )
-        } ?? false
+        let chatName = chat.name
+        let isUpdating = ConversationArchiveService.hasArchive(
+            for: chat,
+            in: version,
+            paths: session.paths
+        )
         let operationTitle: String
         let operationDetail: String
         switch exportStates[selection] {
@@ -507,22 +505,36 @@ final class FreeMyChatsStore: ObservableObject {
 
         workQueue.async { [weak self] in
             let result = Result {
-                let exported = try reader.exportChat(
-                    chatId: selection.chatID,
-                    overwriteExisting: overwriteExisting
-                ) { progress in
-                    self?.publish(
-                        progress,
-                        operationID: operationID,
-                        fallbackTitle: operationTitle
-                    )
-                }
-                let update = try ConversationArchiveService.incorporate(
-                    exported,
-                    source: selection,
-                    in: session
+                let context = try ConversationArchiveService.prepareIncorporation(
+                    for: chat,
+                    in: version,
+                    session: session
                 )
-                return (exported, update)
+                do {
+                    let exported = try reader.exportChat(
+                        chatId: selection.chatID,
+                        overwriteExisting: overwriteExisting
+                    ) { progress in
+                        self?.publish(
+                            progress,
+                            operationID: operationID,
+                            fallbackTitle: operationTitle
+                        )
+                    }
+                    let update = try ConversationArchiveService.incorporate(
+                        exported,
+                        source: selection,
+                        context: context,
+                        in: session
+                    )
+                    return (exported, update)
+                } catch {
+                    try? ConversationArchiveService.restorePreparedRecord(
+                        from: context,
+                        in: session
+                    )
+                    throw error
+                }
             }
             DispatchQueue.main.async {
                 guard let self, self.operation?.id == operationID else { return }
@@ -742,7 +754,7 @@ final class FreeMyChatsStore: ObservableObject {
         exportPanelError = nil
 
         workQueue.async { [weak self] in
-            let result = Result { try ConversationArchiveService.synchronize(in: session) }
+            let result = Result { try ConversationArchiveService.catalog(in: session) }
 
             DispatchQueue.main.async {
                 guard let self,

@@ -5,6 +5,103 @@ import XCTest
 @testable import FreeMyChats
 
 final class ConversationArchiveServiceTests: XCTestCase {
+    func testCatalogOpensSingleConversationDirectlyFromItsExport() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "single",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(
+                            id: 101,
+                            text: "Mensaje único",
+                            date: "2026-01-01T10:00:00Z"
+                        )
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let version = try XCTUnwrap(fixture.session.version(id: "single"))
+        let exported = try version.exportStore.openChat(chatId: 7)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: exported.document.chat,
+            in: version,
+            session: fixture.session
+        )
+        let update = try ConversationArchiveService.incorporate(
+            exported,
+            source: VersionChatID(versionID: "single", chatID: 7),
+            context: context,
+            in: fixture.session
+        )
+
+        let catalog = try ConversationArchiveService.catalog(in: fixture.session)
+        let item = try XCTUnwrap(catalog.first)
+        let opened = try ConversationArchiveService.openRepairing(
+            id: update.conversation.record.id,
+            in: fixture.session
+        )
+
+        XCTAssertEqual(catalog.count, 1)
+        XCTAssertEqual(item.id, update.conversation.record.id)
+        XCTAssertEqual(item.contributionCount, 1)
+        XCTAssertEqual(item.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
+        XCTAssertEqual(opened.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
+        XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.conversationsURL.path
+            ).isEmpty
+        )
+    }
+
+    func testCatalogOpensCombinedConversationFromConversationsDirectory() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 8,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let catalog = try incorporateAllExports(in: fixture)
+        let materialized = try XCTUnwrap(catalog.first)
+        let item = try XCTUnwrap(catalog.first)
+
+        XCTAssertEqual(catalog.count, 1)
+        XCTAssertEqual(item.id, materialized.id)
+        XCTAssertEqual(item.contributionCount, 2)
+        XCTAssertEqual(
+            item.directoryURL.standardizedFileURL,
+            fixture.session.paths.conversationsURL
+                .appendingPathComponent(item.id.rawValue, isDirectory: true)
+                .standardizedFileURL
+        )
+    }
+
     func testLIDIdentityResolvesToTheSamePhoneConversation() throws {
         let backupURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -67,7 +164,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let catalog = try ConversationArchiveService.synchronize(in: fixture.session)
+        let catalog = try incorporateAllExports(in: fixture)
         let item = try XCTUnwrap(catalog.first)
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -115,7 +212,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
+            incorporateAllExports(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -173,7 +270,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
+            incorporateAllExports(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -216,14 +313,14 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        _ = try ConversationArchiveService.synchronize(in: fixture.session)
+        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "old", chatID: 7),
             from: fixture.session
         )
         let conversation = try XCTUnwrap(removal.conversation)
-        let catalog = try ConversationArchiveService.synchronize(in: removal.session)
+        let catalog = try ConversationArchiveService.catalog(in: removal.session)
 
         XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "B", "C"])
         XCTAssertEqual(conversation.record.contributions.count, 1)
@@ -231,6 +328,21 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertNotNil(removal.session.version(id: "new"))
         XCTAssertEqual(catalog.count, 1)
         XCTAssertEqual(catalog.first?.contributionCount, 1)
+        let remainingVersion = try XCTUnwrap(removal.session.version(id: "new"))
+        let remainingDirectory = remainingVersion.exportsURL
+            .appendingPathComponent("Chats/7", isDirectory: true)
+        XCTAssertEqual(conversation.directoryURL, remainingDirectory)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: remainingDirectory.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: fixture.session.paths.conversationsURL
+                    .appendingPathComponent(original.id.rawValue, isDirectory: true).path
+            )
+        )
     }
 
     func testRemovingContributionSucceedsWhenMaterializedArchiveIsDamaged() throws {
@@ -273,7 +385,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
+            incorporateAllExports(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -325,7 +437,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        _ = try ConversationArchiveService.synchronize(in: fixture.session)
+        _ = try incorporateAllExports(in: fixture)
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "new", chatID: 7),
@@ -337,6 +449,78 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(conversation.record.contributions.count, 1)
         XCTAssertNotNil(removal.session.version(id: "old"))
         XCTAssertNil(removal.session.version(id: "new"))
+    }
+
+    func testRemovingOneOfThreeContributionsKeepsACombinedConversation() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "first",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "second",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "third",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-03-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 3, text: "C", date: "2026-03-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+
+        let removal = try ConversationArchiveService.removeContribution(
+            source: VersionChatID(versionID: "second", chatID: 7),
+            from: fixture.session
+        )
+        let conversation = try XCTUnwrap(removal.conversation)
+        let catalog = try ConversationArchiveService.catalog(in: removal.session)
+
+        XCTAssertEqual(conversation.record.id, original.id)
+        XCTAssertEqual(conversation.record.contributions.count, 2)
+        XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "C"])
+        XCTAssertEqual(
+            conversation.directoryURL,
+            fixture.session.paths.conversationsURL.appendingPathComponent(
+                original.id.rawValue,
+                isDirectory: true
+            )
+        )
+        XCTAssertNil(removal.session.version(id: "second"))
+        XCTAssertEqual(catalog.first?.contributionCount, 2)
+        for versionID in ["first", "third"] {
+            let version = try XCTUnwrap(removal.session.version(id: versionID))
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: version.exportsURL
+                        .appendingPathComponent("Chats/7/archive.json").path
+                )
+            )
+        }
+        XCTAssertFalse(
+            try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
+                .contains { $0.hasPrefix(".removing-contribution-") }
+        )
     }
 
     func testRemovingLastContributionRemovesTheConversation() throws {
@@ -355,7 +539,15 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        _ = try ConversationArchiveService.synchronize(in: fixture.session)
+        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let onlyVersion = try XCTUnwrap(fixture.session.version(id: "only"))
+        let onlyDirectory = onlyVersion.exportsURL
+            .appendingPathComponent("Chats/7", isDirectory: true)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: onlyDirectory.appendingPathComponent("archive.json").path
+            )
+        )
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "only", chatID: 7),
@@ -364,6 +556,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
         XCTAssertNil(removal.conversation)
         XCTAssertTrue(removal.session.versions.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: onlyDirectory.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: fixture.session.paths.conversationsURL
+                    .appendingPathComponent(original.id.rawValue, isDirectory: true).path
+            )
+        )
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
                 atPath: fixture.session.paths.conversationsURL.path
@@ -375,7 +574,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
-    func testSynchronizeConsolidatesDuplicateArchiveRecords() throws {
+    func testUpdatingSingleExportRestoresItsPreparedArchiveRecord() throws {
         let fixture = try makeLibrary(
             exports: [
                 ExportFixture(
@@ -392,38 +591,74 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let originalItem = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
+        let originalItem = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let version = try XCTUnwrap(fixture.session.version(id: "only"))
+        let exported = try version.exportStore.openChat(chatId: 7)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: exported.document.chat,
+            in: version,
+            session: fixture.session
         )
-        let original = try ConversationArchiveService.open(
-            id: originalItem.id,
-            paths: fixture.session.paths
-        )
-        let duplicateID = ConversationArchiveID()
-        let duplicateURL = fixture.session.paths.conversationsURL
-            .appendingPathComponent(duplicateID.rawValue, isDirectory: true)
-        try FileManager.default.copyItem(at: original.directoryURL, to: duplicateURL)
-        let duplicateRecord = ConversationArchiveRecord(
-            id: duplicateID,
-            key: original.record.key,
-            createdAt: original.record.createdAt.addingTimeInterval(1),
-            updatedAt: original.record.updatedAt,
-            contributions: original.record.contributions,
-            summary: original.record.summary,
-            contactJIDAliases: original.record.contactJIDAliases
-        )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(duplicateRecord).write(
-            to: duplicateURL.appendingPathComponent("archive.json"),
-            options: .atomic
+        let archiveURL = exported.directoryURL.appendingPathComponent("archive.json")
+        try FileManager.default.removeItem(at: archiveURL)
+
+        let update = try ConversationArchiveService.incorporate(
+            exported,
+            source: VersionChatID(versionID: "only", chatID: 7),
+            context: context,
+            in: fixture.session
         )
 
-        let catalog = try ConversationArchiveService.synchronize(in: fixture.session)
+        XCTAssertEqual(update.conversation.record.id, originalItem.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.conversationsURL.path
+            ).isEmpty
+        )
+    }
 
-        XCTAssertEqual(catalog.count, 1)
-        XCTAssertEqual(catalog.first?.id, originalItem.id)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: duplicateURL.path))
+    func testPreparedSingleRecordCanBeRestoredAfterAnExportFailure() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "only",
+                    chatID: 7,
+                    jid: "34600111222@s.whatsapp.net",
+                    name: "Ana",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let version = try XCTUnwrap(fixture.session.version(id: "only"))
+        let exported = try version.exportStore.openChat(chatId: 7)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: exported.document.chat,
+            in: version,
+            session: fixture.session
+        )
+        let archiveURL = exported.directoryURL.appendingPathComponent("archive.json")
+        try FileManager.default.removeItem(at: archiveURL)
+
+        try ConversationArchiveService.restorePreparedRecord(
+            from: context,
+            in: fixture.session
+        )
+        let restored = try XCTUnwrap(ConversationArchiveService.catalog(in: fixture.session).first)
+
+        XCTAssertEqual(restored.id, original.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.conversationsURL.path
+            ).isEmpty
+        )
     }
 
     func testIncorporatingASecondBackupReplacesTheMaterializedArchiveAtomically() throws {
@@ -457,18 +692,33 @@ final class ConversationArchiveServiceTests: XCTestCase {
         let secondSelection = VersionChatID(versionID: "second", chatID: 90)
         let firstVersion = try XCTUnwrap(fixture.session.version(id: "first"))
         let secondVersion = try XCTUnwrap(fixture.session.version(id: "second"))
+        let firstExport = try firstVersion.exportStore.openChat(chatId: 10)
+        let firstContext = try ConversationArchiveService.prepareIncorporation(
+            for: firstExport.document.chat,
+            in: firstVersion,
+            session: fixture.session
+        )
         let first = try ConversationArchiveService.incorporate(
-            firstVersion.exportStore.openChat(chatId: 10),
+            firstExport,
             source: firstSelection,
+            context: firstContext,
             in: fixture.session
         )
+        let secondExport = try secondVersion.exportStore.openChat(chatId: 90)
+        let secondContext = try ConversationArchiveService.prepareIncorporation(
+            for: secondExport.document.chat,
+            in: secondVersion,
+            session: fixture.session
+        )
         let second = try ConversationArchiveService.incorporate(
-            secondVersion.exportStore.openChat(chatId: 90),
+            secondExport,
             source: secondSelection,
+            context: secondContext,
             in: fixture.session
         )
 
         XCTAssertEqual(first.conversation.document.messages.map(\.message), ["Primero"])
+        XCTAssertEqual(first.conversation.directoryURL, firstExport.directoryURL)
         XCTAssertEqual(second.conversation.record.id, first.conversation.record.id)
         XCTAssertEqual(second.addedMessageCount, 1)
         XCTAssertEqual(second.conversation.document.messages.map(\.message), ["Primero", "Segundo"])
@@ -479,9 +729,103 @@ final class ConversationArchiveServiceTests: XCTestCase {
             false
         )
         XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: firstExport.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: secondExport.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertFalse(
             try FileManager.default.contentsOfDirectory(atPath: fixture.session.paths.conversationsURL.path)
                 .contains { $0.hasPrefix(".building-") }
         )
+    }
+
+    func testUpdatingAContributionRebuildsTheExistingCombinedConversation() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
+        let oldExport = try oldVersion.exportStore.openChat(chatId: 7)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: oldExport.document.chat,
+            in: oldVersion,
+            session: fixture.session
+        )
+        try write(
+            ExportFixture(
+                versionID: "old",
+                chatID: 7,
+                jid: "group@g.us",
+                name: "Grupo",
+                exportedAt: "2026-03-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
+                    MessageFixture(id: 3, text: "C", date: "2026-03-01T10:00:00Z")
+                ]
+            ),
+            to: oldVersion.exportsURL
+        )
+        let updatedExport = try oldVersion.exportStore.openChat(chatId: 7)
+
+        let update = try ConversationArchiveService.incorporate(
+            updatedExport,
+            source: VersionChatID(versionID: "old", chatID: 7),
+            context: context,
+            in: fixture.session
+        )
+
+        XCTAssertEqual(update.conversation.record.id, original.id)
+        XCTAssertEqual(update.conversation.record.contributions.count, 2)
+        XCTAssertEqual(update.addedMessageCount, 1)
+        XCTAssertEqual(update.conversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertEqual(
+            update.conversation.directoryURL,
+            fixture.session.paths.conversationsURL.appendingPathComponent(
+                original.id.rawValue,
+                isDirectory: true
+            )
+        )
+        for versionID in ["old", "new"] {
+            let version = try XCTUnwrap(fixture.session.version(id: versionID))
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: version.exportsURL
+                        .appendingPathComponent("Chats/7/archive.json").path
+                )
+            )
+        }
+        let conversationEntries = try FileManager.default.contentsOfDirectory(
+            atPath: fixture.session.paths.conversationsURL.path
+        )
+        XCTAssertFalse(conversationEntries.contains { $0.hasPrefix(".building-") })
+        XCTAssertFalse(conversationEntries.contains { $0.hasPrefix(".replacing-") })
     }
 
     func testDifferentJIDsRemainSeparateEvenWhenNamesMatch() throws {
@@ -507,7 +851,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let catalog = try ConversationArchiveService.synchronize(in: fixture.session)
+        let catalog = try incorporateAllExports(in: fixture)
 
         XCTAssertEqual(catalog.count, 2)
         XCTAssertEqual(Set(catalog.map { $0.chat.contactJid }), ["first@g.us", "second@g.us"])
@@ -553,7 +897,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
+            incorporateAllExports(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -622,7 +966,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            ConversationArchiveService.synchronize(in: fixture.session).first
+            incorporateAllExports(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -674,6 +1018,29 @@ final class ConversationArchiveServiceTests: XCTestCase {
             rootURL: rootURL,
             session: try LibraryService.open(selectedURL: rootURL)
         )
+    }
+
+    private func incorporateAllExports(
+        in fixture: LibraryFixture
+    ) throws -> [ExportedChatListItem] {
+        for version in fixture.session.versions {
+            for chat in version.chats {
+                let source = VersionChatID(versionID: version.id, chatID: chat.id)
+                let exported = try version.exportStore.openChat(chatId: chat.id)
+                let context = try ConversationArchiveService.prepareIncorporation(
+                    for: chat,
+                    in: version,
+                    session: fixture.session
+                )
+                _ = try ConversationArchiveService.incorporate(
+                    exported,
+                    source: source,
+                    context: context,
+                    in: fixture.session
+                )
+            }
+        }
+        return try ConversationArchiveService.catalog(in: fixture.session)
     }
 
     private func write(_ fixture: ExportFixture, to exportURL: URL) throws {

@@ -24,6 +24,11 @@ struct ConversationArchiveUpdate {
     let addedMessageCount: Int
 }
 
+struct ConversationIncorporationContext {
+    let record: ConversationArchiveRecord?
+    let previousMessageCount: Int
+}
+
 struct ConversationContributionRemoval {
     let session: LibrarySession
     let conversationID: ConversationArchiveID
@@ -35,94 +40,48 @@ enum ConversationArchiveService {
     private static let documentFilename = "chat.json"
     private static let mediaDirectoryName = "Media"
 
-    static func synchronize(in session: LibrarySession) throws -> [ExportedChatListItem] {
-        try FileManager.default.createDirectory(
-            at: session.paths.conversationsURL,
-            withIntermediateDirectories: true
+    static func catalog(in session: LibrarySession) throws -> [ExportedChatListItem] {
+        try catalog(records: loadAvailableRecords(in: session), in: session)
+    }
+
+    static func prepareIncorporation(
+        for chat: ChatInfo,
+        in version: LibraryVersionSession,
+        session: LibrarySession
+    ) throws -> ConversationIncorporationContext {
+        let resolved = identity(for: chat, in: version)
+        let record = try loadAvailableRecords(in: session).first { $0.matches(resolved) }
+        let previousMessageCount = try record.map {
+            try openStoredConversation(record: $0, in: session).document.messages.count
+        } ?? 0
+        return ConversationIncorporationContext(
+            record: record,
+            previousMessageCount: previousMessageCount
         )
-
-        let consolidation = consolidate(try loadRecords(paths: session.paths))
-        var records = consolidation.records
-        var dirtyIDs = consolidation.dirtyIDs
-        let knownSources = Set(records.flatMap { $0.contributions.map(\.source) })
-
-        for source in sourceSelections(in: session) where !knownSources.contains(source) {
-            guard let version = session.version(id: source.versionID) else { continue }
-            let exported = try version.exportStore.openChat(chatId: source.chatID)
-            let identity = identity(for: exported.document.chat, in: version)
-            let recordIndex: Int
-            if let existingIndex = records.firstIndex(where: { $0.matches(identity) }) {
-                recordIndex = existingIndex
-            } else {
-                records.append(ConversationArchiveRecord(key: identity.primaryKey))
-                recordIndex = records.index(before: records.endIndex)
-            }
-            records[recordIndex].register(identity)
-
-            if let contributionIndex = records[recordIndex].contributions.firstIndex(
-                where: { $0.source == source }
-            ) {
-                let previous = records[recordIndex].contributions[contributionIndex]
-                if previous.exportedAt != exported.document.exportedAt {
-                    records[recordIndex].contributions[contributionIndex] = ConversationContribution(
-                        id: previous.id,
-                        source: source,
-                        exportedAt: exported.document.exportedAt
-                    )
-                    records[recordIndex].updatedAt = max(
-                        records[recordIndex].updatedAt,
-                        exported.document.exportedAt
-                    )
-                    dirtyIDs.insert(records[recordIndex].id)
-                }
-            } else {
-                records[recordIndex].contributions.append(
-                    ConversationContribution(
-                        source: source,
-                        exportedAt: exported.document.exportedAt
-                    )
-                )
-                records[recordIndex].updatedAt = max(
-                    records[recordIndex].updatedAt,
-                    exported.document.exportedAt
-                )
-                dirtyIDs.insert(records[recordIndex].id)
-            }
-        }
-
-        for record in records where dirtyIDs.contains(record.id) {
-            _ = try install(record: record, in: session)
-        }
-        for duplicateID in consolidation.duplicateIDs {
-            let duplicateURL = archiveURL(id: duplicateID, paths: session.paths)
-            if FileManager.default.fileExists(atPath: duplicateURL.path) {
-                try FileManager.default.removeItem(at: duplicateURL)
-            }
-        }
-
-        return try catalog(paths: session.paths)
     }
 
     static func incorporate(
         _ exported: ExportedChat,
         source: VersionChatID,
+        context: ConversationIncorporationContext,
         in session: LibrarySession
     ) throws -> ConversationArchiveUpdate {
         guard let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.missingSource(source)
         }
         let identity = identity(for: exported.document.chat, in: version)
-        let records = try loadRecords(paths: session.paths)
-        let oldMessageCount: Int
         var record: ConversationArchiveRecord
 
-        if let existing = records.first(where: { $0.matches(identity) }) {
+        if let existing = context.record {
+            guard existing.matches(identity) else {
+                throw ConversationArchiveError.invalidArchive(
+                    exported.directoryURL,
+                    "La exportación ya no coincide con la conversación preparada."
+                )
+            }
             record = existing
-            oldMessageCount = (try? open(id: existing.id, paths: session.paths))?
-                .document.messages.count ?? 0
         } else {
             record = ConversationArchiveRecord(key: identity.primaryKey)
-            oldMessageCount = 0
         }
         record.register(identity)
 
@@ -140,11 +99,23 @@ enum ConversationArchiveService {
         }
         record.updatedAt = Date()
 
-        let conversation = try install(record: record, in: session)
+        let conversation = try store(record: record, in: session)
         return ConversationArchiveUpdate(
             conversation: conversation,
-            addedMessageCount: max(0, conversation.document.messages.count - oldMessageCount)
+            addedMessageCount: max(
+                0,
+                conversation.document.messages.count - context.previousMessageCount
+            )
         )
+    }
+
+    static func restorePreparedRecord(
+        from context: ConversationIncorporationContext,
+        in session: LibrarySession
+    ) throws {
+        guard let record = context.record,
+              record.contributions.count == 1 else { return }
+        _ = try installSourceRecord(record: record, in: session)
     }
 
     static func hasArchive(
@@ -158,7 +129,8 @@ enum ConversationArchiveService {
     }
 
     static func archiveKeys(paths: LibraryPaths) throws -> Set<ConversationIdentityKey> {
-        Set(try loadRecords(paths: paths).flatMap(\.identityKeys))
+        let records = try loadRecords(paths: paths) + loadSourceRecords(paths: paths)
+        return Set(records.flatMap(\.identityKeys))
     }
 
     static func open(
@@ -213,6 +185,10 @@ enum ConversationArchiveService {
         id: ConversationArchiveID,
         in session: LibrarySession
     ) throws -> ArchivedConversation {
+        if let sourceRecord = try loadSourceRecords(in: session).first(where: { $0.id == id }) {
+            return try openSourceConversation(record: sourceRecord, in: session)
+        }
+
         do {
             return try open(id: id, paths: session.paths)
         } catch let error as ConversationArchiveError {
@@ -229,11 +205,20 @@ enum ConversationArchiveService {
         source: VersionChatID,
         from session: LibrarySession
     ) throws -> ConversationContributionRemoval {
-        let record = try loadRecords(paths: session.paths).first {
+        let record = try loadAvailableRecords(in: session).first {
             $0.contributions.contains(where: { $0.source == source })
         }
         guard var record else {
             throw ConversationArchiveError.contributionNotFound(source)
+        }
+
+        if record.contributions.count == 1 {
+            let updatedSession = try LibraryService.deleteExportedChat(source, from: session)
+            return ConversationContributionRemoval(
+                session: updatedSession,
+                conversationID: record.id,
+                conversation: nil
+            )
         }
 
         let archiveDirectoryURL = archiveURL(id: record.id, paths: session.paths)
@@ -258,9 +243,7 @@ enum ConversationArchiveService {
         }
 
         do {
-            let rebuilt = record.contributions.isEmpty
-                ? nil
-                : try install(record: record, in: session)
+            let rebuilt = try store(record: record, in: session)
             let updatedSession = try LibraryService.deleteExportedChat(source, from: session)
             try? fileManager.removeItem(at: stagingURL)
             return ConversationContributionRemoval(
@@ -269,9 +252,17 @@ enum ConversationArchiveService {
                 conversation: rebuilt
             )
         } catch {
-            let replacementURL = archiveURL(id: record.id, paths: session.paths)
-            if fileManager.fileExists(atPath: replacementURL.path) {
-                try? fileManager.removeItem(at: replacementURL)
+            if record.contributions.count == 1,
+               let remainingSource = record.contributions.first?.source,
+               let version = session.version(id: remainingSource.versionID) {
+                let sourceRecordURL = sourceDirectoryURL(remainingSource, in: version)
+                    .appendingPathComponent(recordFilename)
+                try? fileManager.removeItem(at: sourceRecordURL)
+            } else {
+                let replacementURL = archiveURL(id: record.id, paths: session.paths)
+                if fileManager.fileExists(atPath: replacementURL.path) {
+                    try? fileManager.removeItem(at: replacementURL)
+                }
             }
             if fileManager.fileExists(atPath: stagedArchiveURL.path) {
                 try? fileManager.moveItem(at: stagedArchiveURL, to: archiveDirectoryURL)
@@ -281,28 +272,27 @@ enum ConversationArchiveService {
         }
     }
 
-    private static func catalog(paths: LibraryPaths) throws -> [ExportedChatListItem] {
-        try loadRecords(paths: paths).map { record in
-            let directoryURL = archiveURL(id: record.id, paths: paths)
-            let mediaURL = directoryURL.appendingPathComponent(
-                mediaDirectoryName,
-                isDirectory: true
-            )
+    private static func catalog(
+        records: [ConversationArchiveRecord],
+        in session: LibrarySession
+    ) throws -> [ExportedChatListItem] {
+        try records.map { record in
+            let locations = try storageLocations(for: record, in: session)
             let chat: ChatInfo
             if let summary = record.summary {
                 chat = summary
             } else {
-                let archived = try open(id: record.id, paths: paths)
+                let archived = try openStoredConversation(record: record, in: session)
                 chat = archived.document.chat
                 var upgradedRecord = record
                 upgradedRecord.summary = chat
                 try encoder().encode(upgradedRecord).write(
-                    to: directoryURL.appendingPathComponent(recordFilename),
+                    to: locations.recordURL,
                     options: .atomic
                 )
             }
             let photoURL = chat.photoFilename.map {
-                mediaURL.appendingPathComponent($0)
+                locations.mediaURL.appendingPathComponent($0)
             }.flatMap {
                 FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
             }
@@ -311,7 +301,7 @@ enum ConversationArchiveService {
                 chat: chat,
                 exportedAt: record.updatedAt,
                 contributionCount: record.contributions.count,
-                directoryURL: directoryURL,
+                directoryURL: locations.directoryURL,
                 photoURL: photoURL
             )
         }.sorted { lhs, rhs in
@@ -345,6 +335,161 @@ enum ConversationArchiveService {
         }
     }
 
+    private static func loadAvailableRecords(
+        in session: LibrarySession
+    ) throws -> [ConversationArchiveRecord] {
+        let materialized = try loadRecords(paths: session.paths)
+        if let invalid = materialized.first(where: { $0.contributions.count < 2 }) {
+            throw ConversationArchiveError.invalidArchive(
+                archiveURL(id: invalid.id, paths: session.paths),
+                "Las conversaciones materializadas deben contener varias exportaciones."
+            )
+        }
+        return materialized + (try loadSourceRecords(in: session))
+    }
+
+    private static func loadSourceRecords(
+        in session: LibrarySession
+    ) throws -> [ConversationArchiveRecord] {
+        try sourceSelections(in: session).compactMap { source -> ConversationArchiveRecord? in
+            guard let version = session.version(id: source.versionID) else { return nil }
+            let directoryURL = sourceDirectoryURL(source, in: version)
+            let recordURL = directoryURL.appendingPathComponent(recordFilename)
+            guard FileManager.default.fileExists(atPath: recordURL.path) else { return nil }
+
+            do {
+                let record = try decoder().decode(
+                    ConversationArchiveRecord.self,
+                    from: Data(contentsOf: recordURL)
+                )
+                guard record.schemaVersion == ConversationArchiveRecord.currentSchemaVersion,
+                      record.contributions.count == 1,
+                      record.contributions.first?.source == source else {
+                    throw ConversationArchiveError.invalidArchive(
+                        directoryURL,
+                        "El manifiesto individual no corresponde a esta exportación."
+                    )
+                }
+                return record
+            } catch let error as ConversationArchiveError {
+                throw error
+            } catch {
+                throw ConversationArchiveError.invalidArchive(
+                    directoryURL,
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private static func loadSourceRecords(
+        paths: LibraryPaths
+    ) throws -> [ConversationArchiveRecord] {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: paths.exportsURL.path) else { return [] }
+        let exportDirectories = try fileManager.contentsOfDirectory(
+            at: paths.exportsURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        var records: [ConversationArchiveRecord] = []
+        for exportDirectory in exportDirectories {
+            guard (try? exportDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory)
+                == true else { continue }
+            let chatsURL = exportDirectory.appendingPathComponent("Chats", isDirectory: true)
+            guard fileManager.fileExists(atPath: chatsURL.path) else { continue }
+            let chatDirectories = try fileManager.contentsOfDirectory(
+                at: chatsURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            for chatDirectory in chatDirectories {
+                guard (try? chatDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory)
+                    == true else { continue }
+                let recordURL = chatDirectory.appendingPathComponent(recordFilename)
+                guard fileManager.fileExists(atPath: recordURL.path) else { continue }
+                records.append(
+                    try decoder().decode(
+                        ConversationArchiveRecord.self,
+                        from: Data(contentsOf: recordURL)
+                    )
+                )
+            }
+        }
+        return records
+    }
+
+    private static func openStoredConversation(
+        record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        if record.contributions.count == 1 {
+            return try openSourceConversation(record: record, in: session)
+        }
+        return try open(id: record.id, paths: session.paths)
+    }
+
+    private static func openSourceConversation(
+        record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        guard record.contributions.count == 1,
+              let source = record.contributions.first?.source,
+              let version = session.version(id: source.versionID) else {
+            throw ConversationArchiveError.invalidArchive(
+                session.paths.rootURL,
+                "La conversación individual no tiene una exportación de origen válida."
+            )
+        }
+        let exported = try version.exportStore.openChat(chatId: source.chatID)
+        let documentKey = ConversationIdentityKey(chat: exported.document.chat)
+        guard record.identityKeys.contains(documentKey) else {
+            throw ConversationArchiveError.invalidArchive(
+                exported.directoryURL,
+                "La identidad del chat no coincide con su manifiesto."
+            )
+        }
+        return ArchivedConversation(
+            record: record,
+            document: exported.document,
+            directoryURL: exported.directoryURL,
+            documentURL: exported.directoryURL.appendingPathComponent(documentFilename),
+            mediaDirectoryURL: exported.mediaDirectoryURL
+        )
+    }
+
+    private static func storageLocations(
+        for record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> (
+        directoryURL: URL,
+        recordURL: URL,
+        mediaURL: URL
+    ) {
+        if record.contributions.count > 1 {
+            let materializedURL = archiveURL(id: record.id, paths: session.paths)
+            return (
+                materializedURL,
+                materializedURL.appendingPathComponent(recordFilename),
+                materializedURL.appendingPathComponent(mediaDirectoryName, isDirectory: true)
+            )
+        }
+        guard record.contributions.count == 1,
+              let source = record.contributions.first?.source,
+              let version = session.version(id: source.versionID) else {
+            throw ConversationArchiveError.invalidArchive(
+                session.paths.rootURL,
+                "No se ha encontrado la representación física de la conversación."
+            )
+        }
+        let directoryURL = sourceDirectoryURL(source, in: version)
+        return (
+            directoryURL,
+            directoryURL.appendingPathComponent(recordFilename),
+            directoryURL.appendingPathComponent(mediaDirectoryName, isDirectory: true)
+        )
+    }
+
     private static func identity(
         for chat: ChatInfo,
         in version: LibraryVersionSession
@@ -354,61 +499,89 @@ enum ConversationArchiveService {
         ).identity(for: chat)
     }
 
-    private static func consolidate(
-        _ records: [ConversationArchiveRecord]
-    ) -> (
-        records: [ConversationArchiveRecord],
-        duplicateIDs: Set<ConversationArchiveID>,
-        dirtyIDs: Set<ConversationArchiveID>
-    ) {
-        var consolidated: [ConversationArchiveRecord] = []
-        var duplicateIDs: Set<ConversationArchiveID> = []
-        var dirtyIDs: Set<ConversationArchiveID> = []
+    private static func store(
+        record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        if record.contributions.count == 1 {
+            return try installSourceRecord(record: record, in: session)
+        }
+        return try installCombinedRecord(record: record, in: session)
+    }
 
-        for candidate in records.sorted(by: { $0.createdAt < $1.createdAt }) {
-            let candidateSources = Set(candidate.contributions.map(\.source))
-            let existingIndex = consolidated.firstIndex { existing in
-                !existing.identityKeys.isDisjoint(with: candidate.identityKeys)
-                    || !Set(existing.contributions.map(\.source)).isDisjoint(with: candidateSources)
-            }
-            guard let existingIndex else {
-                consolidated.append(candidate)
-                continue
-            }
-
-            var existing = consolidated[existingIndex]
-            existing.register(
-                ResolvedConversationIdentity(
-                    primaryKey: existing.key,
-                    keys: candidate.identityKeys
-                )
+    private static func installSourceRecord(
+        record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        guard record.contributions.count == 1,
+              let source = record.contributions.first?.source,
+              let version = session.version(id: source.versionID) else {
+            throw ConversationArchiveError.invalidArchive(
+                session.paths.rootURL,
+                "La conversación individual no tiene una exportación de origen válida."
             )
-            for contribution in candidate.contributions {
-                if let index = existing.contributions.firstIndex(
-                    where: { $0.source == contribution.source }
-                ) {
-                    if contribution.exportedAt > existing.contributions[index].exportedAt {
-                        let previous = existing.contributions[index]
-                        existing.contributions[index] = ConversationContribution(
-                            id: previous.id,
-                            source: contribution.source,
-                            exportedAt: contribution.exportedAt
-                        )
-                    }
-                } else {
-                    existing.contributions.append(contribution)
-                }
-            }
-            if candidate.updatedAt > existing.updatedAt {
-                existing.updatedAt = candidate.updatedAt
-                existing.summary = candidate.summary ?? existing.summary
-            }
-            consolidated[existingIndex] = existing
-            duplicateIDs.insert(candidate.id)
-            dirtyIDs.insert(existing.id)
+        }
+        let exported = try version.exportStore.openChat(chatId: source.chatID)
+        let documentKey = ConversationIdentityKey(chat: exported.document.chat)
+        guard record.identityKeys.contains(documentKey) else {
+            throw ConversationArchiveError.invalidArchive(
+                exported.directoryURL,
+                "La identidad del chat no coincide con su manifiesto."
+            )
         }
 
-        return (consolidated, duplicateIDs, dirtyIDs)
+        var installedRecord = record
+        installedRecord.summary = exported.document.chat
+        try encoder().encode(installedRecord).write(
+            to: exported.directoryURL.appendingPathComponent(recordFilename),
+            options: .atomic
+        )
+        return try openSourceConversation(record: installedRecord, in: session)
+    }
+
+    private static func installCombinedRecord(
+        record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> ArchivedConversation {
+        guard record.contributions.count > 1 else {
+            throw ConversationArchiveError.invalidArchive(
+                session.paths.rootURL,
+                "Una conversación combinada requiere varias exportaciones."
+            )
+        }
+
+        let fileManager = FileManager.default
+        let stagingURL = session.paths.rootURL.appendingPathComponent(
+            ".promoting-conversation-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
+        var stagedRecords: [(original: URL, staged: URL)] = []
+
+        do {
+            for (index, contribution) in record.contributions.enumerated() {
+                guard let version = session.version(id: contribution.source.versionID) else {
+                    throw ConversationArchiveError.missingSource(contribution.source)
+                }
+                let originalURL = sourceDirectoryURL(contribution.source, in: version)
+                    .appendingPathComponent(recordFilename)
+                guard fileManager.fileExists(atPath: originalURL.path) else { continue }
+                let stagedURL = stagingURL.appendingPathComponent("\(index)-\(recordFilename)")
+                try fileManager.moveItem(at: originalURL, to: stagedURL)
+                stagedRecords.append((originalURL, stagedURL))
+            }
+
+            let conversation = try install(record: record, in: session)
+            try? fileManager.removeItem(at: stagingURL)
+            return conversation
+        } catch {
+            for item in stagedRecords.reversed()
+            where fileManager.fileExists(atPath: item.staged.path) {
+                try? fileManager.moveItem(at: item.staged, to: item.original)
+            }
+            try? fileManager.removeItem(at: stagingURL)
+            throw error
+        }
     }
 
     private static func install(
@@ -796,6 +969,15 @@ enum ConversationArchiveService {
 
     private static func archiveURL(id: ConversationArchiveID, paths: LibraryPaths) -> URL {
         paths.conversationsURL.appendingPathComponent(id.rawValue, isDirectory: true)
+    }
+
+    private static func sourceDirectoryURL(
+        _ source: VersionChatID,
+        in version: LibraryVersionSession
+    ) -> URL {
+        version.exportsURL
+            .appendingPathComponent("Chats", isDirectory: true)
+            .appendingPathComponent(String(source.chatID), isDirectory: true)
     }
 
     private static func sourceSelections(in session: LibrarySession) -> [VersionChatID] {

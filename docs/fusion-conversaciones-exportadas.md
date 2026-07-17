@@ -4,6 +4,11 @@
 
 Diseño de una funcionalidad futura. No está implementada.
 
+Este documento no describe la unificación incremental que ya realiza la
+aplicación con varias exportaciones locales. El funcionamiento vigente de
+`Exports` y `Conversations`, incluida su estrategia de mensajes y multimedia, se
+explica en [Conversaciones materializadas](conversaciones-materializadas.md).
+
 ## Objetivo
 
 Permitir que una persona incorpore a una conversación del catálogo de chats
@@ -382,8 +387,8 @@ Al reemplazar la exportación base desde una copia de iPhone, SwiftWABackupAPI d
 preservar `Imports`, instalar la nueva base y volver a materializar la unión. Nunca
 debe reemplazar toda la carpeta descartando silenciosamente las aportaciones.
 
-La estrategia física de multimedia podrá utilizar copias, clones APFS o enlaces
-duros internos, pero la semántica no dependerá de esa optimización.
+La semántica no dependerá de la estrategia física utilizada para materializar la
+multimedia.
 
 ## Ampliaciones propuestas en SwiftWABackupAPI
 
