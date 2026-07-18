@@ -154,6 +154,16 @@ private struct ConversationHeaderView: View {
                     Label("Buscar en la conversación", systemImage: "magnifyingglass")
                 }
                 .labelStyle(.iconOnly)
+                .help(
+                    isSearching
+                        ? "Cerrar búsqueda en la conversación"
+                        : "Buscar en la conversación"
+                )
+                .accessibilityLabel(
+                    isSearching
+                        ? "Cerrar búsqueda en la conversación"
+                        : "Buscar en la conversación"
+                )
 
                 Button(action: revealInFinder) {
                     Label("Abrir conversación en Finder", systemImage: "folder")
@@ -178,6 +188,8 @@ private struct ConversationHeaderView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
+                        .help("Borrar búsqueda")
+                        .accessibilityLabel("Borrar búsqueda")
                     }
                 }
                 .padding(8)

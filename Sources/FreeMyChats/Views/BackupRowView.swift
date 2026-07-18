@@ -46,6 +46,7 @@ struct BackupRowView: View {
                 Button("Añadir a la biblioteca", action: addToLibrary)
                     .buttonStyle(.borderedProminent)
                     .disabled(!row.canCreateLibrary)
+                    .help("Añadir esta copia de WhatsApp a la biblioteca")
             }
         }
         .padding(14)

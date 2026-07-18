@@ -42,6 +42,7 @@ struct ExportedChatsListView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Abrir la conversación \(item.chat.name)")
                 }
                 .listStyle(.inset)
             }
@@ -76,6 +77,7 @@ struct ExportedChatsListView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Borrar búsqueda")
+                    .accessibilityLabel("Borrar búsqueda")
                 }
             }
             .padding(.horizontal, 10)

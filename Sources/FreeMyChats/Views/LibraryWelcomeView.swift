@@ -23,6 +23,7 @@ struct LibraryWelcomeView: View {
                         store.openLibrary(at: url)
                     }
                 }
+                .help("Abrir una biblioteca existente")
 
                 Button("Crear biblioteca…") {
                     if let url = DirectoryPicker.chooseNewLibrary() {
@@ -30,6 +31,7 @@ struct LibraryWelcomeView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .help("Crear una biblioteca nueva")
             }
         }
         .padding(40)

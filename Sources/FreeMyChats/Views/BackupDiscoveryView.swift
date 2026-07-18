@@ -24,6 +24,7 @@ struct BackupDiscoveryView: View {
             Spacer()
             Button("Cerrar") { dismiss() }
                 .keyboardShortcut(.cancelAction)
+                .help("Cerrar esta ventana")
         }
     }
 
@@ -42,12 +43,14 @@ struct BackupDiscoveryView: View {
                     store.inspectBackups()
                 }
             }
+            .help("Elegir la carpeta que contiene las copias del iPhone")
             Button("Analizar") {
                 store.inspectBackups()
             }
             .keyboardShortcut("r", modifiers: .command)
             .buttonStyle(.borderedProminent)
             .disabled(store.operation != nil)
+            .help("Buscar copias de WhatsApp en la carpeta seleccionada")
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -96,10 +99,12 @@ struct BackupDiscoveryView: View {
                         WorkspaceService.openFullDiskAccessSettings()
                     }
                     .buttonStyle(.borderedProminent)
+                    .help("Abrir los ajustes de Acceso total al disco")
 
                     Button("Salir de Free My Chats") {
                         WorkspaceService.quitApplication()
                     }
+                    .help("Cerrar Free My Chats para aplicar el permiso")
                 }
             }
 
@@ -116,9 +121,11 @@ struct BackupDiscoveryView: View {
                             store.inspectBackups()
                         }
                     }
+                    .help("Elegir otra carpeta que contenga copias del iPhone")
                     Button("Volver a intentar") {
                         store.inspectBackups()
                     }
+                    .help("Analizar de nuevo la carpeta seleccionada")
                 }
             }
         }

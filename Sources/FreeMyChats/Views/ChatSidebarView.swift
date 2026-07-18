@@ -371,9 +371,9 @@ private struct ChatSidebarRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .contentShape(Rectangle())
             .help(isExpanded ? "Cerrar detalles del chat" : "Mostrar detalles del chat")
 
             if isExpanded {
@@ -400,10 +400,22 @@ private struct ChatSidebarRow: View {
     @ViewBuilder
     private var expandedDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
-            detailLine("Mensajes", value: chat.numberMessages.formatted())
-            detailLine("Tamaño", value: sizeDescription)
-            detailLine("Primero", value: firstMessageDescription)
-            detailLine("Último", value: Self.detailDateFormatter.string(from: chat.lastMessageDate))
+            Button(action: toggleExpansion) {
+                VStack(alignment: .leading, spacing: 6) {
+                    detailLine("Mensajes", value: chat.numberMessages.formatted())
+                    detailLine("Tamaño", value: sizeDescription)
+                    detailLine("Primero", value: firstMessageDescription)
+                    detailLine(
+                        "Último",
+                        value: Self.detailDateFormatter.string(from: chat.lastMessageDate)
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Cerrar detalles del chat")
+            .accessibilityLabel("Cerrar detalles del chat")
 
             HStack {
                 exportStatus

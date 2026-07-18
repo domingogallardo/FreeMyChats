@@ -83,6 +83,7 @@ struct MessageRowView: View {
                     Label("Abrir ubicación", systemImage: "map")
                 }
                 .buttonStyle(.borderless)
+                .help("Abrir esta ubicación en Mapas")
             }
 
             if message.message == nil, mediaURL == nil, message.latitude == nil {
@@ -208,6 +209,7 @@ private struct MediaAttachmentView: View {
                 .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 7))
             }
             .buttonStyle(.plain)
+            .help("Abrir \(filename)")
         }
     }
 
