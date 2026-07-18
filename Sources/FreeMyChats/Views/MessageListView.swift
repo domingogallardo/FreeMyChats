@@ -262,7 +262,9 @@ struct MessageListView: View {
             visibleMessageIDs.contains($0.id)
         })?.id else { return }
 
-        replyReturnMessageID = nil
+        // Lazy stacks can emit visibility changes after a programmatic jump has
+        // completed. Keep the reply return destination until an explicit
+        // navigation action clears or replaces it.
         if searchText.isEmpty {
             lastReadingPosition = messageID
         }
@@ -423,6 +425,11 @@ struct MessageListView: View {
             return
         }
 
+        // Publish the return destination as soon as the jump is accepted. Its
+        // availability must not depend on SwiftUI finishing layout within the
+        // delay used below to let the new scroll position settle.
+        replyReturnMessageID = returnMessageID
+
         let requestID = UUID()
         restorationID = requestID
         Task { @MainActor in
@@ -439,7 +446,6 @@ struct MessageListView: View {
                 lastReadingPosition = target
             }
             isAtBeginning = !timeline.hasEarlierMessages && target == timeline.firstMessageID
-            replyReturnMessageID = returnMessageID
             isRestoringPosition = false
         }
     }
