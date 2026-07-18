@@ -21,6 +21,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var exportedChats: [ExportedChatListItem] = []
     @Published private(set) var selectedExportID: ConversationArchiveID?
     @Published private(set) var selectedExport: ArchivedConversation?
+    @Published private(set) var highlightedChatIDs: Set<VersionChatID> = []
     @Published private(set) var isLoadingExportCatalog = false
     @Published private(set) var isOpeningExport = false
     @Published private(set) var exportPanelError: String?
@@ -88,6 +89,9 @@ final class FreeMyChatsStore: ObservableObject {
 
     func visibleChats(in version: LibraryVersionSession) -> [ChatInfo] {
         let filteredChats = version.chats.filter { chat in
+            let selection = VersionChatID(versionID: version.id, chatID: chat.id)
+            if highlightedChatIDs.contains(selection) { return true }
+
             switch chatFilter {
             case .all: return true
             case .groups: return chat.chatType == .group
@@ -159,6 +163,7 @@ final class FreeMyChatsStore: ObservableObject {
         exportedChats = []
         selectedExportID = nil
         selectedExport = nil
+        highlightedChatIDs = []
         isLoadingExportCatalog = false
         isOpeningExport = false
         exportPanelError = nil
@@ -305,6 +310,7 @@ final class FreeMyChatsStore: ObservableObject {
               let item = exportedChats.first(where: { $0.id == selection }) else { return }
 
         let requestID = UUID()
+        highlightedChatIDs = Set(item.contributionSources)
         openExportRequestID = requestID
         selectedExportID = selection
         selectedExport = nil
@@ -323,6 +329,9 @@ final class FreeMyChatsStore: ObservableObject {
                 switch result {
                 case .success(let exported):
                     self.selectedExport = exported
+                    self.highlightedChatIDs = Set(
+                        exported.record.contributions.map(\.source)
+                    )
                 case .failure(let error):
                     self.exportPanelError = error.localizedDescription
                 }
@@ -334,6 +343,7 @@ final class FreeMyChatsStore: ObservableObject {
         openExportRequestID = nil
         selectedExportID = nil
         selectedExport = nil
+        highlightedChatIDs = []
         isOpeningExport = false
         exportPanelError = nil
     }
@@ -390,6 +400,9 @@ final class FreeMyChatsStore: ObservableObject {
                         if let conversation = removal.conversation {
                             self.selectedExportID = conversation.record.id
                             self.selectedExport = conversation
+                            self.highlightedChatIDs = Set(
+                                conversation.record.contributions.map(\.source)
+                            )
                         } else {
                             self.readingPositionStore.remove(
                                 conversation: removal.conversationID,
@@ -399,6 +412,9 @@ final class FreeMyChatsStore: ObservableObject {
                     } else if let previousExportID, let previousExport {
                         self.selectedExportID = previousExportID
                         self.selectedExport = previousExport
+                        self.highlightedChatIDs = Set(
+                            previousExport.record.contributions.map(\.source)
+                        )
                     }
 
                     if let conversation = removal.conversation {
@@ -615,6 +631,7 @@ final class FreeMyChatsStore: ObservableObject {
         exportedChats = []
         selectedExportID = nil
         selectedExport = nil
+        highlightedChatIDs = []
         isLoadingExportCatalog = false
         isOpeningExport = false
         exportPanelError = nil

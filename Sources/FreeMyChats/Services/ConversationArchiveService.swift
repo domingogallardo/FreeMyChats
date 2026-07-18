@@ -333,7 +333,7 @@ enum ConversationArchiveService {
                 id: record.id,
                 chat: chat,
                 exportedAt: record.updatedAt,
-                contributionCount: record.contributions.count,
+                contributionSources: record.contributions.map(\.source),
                 directoryURL: locations.directoryURL,
                 photoURL: photoURL
             )

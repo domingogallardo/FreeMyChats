@@ -244,9 +244,11 @@ struct ExportedChatListItem: Identifiable {
     let id: ConversationArchiveID
     let chat: ChatInfo
     let exportedAt: Date
-    let contributionCount: Int
+    let contributionSources: [VersionChatID]
     let directoryURL: URL
     let photoURL: URL?
+
+    var contributionCount: Int { contributionSources.count }
 }
 
 enum ChatDetailsState: Equatable {

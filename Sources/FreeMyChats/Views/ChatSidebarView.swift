@@ -37,6 +37,7 @@ struct ChatSidebarView: View {
                                     chat: chat,
                                     photoURL: store.profilePhotoURL(for: chat, in: version),
                                     isExpanded: store.selectedChatID == selection,
+                                    isHighlighted: store.highlightedChatIDs.contains(selection),
                                     detailsState: store.chatDetails[selection],
                                     exportState: store.exportStates[selection] ?? .checking,
                                     isExporting: store.exportingChatID == selection,
@@ -58,6 +59,11 @@ struct ChatSidebarView: View {
                                     }
                                 )
                                 .tag(selection)
+                                .listRowBackground(
+                                    store.highlightedChatIDs.contains(selection)
+                                        ? Color.accentColor.opacity(0.14)
+                                        : Color.clear
+                                )
                             }
                         }
                     } label: {
@@ -77,6 +83,9 @@ struct ChatSidebarView: View {
         .onChange(of: store.selectedChatID) { chatID in
             store.selectChat(chatID)
         }
+        .onChange(of: store.highlightedChatIDs) { chatIDs in
+            expandedVersionIDs.formUnion(chatIDs.map(\.versionID))
+        }
         .onChange(of: store.versions.map(\.id)) { ids in
             expandedVersionIDs.formIntersection(Set(ids))
             if expandedVersionIDs.isEmpty, let first = ids.first {
@@ -87,6 +96,7 @@ struct ChatSidebarView: View {
             if let first = store.versions.first?.id {
                 expandedVersionIDs.insert(first)
             }
+            expandedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
         }
         .confirmationDialog(
             "¿Eliminar esta copia fuente?",
@@ -319,6 +329,7 @@ private struct ChatSidebarRow: View {
     let chat: ChatInfo
     let photoURL: URL?
     let isExpanded: Bool
+    let isHighlighted: Bool
     let detailsState: ChatDetailsState?
     let exportState: ChatExportDisplayState
     let isExporting: Bool
@@ -374,7 +385,16 @@ private struct ChatSidebarRow: View {
         }
         .padding(.leading, 18)
         .padding(.vertical, isExpanded ? 7 : 3)
+        .overlay(alignment: .leading) {
+            if isHighlighted {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 4)
+            }
+        }
         .animation(.easeInOut(duration: 0.16), value: isExpanded)
+        .animation(.easeInOut(duration: 0.16), value: isHighlighted)
     }
 
     @ViewBuilder

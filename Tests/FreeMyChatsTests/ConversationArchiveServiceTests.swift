@@ -50,6 +50,10 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(catalog.count, 1)
         XCTAssertEqual(item.id, update.conversation.record.id)
         XCTAssertEqual(item.contributionCount, 1)
+        XCTAssertEqual(
+            item.contributionSources,
+            [VersionChatID(versionID: "single", chatID: 7)]
+        )
         XCTAssertEqual(item.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
@@ -96,6 +100,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
         XCTAssertEqual(catalog.count, 1)
         XCTAssertEqual(item.contributionCount, 2)
+        XCTAssertEqual(
+            Set(item.contributionSources),
+            Set([
+                VersionChatID(versionID: "old", chatID: 7),
+                VersionChatID(versionID: "new", chatID: 8)
+            ])
+        )
         XCTAssertEqual(
             item.directoryURL.standardizedFileURL,
             fixture.session.paths.mergedChatsURL
