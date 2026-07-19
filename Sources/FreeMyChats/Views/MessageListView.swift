@@ -23,6 +23,7 @@ struct MessageListView: View {
     @State private var isAtBeginning = false
     @State private var restorationID = UUID()
     @State private var highlightedMessageID: Int?
+    @State private var pendingRestorationHighlightMessageID: Int?
     @State private var highlightID = UUID()
     @State private var replyReturnMessageID: Int?
     @State private var activeTimelineShift: TimelineShiftRequest?
@@ -238,9 +239,11 @@ struct MessageListView: View {
                     ?? lastReadingPosition
                     ?? initialMessageID
                 pendingRestorationAnchor = .center
+                pendingRestorationHighlightMessageID = selectedSearchMessageID
             case .restoreInitialPosition:
                 target = positionBeforeSearch ?? lastReadingPosition ?? initialMessageID
                 pendingRestorationAnchor = .top
+                pendingRestorationHighlightMessageID = nil
             }
             searchNavigator = MessageSearchNavigator(messageIDs: [])
         } else {
@@ -259,6 +262,7 @@ struct MessageListView: View {
             )
             target = searchNavigator.selectedMessageID
             pendingRestorationAnchor = nil
+            pendingRestorationHighlightMessageID = nil
         }
         publishSearchSelection()
         if query.isEmpty, let target {
@@ -331,6 +335,10 @@ struct MessageListView: View {
                 lastReadingPosition = target
                 positionBeforeSearch = nil
                 pendingRestorationAnchor = nil
+                if pendingRestorationHighlightMessageID == target {
+                    pendingRestorationHighlightMessageID = nil
+                    highlightMessage(target)
+                }
             }
             if !timeline.hasEarlierMessages,
                target == timeline.firstMessageID,
@@ -532,10 +540,7 @@ struct MessageListView: View {
             await Task.yield()
             guard restorationID == requestID else { return }
             proxy.scrollTo(target, anchor: .center)
-            withAnimation(.easeInOut(duration: 0.2)) {
-                highlightedMessageID = target
-                highlightID = UUID()
-            }
+            highlightMessage(target)
             try? await Task.sleep(for: .milliseconds(40))
             guard restorationID == requestID else { return }
             if searchText.isEmpty {
@@ -579,6 +584,13 @@ struct MessageListView: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard restorationID == requestID else { return }
             isRestoringPosition = false
+        }
+    }
+
+    private func highlightMessage(_ messageID: Int) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            highlightedMessageID = messageID
+            highlightID = UUID()
         }
     }
 
