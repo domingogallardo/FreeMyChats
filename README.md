@@ -25,7 +25,12 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Vista previa de número de mensajes y fechas antes de exportar.
 - Exportación explícita desde la fila desplegada del chat.
 - Actualización incremental: si el mismo chat ya se guardó desde una copia anterior,
-  `Añadir a conversación` incorpora la nueva exportación sin crear un duplicado en el catálogo.
+  `Añadir a Vista unificada` conserva la nueva exportación por separado y reúne los
+  mensajes de todas las exportaciones en una sola cronología, sin crear un duplicado
+  en el catálogo.
+- Antes de añadir una exportación, la confirmación indica cuántos mensajes contiene
+  y cuántos puede añadir como máximo; al terminar muestra la cifra incorporada realmente.
+  Antes de borrar, indica al instante cuántos mensajes exclusivos desaparecerán.
 - Identificación por JID y tipo de chat, deduplicación de mensajes coincidentes y
   conservación de cada copia como aportación reconstruible.
 - Indicador de actividad mientras se exporta un chat.

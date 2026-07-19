@@ -65,6 +65,9 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ConversationHeaderView(
                 exported: exported,
+                sourceTitles: exported.record.contributions.compactMap { contribution in
+                    store.session?.version(id: contribution.source.versionID)?.record.title
+                },
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
                 goBack: store.showExportList,
@@ -123,8 +126,10 @@ private struct ExportBackHeader: View {
 
 private struct ConversationHeaderView: View {
     let exported: ArchivedConversation
+    let sourceTitles: [String]
     @Binding var isSearching: Bool
     @Binding var searchText: String
+    @State private var isShowingUnifiedViewHelp = false
     let goBack: () -> Void
     let revealInFinder: () -> Void
 
@@ -140,9 +145,30 @@ private struct ConversationHeaderView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(exported.document.chat.name)
                         .font(.title2.bold())
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 5) {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if exported.record.contributions.count > 1 {
+                            Button {
+                                isShowingUnifiedViewHelp.toggle()
+                            } label: {
+                                Label(
+                                    "Cómo funciona esta Vista unificada",
+                                    systemImage: "info.circle"
+                                )
+                            }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.plain)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Ver las exportaciones incluidas en esta Vista unificada")
+                            .popover(isPresented: $isShowingUnifiedViewHelp) {
+                                UnifiedViewHelpView(sourceTitles: sourceTitles)
+                            }
+                        }
+                    }
                 }
                 Spacer()
                 Button {

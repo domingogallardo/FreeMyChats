@@ -57,6 +57,8 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(item.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
+        XCTAssertEqual(opened.record.contributions.first?.messageCount, 1)
+        XCTAssertEqual(opened.record.contributions.first?.exclusiveMessageCount, 1)
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
                 atPath: fixture.session.paths.mergedChatsURL.path
@@ -237,6 +239,78 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(archived.record.contributions.count, 2)
     }
 
+    func testStoredContributionCountsReflectCurrentThreeExportConfiguration() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "a",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "b",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 10, text: "B", date: "2026-01-02T10:00:00Z"),
+                        MessageFixture(id: 11, text: "C", date: "2026-02-01T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "c",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-03-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 20, text: "C", date: "2026-02-01T10:00:00Z"),
+                        MessageFixture(id: 21, text: "D", date: "2026-03-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let item = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let archived = try ConversationArchiveService.open(
+            id: item.id,
+            paths: fixture.session.paths
+        )
+        let contributions = Dictionary(
+            uniqueKeysWithValues: archived.record.contributions.map { ($0.source.versionID, $0) }
+        )
+        XCTAssertEqual(contributions["a"]?.messageCount, 2)
+        XCTAssertEqual(contributions["a"]?.exclusiveMessageCount, 1)
+        XCTAssertEqual(contributions["b"]?.messageCount, 2)
+        XCTAssertEqual(contributions["b"]?.exclusiveMessageCount, 0)
+        XCTAssertEqual(contributions["c"]?.messageCount, 2)
+        XCTAssertEqual(contributions["c"]?.exclusiveMessageCount, 1)
+
+        let bImpact = try XCTUnwrap(ConversationArchiveService.storedRemovalMessageImpact(
+            of: VersionChatID(versionID: "b", chatID: 7),
+            in: fixture.session
+        ))
+        XCTAssertEqual(bImpact.sourceMessageCount, 2)
+        XCTAssertEqual(bImpact.removedMessageCount, 0)
+        XCTAssertEqual(bImpact.resultingMessageCount, 4)
+
+        let cImpact = try XCTUnwrap(ConversationArchiveService.storedRemovalMessageImpact(
+            of: VersionChatID(versionID: "c", chatID: 7),
+            in: fixture.session
+        ))
+        XCTAssertEqual(cImpact.sourceMessageCount, 2)
+        XCTAssertEqual(cImpact.removedMessageCount, 1)
+        XCTAssertEqual(cImpact.resultingMessageCount, 3)
+    }
+
     func testAuthorLIDChangeDoesNotDuplicateMessages() throws {
         let fixture = try makeLibrary(
             exports: [
@@ -338,6 +412,8 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
         XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "B", "C"])
         XCTAssertEqual(conversation.record.contributions.count, 1)
+        XCTAssertEqual(conversation.record.contributions.first?.messageCount, 3)
+        XCTAssertEqual(conversation.record.contributions.first?.exclusiveMessageCount, 3)
         XCTAssertNil(removal.session.version(id: "old"))
         XCTAssertNotNil(removal.session.version(id: "new"))
         XCTAssertEqual(catalog.count, 1)
@@ -409,6 +485,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
         try FileManager.default.removeItem(
             at: archived.mediaDirectoryURL.appendingPathComponent(missingFilename)
         )
+
+        let impact = try ConversationArchiveService.removalMessageImpact(
+            of: VersionChatID(versionID: "old", chatID: 7),
+            in: fixture.session
+        )
+        XCTAssertEqual(impact.removedMessageCount, 1)
+        XCTAssertEqual(impact.resultingMessageCount, 1)
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "old", chatID: 7),

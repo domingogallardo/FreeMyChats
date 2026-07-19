@@ -4,6 +4,7 @@ import SwiftUI
 struct ExportedChatsListView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var searchText = ""
+    @State private var isShowingUnifiedViewHelp = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,8 +53,23 @@ struct ExportedChatsListView: View {
     private var header: some View {
         HStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Catálogo de conversaciones")
-                    .font(.title2.bold())
+                HStack(spacing: 7) {
+                    Text("Catálogo de conversaciones")
+                        .font(.title2.bold())
+
+                    Button {
+                        isShowingUnifiedViewHelp.toggle()
+                    } label: {
+                        Label("Qué es una Vista unificada", systemImage: "info.circle")
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Qué es una Vista unificada")
+                    .popover(isPresented: $isShowingUnifiedViewHelp) {
+                        UnifiedViewHelpView()
+                    }
+                }
                 Text(exportCountDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -152,7 +168,15 @@ private struct ExportedChatRow: View {
         let exports = item.contributionCount == 1
             ? "1 exportación"
             : "\(item.contributionCount) exportaciones"
-        return "\(type) · \(item.chat.numberMessages.formatted()) mensajes · \(exports)"
+        let unified = item.contributionCount > 1 ? "Vista unificada" : nil
+        return [
+            unified,
+            type,
+            "\(item.chat.numberMessages.formatted()) mensajes",
+            exports
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
     }
 
     private static let exportDateFormatter: DateFormatter = {

@@ -42,6 +42,119 @@ final class LibraryModelsTests: XCTestCase {
         )
     }
 
+    func testUnifiedViewCreationCopyExplainsThatExportsRemainSeparate() {
+        XCTAssertEqual(
+            UnifiedViewPresentation.exportTitle(
+                chatName: "Familia",
+                existingContributionCount: 1
+            ),
+            "¿Crear una Vista unificada de “Familia”?"
+        )
+        let message = UnifiedViewPresentation.exportMessage(
+            existingContributionCount: 1,
+            sourceMessageCount: 900
+        )
+        XCTAssertTrue(message.contains("ambas exportaciones seguirán guardadas por separado"))
+        XCTAssertTrue(message.contains("reúne sus mensajes en una sola cronología"))
+        XCTAssertTrue(message.contains("La nueva exportación contiene 900 mensajes"))
+        XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
+        XCTAssertTrue(message.contains("se han añadido realmente"))
+        XCTAssertEqual(
+            UnifiedViewPresentation.exportButtonTitle(existingContributionCount: 1),
+            "Crear Vista unificada"
+        )
+    }
+
+    func testUnifiedViewUpdateCopyExplainsThatEveryExportRemainsSeparate() {
+        XCTAssertEqual(
+            UnifiedViewPresentation.exportTitle(
+                chatName: "Familia",
+                existingContributionCount: 2
+            ),
+            "¿Actualizar la Vista unificada de “Familia”?"
+        )
+        let message = UnifiedViewPresentation.exportMessage(
+            existingContributionCount: 2,
+            sourceMessageCount: 900
+        )
+        XCTAssertTrue(message.contains("creada a partir de 2 exportaciones"))
+        XCTAssertTrue(message.contains("La nueva exportación se guardará por separado"))
+        XCTAssertTrue(message.contains("mensajes de todas ellas"))
+        XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
+        XCTAssertTrue(message.contains("se mostrarán una sola vez"))
+        XCTAssertEqual(
+            UnifiedViewPresentation.exportButtonTitle(existingContributionCount: 2),
+            "Exportar y actualizar"
+        )
+    }
+
+    func testContributionDecodesLegacyManifestWithoutStoredMessageCounts() throws {
+        let data = Data(
+            """
+            {
+              "id": "legacy-contribution",
+              "source": { "versionID": "old", "chatID": 7 },
+              "exportedAt": "2026-01-10T12:00:00Z"
+            }
+            """.utf8
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let contribution = try decoder.decode(ConversationContribution.self, from: data)
+
+        XCTAssertNil(contribution.messageCount)
+        XCTAssertNil(contribution.exclusiveMessageCount)
+    }
+
+    func testDeletingOneOfTwoExportsExplainsThatUnifiedViewDisappears() {
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionTitle(contributionCount: 2),
+            "¿Borrar esta exportación y deshacer la Vista unificada?"
+        )
+        let message = UnifiedViewPresentation.deletionMessage(
+            chatName: "Familia",
+            versionTitle: "Copia de junio",
+            impact: ConversationRemovalMessageImpact(
+                contributionCount: 2,
+                existingMessageCount: 900,
+                sourceMessageCount: 850,
+                removedMessageCount: 50,
+                resultingMessageCount: 850
+            )
+        )
+        XCTAssertTrue(message.contains("La otra exportación no se modificará"))
+        XCTAssertTrue(message.contains("la Vista unificada desaparecerá"))
+        XCTAssertTrue(message.contains("Esta exportación contiene 850 mensajes"))
+        XCTAssertTrue(message.contains("50 mensajes exclusivos dejarán de aparecer"))
+        XCTAssertTrue(message.contains("quedará con 850 mensajes"))
+    }
+
+    func testDeletingOneOfThreeExportsExplainsThatUnifiedViewIsRebuilt() {
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionTitle(contributionCount: 3),
+            "¿Borrar esta exportación de la Vista unificada?"
+        )
+        let message = UnifiedViewPresentation.deletionMessage(
+            chatName: "Familia",
+            versionTitle: "Copia de junio",
+            impact: ConversationRemovalMessageImpact(
+                contributionCount: 3,
+                existingMessageCount: 900,
+                sourceMessageCount: 700,
+                removedMessageCount: 0,
+                resultingMessageCount: 900
+            )
+        )
+        XCTAssertTrue(message.contains("Las 2 exportaciones restantes no se modificarán"))
+        XCTAssertTrue(message.contains("La Vista unificada se reconstruirá"))
+        XCTAssertTrue(message.contains("no desaparecerá ninguno"))
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 3),
+            "Borrar y actualizar la vista"
+        )
+    }
+
     func testAudioTimeFormatterUsesClockStyleDurations() {
         XCTAssertEqual(AudioTimeFormatter.string(from: 0), "0:00")
         XCTAssertEqual(AudioTimeFormatter.string(from: 9.9), "0:09")

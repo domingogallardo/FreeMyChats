@@ -6,7 +6,6 @@ struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
     @State private var versionPendingDeletion: LibraryVersionSession?
-    @State private var exportPendingDeletion: ExportDeletionRequest?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,15 +46,13 @@ struct ChatSidebarView: View {
                                             ? nil
                                             : selection
                                     },
-                                    export: { store.exportChat(selection) },
+                                    export: {
+                                        requestExport(selection)
+                                    },
                                     replaceExport: { store.replaceExport(selection) },
                                     revealExport: { store.revealExport(selection) },
                                     deleteExport: {
-                                        exportPendingDeletion = ExportDeletionRequest(
-                                            selection: selection,
-                                            chatName: chat.name,
-                                            versionTitle: version.record.title
-                                        )
+                                        store.prepareExportDeletion(selection)
                                     }
                                 )
                                 .tag(selection)
@@ -122,31 +119,85 @@ struct ChatSidebarView: View {
             )
         }
         .confirmationDialog(
-            "¿Borrar esta exportación?",
+            store.unifiedViewExportPreview.map {
+                UnifiedViewPresentation.exportTitle(
+                    chatName: $0.chatName,
+                    existingContributionCount: $0.existingContributionCount
+                )
+            } ?? "¿Crear una Vista unificada?",
             isPresented: Binding(
-                get: { exportPendingDeletion != nil },
-                set: { if !$0 { exportPendingDeletion = nil } }
+                get: { store.unifiedViewExportPreview != nil },
+                set: { if !$0 { store.dismissUnifiedViewExportPreview() } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Borrar exportación", role: .destructive) {
-                if let request = exportPendingDeletion {
-                    store.deleteExportedContribution(request.selection)
+            if let preview = store.unifiedViewExportPreview {
+                Button(
+                    UnifiedViewPresentation.exportButtonTitle(
+                        existingContributionCount: preview.existingContributionCount
+                    )
+                ) {
+                    store.commitUnifiedViewExport(id: preview.id)
                 }
-                exportPendingDeletion = nil
             }
             Button("Cancelar", role: .cancel) {
-                exportPendingDeletion = nil
+                store.dismissUnifiedViewExportPreview()
             }
         } message: {
-            if let request = exportPendingDeletion {
+            if let preview = store.unifiedViewExportPreview {
                 Text(
-                    "Se borrarán los mensajes y archivos de “\(request.chatName)” exportados "
-                    + "desde la copia \(request.versionTitle). La conversación del catálogo se "
-                    + "reconstruirá con las demás exportaciones; si esta es la última, desaparecerá."
+                    UnifiedViewPresentation.exportMessage(
+                        existingContributionCount: preview.existingContributionCount,
+                        sourceMessageCount: preview.sourceMessageCount
+                    )
                 )
             }
         }
+        .confirmationDialog(
+            store.exportDeletionPreview.map {
+                UnifiedViewPresentation.deletionTitle(
+                    contributionCount: $0.impact.contributionCount
+                )
+            } ?? "¿Borrar esta exportación?",
+            isPresented: Binding(
+                get: { store.exportDeletionPreview != nil },
+                set: { if !$0 { store.dismissExportDeletionPreview() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let preview = store.exportDeletionPreview {
+                Button(
+                    UnifiedViewPresentation.deletionButtonTitle(
+                        contributionCount: preview.impact.contributionCount
+                    ),
+                    role: .destructive
+                ) {
+                    store.deleteExportedContribution(preview.selection)
+                }
+            }
+            Button("Cancelar", role: .cancel) {
+                store.dismissExportDeletionPreview()
+            }
+        } message: {
+            if let preview = store.exportDeletionPreview {
+                Text(
+                    UnifiedViewPresentation.deletionMessage(
+                        chatName: preview.chatName,
+                        versionTitle: preview.versionTitle,
+                        impact: preview.impact
+                    )
+                )
+            }
+        }
+    }
+
+    private func requestExport(_ selection: VersionChatID) {
+        guard let state = store.exportStates[selection] else { return }
+        guard case .updateAvailable = state else {
+            store.exportChat(selection)
+            return
+        }
+        store.prepareUnifiedViewExport(selection)
     }
 
     private var sidebarHeader: some View {
@@ -258,12 +309,6 @@ struct ChatSidebarView: View {
     private func emptyMessage(for version: LibraryVersionSession) -> String {
         version.hasSourceBackup ? "No hay chats con este filtro" : "No quedaron chats exportados"
     }
-}
-
-private struct ExportDeletionRequest {
-    let selection: VersionChatID
-    let chatName: String
-    let versionTitle: String
 }
 
 private struct BackupVersionRow: View {
@@ -488,11 +533,11 @@ private struct ChatSidebarRow: View {
         case .updateAvailable:
             if canExport {
                 actionButton(
-                    "Añadir a conversación",
+                    "Añadir a Vista unificada",
                     systemImage: "plus",
                     action: export
                 )
-                .help("Exportar este chat y añadirlo a la conversación del catálogo")
+                .help("Exportar este chat por separado y añadir sus mensajes a una Vista unificada")
             } else {
                 Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)

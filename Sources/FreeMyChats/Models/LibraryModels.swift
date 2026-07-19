@@ -160,15 +160,31 @@ struct ConversationContribution: Codable, Equatable, Identifiable {
     let id: String
     let source: VersionChatID
     let exportedAt: Date
+    let messageCount: Int?
+    let exclusiveMessageCount: Int?
 
     init(
         id: String = UUID().uuidString.lowercased(),
         source: VersionChatID,
-        exportedAt: Date
+        exportedAt: Date,
+        messageCount: Int? = nil,
+        exclusiveMessageCount: Int? = nil
     ) {
         self.id = id
         self.source = source
         self.exportedAt = exportedAt
+        self.messageCount = messageCount
+        self.exclusiveMessageCount = exclusiveMessageCount
+    }
+
+    func withMessageCounts(total: Int, exclusive: Int) -> Self {
+        ConversationContribution(
+            id: id,
+            source: source,
+            exportedAt: exportedAt,
+            messageCount: total,
+            exclusiveMessageCount: exclusive
+        )
     }
 }
 
@@ -392,6 +408,7 @@ struct AppOperation: Equatable {
         case deletingBackup(String)
         case deletingOriginalIPhoneBackup
         case deletingExportedContribution(VersionChatID)
+        case preparingExportDeletion(VersionChatID)
         case loadingChats
         case exportingChat(VersionChatID)
     }

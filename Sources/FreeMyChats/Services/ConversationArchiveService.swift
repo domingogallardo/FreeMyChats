@@ -29,6 +29,14 @@ struct ConversationIncorporationContext {
     let previousMessageCount: Int
 }
 
+struct ConversationRemovalMessageImpact: Equatable {
+    let contributionCount: Int
+    let existingMessageCount: Int
+    let sourceMessageCount: Int
+    let removedMessageCount: Int
+    let resultingMessageCount: Int
+}
+
 struct ConversationContributionRemoval {
     let session: LibrarySession
     let conversationID: ConversationArchiveID
@@ -57,6 +65,78 @@ enum ConversationArchiveService {
         return ConversationIncorporationContext(
             record: record,
             previousMessageCount: previousMessageCount
+        )
+    }
+
+    static func existingContributionCount(
+        for chat: ChatInfo,
+        in version: LibraryVersionSession,
+        session: LibrarySession
+    ) throws -> Int? {
+        let resolved = identity(for: chat, in: version)
+        return try loadAvailableRecords(in: session)
+            .first(where: { $0.matches(resolved) })?
+            .contributions.count
+    }
+
+    static func contributionCount(
+        containing source: VersionChatID,
+        in session: LibrarySession
+    ) throws -> Int? {
+        try loadAvailableRecords(in: session)
+            .first(where: { record in
+                record.contributions.contains(where: { $0.source == source })
+            })?
+            .contributions.count
+    }
+
+    static func removalMessageImpact(
+        of source: VersionChatID,
+        in session: LibrarySession
+    ) throws -> ConversationRemovalMessageImpact {
+        guard let record = try loadAvailableRecords(in: session).first(where: {
+            $0.contributions.contains(where: { $0.source == source })
+        }) else {
+            throw ConversationArchiveError.contributionNotFound(source)
+        }
+        let resolved = try resolvedContributions(for: record, in: session)
+        guard let selected = resolved.first(where: { $0.contribution.source == source }) else {
+            throw ConversationArchiveError.contributionNotFound(source)
+        }
+        let existingMessageCount = try materializedMessageCount(for: resolved)
+        let resultingMessageCount = try materializedMessageCount(
+            for: resolved.filter { $0.contribution.source != source }
+        )
+        return ConversationRemovalMessageImpact(
+            contributionCount: record.contributions.count,
+            existingMessageCount: existingMessageCount,
+            sourceMessageCount: selected.exported.document.messages.count,
+            removedMessageCount: max(0, existingMessageCount - resultingMessageCount),
+            resultingMessageCount: resultingMessageCount
+        )
+    }
+
+    static func storedRemovalMessageImpact(
+        of source: VersionChatID,
+        in session: LibrarySession
+    ) throws -> ConversationRemovalMessageImpact? {
+        guard let record = try loadAvailableRecords(in: session).first(where: {
+            $0.contributions.contains(where: { $0.source == source })
+        }), let contribution = record.contributions.first(where: { $0.source == source }) else {
+            throw ConversationArchiveError.contributionNotFound(source)
+        }
+        guard let sourceMessageCount = contribution.messageCount,
+              let removedMessageCount = contribution.exclusiveMessageCount else {
+            return nil
+        }
+        let existingMessageCount = try record.summary?.numberMessages
+            ?? openStoredConversation(record: record, in: session).document.messages.count
+        return ConversationRemovalMessageImpact(
+            contributionCount: record.contributions.count,
+            existingMessageCount: existingMessageCount,
+            sourceMessageCount: sourceMessageCount,
+            removedMessageCount: removedMessageCount,
+            resultingMessageCount: max(0, existingMessageCount - removedMessageCount)
         )
     }
 
@@ -564,6 +644,11 @@ enum ConversationArchiveService {
         }
 
         var installedRecord = record
+        let messageCount = exported.document.messages.count
+        installedRecord.contributions[0] = installedRecord.contributions[0].withMessageCounts(
+            total: messageCount,
+            exclusive: messageCount
+        )
         installedRecord.summary = exported.document.chat
         try encoder().encode(installedRecord).write(
             to: exported.directoryURL.appendingPathComponent(recordFilename),
@@ -621,16 +706,7 @@ enum ConversationArchiveService {
         record: ConversationArchiveRecord,
         in session: LibrarySession
     ) throws -> ArchivedConversation {
-        let resolved = try record.contributions.enumerated().map { index, contribution in
-            guard let version = session.version(id: contribution.source.versionID) else {
-                throw ConversationArchiveError.missingSource(contribution.source)
-            }
-            return ResolvedContribution(
-                index: index,
-                contribution: contribution,
-                exported: try version.exportStore.openChat(chatId: contribution.source.chatID)
-            )
-        }
+        let resolved = try resolvedContributions(for: record, in: session)
         guard !resolved.isEmpty else {
             throw ConversationArchiveError.invalidArchive(
                 archiveURL(id: record.id, paths: session.paths),
@@ -655,13 +731,26 @@ enum ConversationArchiveService {
         defer { try? fileManager.removeItem(at: temporaryURL) }
 
         let materializer = MediaMaterializer(destinationURL: temporaryMediaURL)
-        let document = try buildDocument(
+        let buildResult = try buildDocument(
             record: record,
             contributions: resolved,
             materializer: materializer
         )
+        let document = buildResult.document
         var installedRecord = record
         installedRecord.summary = document.chat
+        let resolvedByID = Dictionary(
+            uniqueKeysWithValues: resolved.map { ($0.contribution.id, $0) }
+        )
+        installedRecord.contributions = record.contributions.map { contribution in
+            guard let resolvedContribution = resolvedByID[contribution.id] else {
+                return contribution
+            }
+            return contribution.withMessageCounts(
+                total: resolvedContribution.exported.document.messages.count,
+                exclusive: buildResult.exclusiveMessageCounts[contribution.id, default: 0]
+            )
+        }
         try encoder().encode(document).write(
             to: temporaryURL.appendingPathComponent(documentFilename),
             options: .atomic
@@ -701,11 +790,49 @@ enum ConversationArchiveService {
         return try open(id: installedRecord.id, paths: session.paths)
     }
 
+    private static func resolvedContributions(
+        for record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) throws -> [ResolvedContribution] {
+        try record.contributions.enumerated().map { index, contribution in
+            guard let version = session.version(id: contribution.source.versionID) else {
+                throw ConversationArchiveError.missingSource(contribution.source)
+            }
+            return ResolvedContribution(
+                index: index,
+                contribution: contribution,
+                exported: try version.exportStore.openChat(chatId: contribution.source.chatID)
+            )
+        }
+    }
+
+    private static func materializedMessageCount(
+        for contributions: [ResolvedContribution]
+    ) throws -> Int {
+        guard contributions.count > 1 else {
+            return contributions.first?.exported.document.messages.count ?? 0
+        }
+        var hashCache: [URL: String] = [:]
+        var fingerprints = Set<String>()
+        for contribution in contributions {
+            for message in contribution.exported.document.messages {
+                fingerprints.insert(
+                    try messageFingerprint(
+                        message,
+                        mediaDirectoryURL: contribution.exported.mediaDirectoryURL,
+                        hashCache: &hashCache
+                    )
+                )
+            }
+        }
+        return fingerprints.count
+    }
+
     private static func buildDocument(
         record: ConversationArchiveRecord,
         contributions: [ResolvedContribution],
         materializer: MediaMaterializer
-    ) throws -> ExportedChatDocument {
+    ) throws -> ConversationBuildResult {
         if contributions.count == 1 {
             let exported = contributions[0].exported
             let filenames = [exported.document.chat.photoFilename].compactMap { $0 }
@@ -717,7 +844,12 @@ enum ConversationArchiveService {
                     from: contributions[0]
                 )
             }
-            return exported.document
+            return ConversationBuildResult(
+                document: exported.document,
+                exclusiveMessageCounts: [
+                    contributions[0].contribution.id: exported.document.messages.count
+                ]
+            )
         }
 
         var hashCache: [URL: String] = [:]
@@ -737,6 +869,20 @@ enum ConversationArchiveService {
                         )
                     )
                 )
+            }
+        }
+        var contributionIDsByFingerprint: [String: Set<String>] = [:]
+        for source in sourceMessages {
+            contributionIDsByFingerprint[source.fingerprint, default: []]
+                .insert(source.contribution.contribution.id)
+        }
+        var exclusiveMessageCounts = Dictionary(
+            uniqueKeysWithValues: contributions.map { ($0.contribution.id, 0) }
+        )
+        for contributionIDs in contributionIDsByFingerprint.values
+        where contributionIDs.count == 1 {
+            if let contributionID = contributionIDs.first {
+                exclusiveMessageCounts[contributionID, default: 0] += 1
             }
         }
         sourceMessages.sort {
@@ -822,9 +968,12 @@ enum ConversationArchiveService {
             mediaByteCount: mediaByteCount,
             photoFilename: chatPhotoFilename
         )
-        return ExportedChatDocument(
-            payload: ChatDumpPayload(chatInfo: chat, messages: messages, contacts: contacts),
-            exportedAt: record.updatedAt
+        return ConversationBuildResult(
+            document: ExportedChatDocument(
+                payload: ChatDumpPayload(chatInfo: chat, messages: messages, contacts: contacts),
+                exportedAt: record.updatedAt
+            ),
+            exclusiveMessageCounts: exclusiveMessageCounts
         )
     }
 
@@ -1053,6 +1202,11 @@ private struct ResolvedContribution {
     let index: Int
     let contribution: ConversationContribution
     let exported: ExportedChat
+}
+
+private struct ConversationBuildResult {
+    let document: ExportedChatDocument
+    let exclusiveMessageCounts: [String: Int]
 }
 
 private struct SourceMessageKey: Hashable {
