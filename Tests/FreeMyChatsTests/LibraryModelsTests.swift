@@ -628,6 +628,80 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(MessageSearch.filter([message], query: "jueves").map(\.id), [2])
     }
 
+    func testMessageSearchNavigatorMovesBetweenResultsWithoutLeavingBounds() {
+        var navigator = MessageSearchNavigator(messageIDs: [11, 22, 33])
+
+        XCTAssertEqual(navigator.selectedResultNumber, 1)
+        XCTAssertEqual(navigator.selectedMessageID, 11)
+        XCTAssertFalse(navigator.canMoveToPrevious)
+        XCTAssertTrue(navigator.canMoveToNext)
+        XCTAssertNil(navigator.move(.previous))
+
+        XCTAssertEqual(navigator.move(.next), 22)
+        XCTAssertEqual(navigator.selectedResultNumber, 2)
+        XCTAssertTrue(navigator.canMoveToPrevious)
+        XCTAssertTrue(navigator.canMoveToNext)
+
+        XCTAssertEqual(navigator.move(.next), 33)
+        XCTAssertEqual(navigator.selectedResultNumber, 3)
+        XCTAssertTrue(navigator.canMoveToPrevious)
+        XCTAssertFalse(navigator.canMoveToNext)
+        XCTAssertNil(navigator.move(.next))
+
+        XCTAssertEqual(navigator.move(.previous), 22)
+        XCTAssertEqual(navigator.selectedResultNumber, 2)
+    }
+
+    func testMessageSearchNavigatorCanStartAtTheNearestResult() {
+        var navigator = MessageSearchNavigator(
+            messageIDs: [11, 22, 33, 44],
+            selectedIndex: 2
+        )
+
+        XCTAssertEqual(navigator.selectedResultNumber, 3)
+        XCTAssertEqual(navigator.selectedMessageID, 33)
+        XCTAssertEqual(navigator.move(.previous), 22)
+        XCTAssertEqual(navigator.move(.next), 33)
+        XCTAssertEqual(navigator.move(.next), 44)
+    }
+
+    func testMessageSearchChoosesTheMatchNearestToTheReadingPosition() throws {
+        let messages = try (0..<10).map { try makeMessage(id: $0) }
+        let matches = [messages[1], messages[4], messages[8]]
+
+        XCTAssertEqual(
+            MessageSearch.nearestMatchIndex(in: matches, among: messages, to: 7),
+            2
+        )
+        XCTAssertEqual(
+            MessageSearch.nearestMatchIndex(in: matches, among: messages, to: 6),
+            1,
+            "If two results are equally close, keep the earlier one"
+        )
+        XCTAssertEqual(
+            MessageSearch.nearestMatchIndex(in: matches, among: messages, to: 4),
+            1
+        )
+        XCTAssertEqual(
+            MessageSearch.nearestMatchIndex(in: matches, among: messages, to: nil),
+            0
+        )
+        XCTAssertNil(
+            MessageSearch.nearestMatchIndex(in: [], among: messages, to: 4)
+        )
+    }
+
+    func testMessageSearchNavigatorHasNoSelectionForEmptyResults() {
+        var navigator = MessageSearchNavigator(messageIDs: [])
+
+        XCTAssertEqual(navigator.resultCount, 0)
+        XCTAssertNil(navigator.selectedResultNumber)
+        XCTAssertNil(navigator.selectedMessageID)
+        XCTAssertFalse(navigator.canMoveToPrevious)
+        XCTAssertFalse(navigator.canMoveToNext)
+        XCTAssertNil(navigator.move(.next))
+    }
+
     func testMessageTimelineWindowKeepsAStableBoundedPage() throws {
         let messages = try (0..<10).map { try makeMessage(id: $0) }
         var window = MessageTimelineWindow(

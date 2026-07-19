@@ -6,6 +6,10 @@ struct ConversationView: View {
     @State private var isSearching = false
     @State private var messageSearchText = ""
     @State private var appliedMessageSearchText = ""
+    @State private var selectedSearchResultNumber: Int?
+    @State private var searchResultCount = 0
+    @State private var searchNavigationRequest: MessageSearchNavigationRequest?
+    @State private var searchExitRequest: MessageSearchExitRequest?
 
     var body: some View {
         Group {
@@ -70,6 +74,12 @@ struct ConversationView: View {
                 },
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
+                isSearchPending: isMessageSearchPending,
+                selectedResultNumber: selectedSearchResultNumber,
+                resultCount: searchResultCount,
+                navigateSearch: navigateSearch,
+                finishSearch: finishMessageSearch,
+                cancelSearch: cancelMessageSearch,
                 goBack: store.showExportList,
                 revealInFinder: store.revealSelectedChat
             )
@@ -78,6 +88,12 @@ struct ConversationView: View {
                 exported: exported,
                 searchText: appliedMessageSearchText,
                 initialMessageID: store.readingPosition(for: selection),
+                searchNavigationRequest: searchNavigationRequest,
+                searchExitRequest: searchExitRequest,
+                searchSelectionChanged: { resultNumber, resultCount in
+                    selectedSearchResultNumber = resultNumber
+                    searchResultCount = resultCount
+                },
                 saveReadingPosition: { messageID in
                     store.saveReadingPosition(messageID, for: selection)
                 }
@@ -98,9 +114,57 @@ struct ConversationView: View {
         .onChange(of: store.selectedExportID) { _ in
             messageSearchText = ""
             appliedMessageSearchText = ""
+            selectedSearchResultNumber = nil
+            searchResultCount = 0
+            searchNavigationRequest = nil
+            searchExitRequest = nil
             isSearching = false
         }
     }
+
+    private var isMessageSearchPending: Bool {
+        let query = messageSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !query.isEmpty && query != appliedMessageSearchText
+    }
+
+    private func navigateSearch(_ direction: MessageSearchDirection) {
+        searchNavigationRequest = MessageSearchNavigationRequest(
+            id: UUID(),
+            direction: direction
+        )
+    }
+
+    private func finishMessageSearch() {
+        closeMessageSearch(behavior: .keepSelectedMessage)
+    }
+
+    private func cancelMessageSearch() {
+        closeMessageSearch(behavior: .restoreInitialPosition)
+    }
+
+    private func closeMessageSearch(behavior: MessageSearchExitBehavior) {
+        searchExitRequest = MessageSearchExitRequest(id: UUID(), behavior: behavior)
+        withAnimation {
+            messageSearchText = ""
+            appliedMessageSearchText = ""
+            isSearching = false
+        }
+    }
+}
+
+struct MessageSearchNavigationRequest: Equatable {
+    let id: UUID
+    let direction: MessageSearchDirection
+}
+
+enum MessageSearchExitBehavior: Equatable {
+    case keepSelectedMessage
+    case restoreInitialPosition
+}
+
+struct MessageSearchExitRequest: Equatable {
+    let id: UUID
+    let behavior: MessageSearchExitBehavior
 }
 
 private struct ExportBackHeader: View {
@@ -130,6 +194,13 @@ private struct ConversationHeaderView: View {
     @Binding var isSearching: Bool
     @Binding var searchText: String
     @State private var isShowingUnifiedViewHelp = false
+    @FocusState private var isSearchFieldFocused: Bool
+    let isSearchPending: Bool
+    let selectedResultNumber: Int?
+    let resultCount: Int
+    let navigateSearch: (MessageSearchDirection) -> Void
+    let finishSearch: () -> Void
+    let cancelSearch: () -> Void
     let goBack: () -> Void
     let revealInFinder: () -> Void
 
@@ -172,22 +243,26 @@ private struct ConversationHeaderView: View {
                 }
                 Spacer()
                 Button {
-                    withAnimation {
-                        isSearching.toggle()
-                        if !isSearching { searchText = "" }
+                    if isSearching {
+                        isSearchFieldFocused = true
+                    } else {
+                        withAnimation {
+                            isSearching = true
+                        }
                     }
                 } label: {
                     Label("Buscar en la conversación", systemImage: "magnifyingglass")
                 }
                 .labelStyle(.iconOnly)
+                .keyboardShortcut("f", modifiers: .command)
                 .help(
                     isSearching
-                        ? "Cerrar búsqueda en la conversación"
+                        ? "Enfocar búsqueda en la conversación"
                         : "Buscar en la conversación"
                 )
                 .accessibilityLabel(
                     isSearching
-                        ? "Cerrar búsqueda en la conversación"
+                        ? "Enfocar búsqueda en la conversación"
                         : "Buscar en la conversación"
                 )
 
@@ -206,6 +281,12 @@ private struct ConversationHeaderView: View {
                         .foregroundStyle(.secondary)
                     TextField("Buscar mensajes", text: $searchText)
                         .textFieldStyle(.plain)
+                        .focused($isSearchFieldFocused)
+                        .onSubmit {
+                            if canMoveToNextResult {
+                                navigateSearch(.next)
+                            }
+                        }
                     if !searchText.isEmpty {
                         Button {
                             searchText = ""
@@ -217,13 +298,92 @@ private struct ConversationHeaderView: View {
                         .help("Borrar búsqueda")
                         .accessibilityLabel("Borrar búsqueda")
                     }
+
+                    Spacer(minLength: 12)
+
+                    searchStatus
+
+                    Button {
+                        navigateSearch(.previous)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                    }
+                    .disabled(!canMoveToPreviousResult)
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .help("Resultado anterior")
+                    .accessibilityLabel("Resultado anterior")
+
+                    Button {
+                        navigateSearch(.next)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                    }
+                    .disabled(!canMoveToNextResult)
+                    .keyboardShortcut("g", modifiers: .command)
+                    .help("Resultado siguiente")
+                    .accessibilityLabel("Resultado siguiente")
+
+                    Button("Listo", action: finishSearch)
+                        .help("Cerrar la búsqueda y conservar el mensaje seleccionado")
+
+                    Button("Cancelar", role: .cancel, action: cancelSearch)
+                        .help("Cancelar la búsqueda y volver a la posición inicial")
                 }
+                .controlSize(.small)
                 .padding(8)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
             }
         }
+        .onChange(of: isSearching) { searching in
+            guard searching else {
+                isSearchFieldFocused = false
+                return
+            }
+            Task { @MainActor in
+                await Task.yield()
+                isSearchFieldFocused = true
+            }
+        }
+        .onExitCommand {
+            if isSearching {
+                cancelSearch()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var searchStatus: some View {
+        if !normalizedSearchText.isEmpty {
+            if isSearchPending {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Buscando…")
+                    .foregroundStyle(.secondary)
+            } else if let selectedResultNumber, resultCount > 0 {
+                Text("\(selectedResultNumber) de \(resultCount)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            } else {
+                Text("Sin resultados")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canMoveToPreviousResult: Bool {
+        guard !isSearchPending, let selectedResultNumber else { return false }
+        return selectedResultNumber > 1
+    }
+
+    private var canMoveToNextResult: Bool {
+        guard !isSearchPending, let selectedResultNumber else { return false }
+        return selectedResultNumber < resultCount
     }
 
     private var subtitle: String {

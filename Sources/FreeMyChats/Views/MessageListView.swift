@@ -5,12 +5,19 @@ struct MessageListView: View {
     let exported: ArchivedConversation
     let searchText: String
     let initialMessageID: Int?
+    let searchNavigationRequest: MessageSearchNavigationRequest?
+    let searchExitRequest: MessageSearchExitRequest?
+    let searchSelectionChanged: (Int?, Int) -> Void
     let saveReadingPosition: (Int) -> Void
 
     @State private var timeline: MessageTimelineWindow
+    @State private var searchNavigator: MessageSearchNavigator
     @State private var lastReadingPosition: Int?
     @State private var positionBeforeSearch: Int?
     @State private var observedSearchText: String
+    @State private var handledSearchExitRequestID: UUID?
+    @State private var pendingRestorationAnchor: UnitPoint?
+    @State private var timelineID = UUID()
     @State private var visibleMessageIDs: Set<Int> = []
     @State private var isRestoringPosition = true
     @State private var isAtBeginning = false
@@ -25,23 +32,42 @@ struct MessageListView: View {
         exported: ArchivedConversation,
         searchText: String,
         initialMessageID: Int?,
+        searchNavigationRequest: MessageSearchNavigationRequest?,
+        searchExitRequest: MessageSearchExitRequest?,
+        searchSelectionChanged: @escaping (Int?, Int) -> Void,
         saveReadingPosition: @escaping (Int) -> Void
     ) {
         self.exported = exported
         self.searchText = searchText
         self.initialMessageID = initialMessageID
+        self.searchNavigationRequest = searchNavigationRequest
+        self.searchExitRequest = searchExitRequest
+        self.searchSelectionChanged = searchSelectionChanged
         self.saveReadingPosition = saveReadingPosition
 
         let filteredMessages = MessageSearch.filter(exported.document.messages, query: searchText)
-        let initialTarget = searchText.isEmpty ? initialMessageID : filteredMessages.first?.id
+        let initialSelectedIndex = searchText.isEmpty ? nil : MessageSearch.nearestMatchIndex(
+            in: filteredMessages,
+            among: exported.document.messages,
+            to: initialMessageID
+        )
+        let initialSearchNavigator = MessageSearchNavigator(
+            messageIDs: searchText.isEmpty ? [] : filteredMessages.map(\.id),
+            selectedIndex: initialSelectedIndex
+        )
+        let initialTarget = searchText.isEmpty
+            ? initialMessageID
+            : initialSearchNavigator.selectedMessageID
         _timeline = State(
             initialValue: MessageTimelineWindow(
                 messages: filteredMessages,
                 centeredOn: initialTarget
             )
         )
+        _searchNavigator = State(initialValue: initialSearchNavigator)
         _lastReadingPosition = State(initialValue: initialMessageID)
         _observedSearchText = State(initialValue: searchText)
+        _handledSearchExitRequestID = State(initialValue: searchExitRequest?.id)
     }
 
     var body: some View {
@@ -60,6 +86,17 @@ struct MessageListView: View {
             let previousQuery = observedSearchText
             observedSearchText = query
             resetTimeline(from: previousQuery, to: query)
+        }
+        .onAppear {
+            publishSearchSelection()
+        }
+        .onDisappear {
+            restorationID = UUID()
+            activeTimelineShift = nil
+            pendingTimelineShift = nil
+            if searchText.isEmpty, let messageID = lastReadingPosition {
+                saveReadingPosition(messageID)
+            }
         }
     }
 
@@ -84,7 +121,8 @@ struct MessageListView: View {
                             MessageRowView(
                                 message: row.message,
                                 mediaDirectoryURL: exported.mediaDirectoryURL,
-                                isHighlighted: highlightedMessageID == row.id,
+                                isHighlighted: highlightedMessageID == row.id
+                                    || searchNavigator.selectedMessageID == row.id,
                                 navigateToReply: { messageID in
                                     jumpToMessage(
                                         messageID,
@@ -106,11 +144,17 @@ struct MessageListView: View {
                     .padding(.vertical, 12)
                 }
 
-                timelineJumpButton(using: proxy)
-                    .padding(16)
+                if searchText.isEmpty {
+                    timelineJumpButton(using: proxy)
+                        .padding(16)
+                }
             }
             .onAppear {
                 restoreReadingPosition(using: proxy)
+            }
+            .onChange(of: searchNavigationRequest) { request in
+                guard let request else { return }
+                navigateToSearchResult(request.direction, using: proxy)
             }
             .task(id: lastReadingPosition) {
                 guard let messageID = lastReadingPosition else { return }
@@ -126,16 +170,8 @@ struct MessageListView: View {
                     highlightedMessageID = nil
                 }
             }
-            .onDisappear {
-                restorationID = UUID()
-                activeTimelineShift = nil
-                pendingTimelineShift = nil
-                if searchText.isEmpty, let messageID = lastReadingPosition {
-                    saveReadingPosition(messageID)
-                }
-            }
         }
-        .id(searchText)
+        .id(timelineID)
     }
 
     private func timelineJumpButton(using proxy: ScrollViewProxy) -> some View {
@@ -176,6 +212,7 @@ struct MessageListView: View {
     private func resetTimeline(from previousQuery: String, to query: String) {
         if previousQuery.isEmpty, !query.isEmpty {
             positionBeforeSearch = lastReadingPosition ?? initialMessageID
+            handledSearchExitRequestID = searchExitRequest?.id
         }
 
         restorationID = UUID()
@@ -187,13 +224,70 @@ struct MessageListView: View {
         visibleMessageIDs.removeAll()
 
         let filteredMessages = MessageSearch.filter(exported.document.messages, query: query)
-        let target = query.isEmpty
-            ? (positionBeforeSearch ?? lastReadingPosition ?? initialMessageID)
-            : filteredMessages.first?.id
+        let selectedSearchMessageID = searchNavigator.selectedMessageID
+        let target: Int?
+        if query.isEmpty {
+            let exitBehavior = pendingSearchExitBehavior(
+                previousQuery: previousQuery,
+                query: query
+            )
+            switch exitBehavior {
+            case .keepSelectedMessage:
+                target = selectedSearchMessageID
+                    ?? positionBeforeSearch
+                    ?? lastReadingPosition
+                    ?? initialMessageID
+                pendingRestorationAnchor = .center
+            case .restoreInitialPosition:
+                target = positionBeforeSearch ?? lastReadingPosition ?? initialMessageID
+                pendingRestorationAnchor = .top
+            }
+            searchNavigator = MessageSearchNavigator(messageIDs: [])
+        } else {
+            let selectionAnchor = selectedSearchMessageID
+                ?? positionBeforeSearch
+                ?? lastReadingPosition
+                ?? initialMessageID
+            let selectedIndex = MessageSearch.nearestMatchIndex(
+                in: filteredMessages,
+                among: exported.document.messages,
+                to: selectionAnchor
+            )
+            searchNavigator = MessageSearchNavigator(
+                messageIDs: filteredMessages.map(\.id),
+                selectedIndex: selectedIndex
+            )
+            target = searchNavigator.selectedMessageID
+            pendingRestorationAnchor = nil
+        }
+        publishSearchSelection()
         if query.isEmpty, let target {
             lastReadingPosition = target
         }
         timeline = MessageTimelineWindow(messages: filteredMessages, centeredOn: target)
+        timelineID = UUID()
+    }
+
+    private func pendingSearchExitBehavior(
+        previousQuery: String,
+        query: String
+    ) -> MessageSearchExitBehavior {
+        guard !previousQuery.isEmpty,
+              query.isEmpty,
+              let request = searchExitRequest,
+              request.id != handledSearchExitRequestID else {
+            return .restoreInitialPosition
+        }
+
+        handledSearchExitRequestID = request.id
+        return request.behavior
+    }
+
+    private func publishSearchSelection() {
+        searchSelectionChanged(
+            searchNavigator.selectedResultNumber,
+            searchNavigator.resultCount
+        )
     }
 
     private func restoreReadingPosition(using proxy: ScrollViewProxy) {
@@ -206,10 +300,11 @@ struct MessageListView: View {
 
         if searchText.isEmpty {
             target = validSavedPosition ?? timeline.lastMessageID
-            anchor = validSavedPosition == nil ? .bottom : .top
+            anchor = pendingRestorationAnchor
+                ?? (validSavedPosition == nil ? .bottom : .top)
         } else {
-            target = timeline.firstMessageID
-            anchor = .top
+            target = searchNavigator.selectedMessageID ?? timeline.firstMessageID
+            anchor = .center
         }
 
         guard let target else { return }
@@ -235,6 +330,7 @@ struct MessageListView: View {
             if searchText.isEmpty {
                 lastReadingPosition = target
                 positionBeforeSearch = nil
+                pendingRestorationAnchor = nil
             }
             if !timeline.hasEarlierMessages,
                target == timeline.firstMessageID,
@@ -446,6 +542,42 @@ struct MessageListView: View {
                 lastReadingPosition = target
             }
             isAtBeginning = !timeline.hasEarlierMessages && target == timeline.firstMessageID
+            isRestoringPosition = false
+        }
+    }
+
+    private func navigateToSearchResult(
+        _ direction: MessageSearchDirection,
+        using proxy: ScrollViewProxy
+    ) {
+        guard !searchText.isEmpty else { return }
+
+        var updatedNavigator = searchNavigator
+        guard let messageID = updatedNavigator.move(direction) else { return }
+        searchNavigator = updatedNavigator
+        publishSearchSelection()
+
+        restorationID = UUID()
+        activeTimelineShift = nil
+        pendingTimelineShift = nil
+        isRestoringPosition = true
+        isAtBeginning = false
+        replyReturnMessageID = nil
+        visibleMessageIDs.removeAll()
+
+        guard let target = timeline.move(to: messageID) else {
+            isRestoringPosition = false
+            return
+        }
+
+        let requestID = UUID()
+        restorationID = requestID
+        Task { @MainActor in
+            await Task.yield()
+            guard restorationID == requestID else { return }
+            proxy.scrollTo(target, anchor: .center)
+            try? await Task.sleep(for: .milliseconds(40))
+            guard restorationID == requestID else { return }
             isRestoringPosition = false
         }
     }
