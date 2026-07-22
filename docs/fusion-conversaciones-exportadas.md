@@ -4,6 +4,16 @@
 
 Diseño de una funcionalidad futura. No está implementada.
 
+La evaluación de este diseño frente a la implementación actual de Vistas
+unificadas está en
+[Evaluación para exportar e importar conversaciones entre propietarios](evaluacion-importacion-conversaciones.md).
+
+La especificación vigente para el agente de SwiftWABackupAPI es
+[Motor general de fusión y conversaciones portables](especificacion-swiftwabackupapi-motor-fusion-portable.md).
+Esta última sustituye las propuestas anteriores que exigían persistir una
+identidad global del propietario: la perspectiva se infiere durante el análisis o
+se aporta opcionalmente como parámetro.
+
 Este documento no describe la unificación incremental que ya realiza la
 aplicación con varias exportaciones locales. El funcionamiento vigente de
 `Exports` y `MergedChats`, incluida su estrategia de mensajes y multimedia, se
