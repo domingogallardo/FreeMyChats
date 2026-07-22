@@ -46,7 +46,6 @@ final class ConversationArchiveServiceTests: XCTestCase {
             item: item,
             in: fixture.session
         )
-
         XCTAssertEqual(catalog.count, 1)
         XCTAssertEqual(item.id, update.conversation.record.id)
         XCTAssertEqual(item.contributionCount, 1)
@@ -99,6 +98,10 @@ final class ConversationArchiveServiceTests: XCTestCase {
             item: item,
             in: fixture.session
         )
+        let reopened = try ConversationArchiveService.openRepairing(
+            item: item,
+            in: fixture.session
+        )
 
         XCTAssertEqual(catalog.count, 1)
         XCTAssertEqual(item.contributionCount, 2)
@@ -116,6 +119,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
                 .standardizedFileURL
         )
         XCTAssertEqual(opened.document.messages.map(\.message), ["A", "B"])
+        XCTAssertNotEqual(opened.contentRevisionID, reopened.contentRevisionID)
     }
 
     func testLIDIdentityResolvesToTheSamePhoneConversation() throws {

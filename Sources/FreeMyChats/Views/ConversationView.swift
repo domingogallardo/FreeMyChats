@@ -98,7 +98,7 @@ struct ConversationView: View {
                     store.saveReadingPosition(messageID, for: selection)
                 }
             )
-            .id(selection)
+            .id(exported.contentRevisionID)
         }
         .task(id: messageSearchText) {
             let query = messageSearchText.trimmingCharacters(in: .whitespacesAndNewlines)

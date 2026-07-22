@@ -240,6 +240,10 @@ struct ConversationArchiveRecord: Codable, Identifiable {
 }
 
 struct ArchivedConversation {
+    // The on-disk archive keeps the same conversation ID and directory when its
+    // contributions are rebuilt. Stateful views use this transient revision to
+    // distinguish each freshly opened/rebuilt snapshot.
+    let contentRevisionID = UUID()
     let record: ConversationArchiveRecord
     let document: ExportedChatDocument
     let directoryURL: URL
