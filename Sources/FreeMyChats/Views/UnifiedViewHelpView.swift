@@ -14,7 +14,7 @@ struct UnifiedViewHelpView: View {
             if !sourceTitles.isEmpty {
                 Divider()
 
-                Text("Exportaciones incluidas")
+                Text("Copias guardadas incluidas")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 

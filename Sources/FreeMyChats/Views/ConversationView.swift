@@ -47,7 +47,7 @@ struct ConversationView: View {
             )
             Divider()
             UnavailableContentView(
-                "La exportación no es válida",
+                "La conversación guardada no es válida",
                 systemImage: "exclamationmark.folder",
                 description: reason
             )
@@ -234,7 +234,7 @@ private struct ConversationHeaderView: View {
                             .buttonStyle(.plain)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .help("Ver las exportaciones incluidas en esta Vista unificada")
+                            .help("Ver las copias incluidas en esta Vista unificada")
                             .popover(isPresented: $isShowingUnifiedViewHelp) {
                                 UnifiedViewHelpView(sourceTitles: sourceTitles)
                             }
@@ -422,15 +422,15 @@ enum ConversationPresentation {
         date: String
     ) -> String {
         let type = chatType == .group ? "Grupo" : "Conversación individual"
-        let exports = contributionCount == 1
-            ? "1 exportación"
-            : "\(contributionCount) exportaciones"
+        let savedCopies = contributionCount == 1
+            ? "1 copia guardada"
+            : "\(contributionCount) copias guardadas"
         let unified = contributionCount > 1 ? "Vista unificada" : nil
         return [
             unified,
             type,
             "\(messageCount.formatted()) mensajes",
-            exports,
+            savedCopies,
             date
         ]
         .compactMap { $0 }

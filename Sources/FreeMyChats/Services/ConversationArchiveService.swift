@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import SwiftWABackupAPI
 
@@ -48,6 +47,84 @@ enum ConversationArchiveService {
     private static let documentFilename = "chat.json"
     private static let mediaDirectoryName = "Media"
 
+    /// Creates an interoperable conversation package.
+    ///
+    /// SwiftWABackupAPI owns package serialization and validation. Free My Chats
+    /// owns choosing the destination and any later installation in its library.
+    static func createPortableConversationArchive(
+        from source: ConversationSource,
+        producerVersion: String,
+        destinationURL: URL,
+        overwriteExisting: Bool = false,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> PortableConversationArchiveInfo {
+        try PortableConversationArchiveCodec().createArchive(
+            from: source,
+            producer: PortableArchiveProducer(
+                name: "Free My Chats",
+                version: producerVersion
+            ),
+            destinationURL: destinationURL,
+            overwriteExisting: overwriteExisting,
+            progress: progress,
+            cancellation: cancellation
+        )
+    }
+
+    /// Performs a full, read-only integrity and safety inspection.
+    static func inspectPortableConversationArchive(
+        at archiveURL: URL,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> PortableConversationArchiveInfo {
+        try PortableConversationArchiveCodec().inspectArchive(
+            at: archiveURL,
+            progress: progress,
+            cancellation: cancellation
+        )
+    }
+
+    /// Extracts only after the package has passed structural and content checks.
+    ///
+    /// The destination must be absent or empty. This method does not register the
+    /// result in `library.json` and therefore remains a staging operation.
+    static func extractPortableConversationArchive(
+        at archiveURL: URL,
+        to destinationDirectory: URL,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> PortableConversationDirectory {
+        try PortableConversationArchiveCodec().extractValidatedArchive(
+            at: archiveURL,
+            to: destinationDirectory,
+            progress: progress,
+            cancellation: cancellation
+        )
+    }
+
+    /// Builds a validated staging directory for a future imported contribution.
+    /// The caller still owns installation, replacement and rollback in the library.
+    static func stageCrossPerspectiveComposition(
+        sources: [ConversationSource],
+        targetSourceID: ConversationSourceID,
+        perspectiveConstraints: [ConversationPerspectiveConstraint] = [],
+        targetChatID: Int,
+        destinationDirectory: URL,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> ConversationMaterializationResult {
+        try ConversationCompositionEngine(policy: .conservativeDefault).compose(
+            sources: sources,
+            targetSourceID: targetSourceID,
+            perspectiveConstraints: perspectiveConstraints,
+            targetChatID: targetChatID,
+            destinationDirectory: destinationDirectory,
+            progress: progress,
+            cancellation: cancellation
+        )
+    }
+
     static func catalog(in session: LibrarySession) throws -> [ExportedChatListItem] {
         try catalog(records: loadAvailableRecords(in: session), in: session)
     }
@@ -92,7 +169,8 @@ enum ConversationArchiveService {
 
     static func removalMessageImpact(
         of source: VersionChatID,
-        in session: LibrarySession
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
     ) throws -> ConversationRemovalMessageImpact {
         guard let record = try loadAvailableRecords(in: session).first(where: {
             $0.contributions.contains(where: { $0.source == source })
@@ -103,16 +181,26 @@ enum ConversationArchiveService {
         guard let selected = resolved.first(where: { $0.contribution.source == source }) else {
             throw ConversationArchiveError.contributionNotFound(source)
         }
-        let existingMessageCount = try materializedMessageCount(for: resolved)
-        let resultingMessageCount = try materializedMessageCount(
-            for: resolved.filter { $0.contribution.source != source }
+        let compositionSources = try compositionSources(for: record, contributions: resolved)
+        let sourceIDs = compositionSources.map(\.id)
+        let targetSourceID = ConversationSourceID(
+            rawValue: try compositionTarget(in: resolved).contribution.id
+        )
+        let preparation = try ConversationCompositionEngine().analyze(
+            sources: compositionSources,
+            targetSourceID: targetSourceID,
+            perspectiveConstraints: [.samePerspective(sourceIDs: sourceIDs)],
+            progress: progress
+        )
+        let impact = try preparation.plan.removalImpact(
+            of: ConversationSourceID(rawValue: selected.contribution.id)
         )
         return ConversationRemovalMessageImpact(
             contributionCount: record.contributions.count,
-            existingMessageCount: existingMessageCount,
-            sourceMessageCount: selected.exported.document.messages.count,
-            removedMessageCount: max(0, existingMessageCount - resultingMessageCount),
-            resultingMessageCount: resultingMessageCount
+            existingMessageCount: impact.currentMessageCount,
+            sourceMessageCount: impact.sourceMessageCount,
+            removedMessageCount: impact.removedMessageCount,
+            resultingMessageCount: impact.resultingMessageCount
         )
     }
 
@@ -144,7 +232,8 @@ enum ConversationArchiveService {
         _ exported: ExportedChat,
         source: VersionChatID,
         context: ConversationIncorporationContext,
-        in session: LibrarySession
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
     ) throws -> ConversationArchiveUpdate {
         guard let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.missingSource(source)
@@ -179,7 +268,7 @@ enum ConversationArchiveService {
         }
         record.updatedAt = Date()
 
-        let conversation = try store(record: record, in: session)
+        let conversation = try store(record: record, in: session, progress: progress)
         return ConversationArchiveUpdate(
             conversation: conversation,
             addedMessageCount: max(
@@ -316,7 +405,8 @@ enum ConversationArchiveService {
 
     static func removeContribution(
         source: VersionChatID,
-        from session: LibrarySession
+        from session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
     ) throws -> ConversationContributionRemoval {
         let record = try loadAvailableRecords(in: session).first {
             $0.contributions.contains(where: { $0.source == source })
@@ -356,7 +446,7 @@ enum ConversationArchiveService {
         }
 
         do {
-            let rebuilt = try store(record: record, in: session)
+            let rebuilt = try store(record: record, in: session, progress: progress)
             let updatedSession = try LibraryService.deleteExportedChat(source, from: session)
             try? fileManager.removeItem(at: stagingURL)
             return ConversationContributionRemoval(
@@ -614,12 +704,13 @@ enum ConversationArchiveService {
 
     private static func store(
         record: ConversationArchiveRecord,
-        in session: LibrarySession
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
     ) throws -> ArchivedConversation {
         if record.contributions.count == 1 {
             return try installSourceRecord(record: record, in: session)
         }
-        return try installCombinedRecord(record: record, in: session)
+        return try installCombinedRecord(record: record, in: session, progress: progress)
     }
 
     private static func installSourceRecord(
@@ -659,7 +750,8 @@ enum ConversationArchiveService {
 
     private static func installCombinedRecord(
         record: ConversationArchiveRecord,
-        in session: LibrarySession
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
     ) throws -> ArchivedConversation {
         guard record.contributions.count > 1 else {
             throw ConversationArchiveError.invalidArchive(
@@ -685,18 +777,25 @@ enum ConversationArchiveService {
                     .appendingPathComponent(recordFilename)
                 guard fileManager.fileExists(atPath: originalURL.path) else { continue }
                 let stagedURL = stagingURL.appendingPathComponent("\(index)-\(recordFilename)")
-                try fileManager.moveItem(at: originalURL, to: stagedURL)
+                // Keep the source conversation visible until the combined
+                // replacement is fully installed. A force quit during the
+                // expensive composition can then leave only disposable staging,
+                // never a missing catalog entry.
+                try fileManager.copyItem(at: originalURL, to: stagedURL)
                 stagedRecords.append((originalURL, stagedURL))
             }
 
-            let conversation = try install(record: record, in: session)
+            let conversation = try install(record: record, in: session, progress: progress)
+            for item in stagedRecords where fileManager.fileExists(atPath: item.original.path) {
+                // Retire the source record only after the combined archive is
+                // durable. Reusing its staged backup keeps this final move
+                // recoverable until the staging directory is removed.
+                try? fileManager.removeItem(at: item.staged)
+                try? fileManager.moveItem(at: item.original, to: item.staged)
+            }
             try? fileManager.removeItem(at: stagingURL)
             return conversation
         } catch {
-            for item in stagedRecords.reversed()
-            where fileManager.fileExists(atPath: item.staged.path) {
-                try? fileManager.moveItem(at: item.staged, to: item.original)
-            }
             try? fileManager.removeItem(at: stagingURL)
             throw error
         }
@@ -704,7 +803,8 @@ enum ConversationArchiveService {
 
     private static func install(
         record: ConversationArchiveRecord,
-        in session: LibrarySession
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
     ) throws -> ArchivedConversation {
         let resolved = try resolvedContributions(for: record, in: session)
         guard !resolved.isEmpty else {
@@ -723,43 +823,40 @@ enum ConversationArchiveService {
             ".building-\(record.id.rawValue)-\(UUID().uuidString)",
             isDirectory: true
         )
-        let temporaryMediaURL = temporaryURL.appendingPathComponent(
-            mediaDirectoryName,
-            isDirectory: true
-        )
-        try fileManager.createDirectory(at: temporaryMediaURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: false)
         defer { try? fileManager.removeItem(at: temporaryURL) }
 
-        let materializer = MediaMaterializer(destinationURL: temporaryMediaURL)
-        let buildResult = try buildDocument(
-            record: record,
-            contributions: resolved,
-            materializer: materializer
+        let sources = try compositionSources(for: record, contributions: resolved)
+        let sourceIDs = sources.map(\.id)
+        let target = try compositionTarget(in: resolved)
+        let result = try ConversationCompositionEngine().compose(
+            sources: sources,
+            targetSourceID: ConversationSourceID(rawValue: target.contribution.id),
+            perspectiveConstraints: [.samePerspective(sourceIDs: sourceIDs)],
+            targetChatID: resolved[0].exported.document.chat.id,
+            destinationDirectory: temporaryURL,
+            progress: progress
         )
-        let document = buildResult.document
+        let document = result.document
         var installedRecord = record
         installedRecord.summary = document.chat
-        let resolvedByID = Dictionary(
-            uniqueKeysWithValues: resolved.map { ($0.contribution.id, $0) }
+        let impactsByID = Dictionary(
+            uniqueKeysWithValues: result.sourceImpacts.map { ($0.sourceID.rawValue, $0) }
         )
         installedRecord.contributions = record.contributions.map { contribution in
-            guard let resolvedContribution = resolvedByID[contribution.id] else {
+            guard let impact = impactsByID[contribution.id] else {
                 return contribution
             }
             return contribution.withMessageCounts(
-                total: resolvedContribution.exported.document.messages.count,
-                exclusive: buildResult.exclusiveMessageCounts[contribution.id, default: 0]
+                total: impact.sourceMessageCount,
+                exclusive: impact.exclusiveMessageCount
             )
         }
-        try encoder().encode(document).write(
-            to: temporaryURL.appendingPathComponent(documentFilename),
-            options: .atomic
-        )
         try encoder().encode(installedRecord).write(
             to: temporaryURL.appendingPathComponent(recordFilename),
             options: .atomic
         )
-        try validateMedia(document: document, at: temporaryMediaURL)
+        try validateMedia(document: document, at: result.mediaDirectoryURL)
 
         let finalURL = archiveURL(id: record.id, paths: session.paths)
         if fileManager.fileExists(atPath: finalURL.path) {
@@ -794,314 +891,70 @@ enum ConversationArchiveService {
         for record: ConversationArchiveRecord,
         in session: LibrarySession
     ) throws -> [ResolvedContribution] {
-        try record.contributions.enumerated().map { index, contribution in
+        try record.contributions.map { contribution in
             guard let version = session.version(id: contribution.source.versionID) else {
                 throw ConversationArchiveError.missingSource(contribution.source)
             }
             return ResolvedContribution(
-                index: index,
                 contribution: contribution,
                 exported: try version.exportStore.openChat(chatId: contribution.source.chatID)
             )
         }
     }
 
-    private static func materializedMessageCount(
-        for contributions: [ResolvedContribution]
-    ) throws -> Int {
-        guard contributions.count > 1 else {
-            return contributions.first?.exported.document.messages.count ?? 0
+    private static func compositionSources(
+        for record: ConversationArchiveRecord,
+        contributions: [ResolvedContribution]
+    ) throws -> [ConversationSource] {
+        let identityHint = conversationIdentityHint(for: record)
+        return try contributions.map { resolved in
+            try ConversationSource(
+                id: ConversationSourceID(rawValue: resolved.contribution.id),
+                exportedChat: resolved.exported,
+                conversationIdentityHint: identityHint
+            )
         }
-        var hashCache: [URL: String] = [:]
-        var fingerprints = Set<String>()
-        for contribution in contributions {
-            for message in contribution.exported.document.messages {
-                fingerprints.insert(
-                    try messageFingerprint(
-                        message,
-                        mediaDirectoryURL: contribution.exported.mediaDirectoryURL,
-                        hashCache: &hashCache
-                    )
-                )
-            }
-        }
-        return fingerprints.count
     }
 
-    private static func buildDocument(
-        record: ConversationArchiveRecord,
-        contributions: [ResolvedContribution],
-        materializer: MediaMaterializer
-    ) throws -> ConversationBuildResult {
-        if contributions.count == 1 {
-            let exported = contributions[0].exported
-            let filenames = [exported.document.chat.photoFilename].compactMap { $0 }
-                + exported.document.messages.compactMap(\.mediaFilename)
-                + exported.document.contacts.compactMap(\.photoFilename)
-            for filename in Set(filenames) {
-                _ = try materializer.materializeDirect(
-                    filename: filename,
-                    from: contributions[0]
-                )
-            }
-            return ConversationBuildResult(
-                document: exported.document,
-                exclusiveMessageCounts: [
-                    contributions[0].contribution.id: exported.document.messages.count
-                ]
-            )
-        }
-
-        var hashCache: [URL: String] = [:]
-        var sourceMessages: [SourceMessage] = []
-
-        for resolved in contributions {
-            for (messageIndex, message) in resolved.exported.document.messages.enumerated() {
-                sourceMessages.append(
-                    SourceMessage(
-                        contribution: resolved,
-                        messageIndex: messageIndex,
-                        message: message,
-                        fingerprint: try messageFingerprint(
-                            message,
-                            mediaDirectoryURL: resolved.exported.mediaDirectoryURL,
-                            hashCache: &hashCache
-                        )
-                    )
-                )
-            }
-        }
-        var contributionIDsByFingerprint: [String: Set<String>] = [:]
-        for source in sourceMessages {
-            contributionIDsByFingerprint[source.fingerprint, default: []]
-                .insert(source.contribution.contribution.id)
-        }
-        var exclusiveMessageCounts = Dictionary(
-            uniqueKeysWithValues: contributions.map { ($0.contribution.id, 0) }
-        )
-        for contributionIDs in contributionIDsByFingerprint.values
-        where contributionIDs.count == 1 {
-            if let contributionID = contributionIDs.first {
-                exclusiveMessageCounts[contributionID, default: 0] += 1
-            }
-        }
-        sourceMessages.sort {
-            if $0.message.date != $1.message.date { return $0.message.date < $1.message.date }
-            if $0.contribution.index != $1.contribution.index {
-                return $0.contribution.index < $1.contribution.index
-            }
-            return $0.messageIndex < $1.messageIndex
-        }
-
-        var fingerprintToID: [String: Int] = [:]
-        var sourceToID: [SourceMessageKey: Int] = [:]
-        var representatives: [(id: Int, source: SourceMessage)] = []
-        for source in sourceMessages {
-            let aggregateID: Int
-            if let existing = fingerprintToID[source.fingerprint] {
-                aggregateID = existing
-            } else {
-                aggregateID = representatives.count + 1
-                fingerprintToID[source.fingerprint] = aggregateID
-                representatives.append((aggregateID, source))
-            }
-            sourceToID[source.key] = aggregateID
-        }
-
-        let aggregateChatID = contributions[0].exported.document.chat.id
-        var messageMediaNames: Set<String> = []
-        let messages = try representatives.map { representative in
-            let source = representative.source
-            let mediaFilename = try source.message.mediaFilename.map {
-                try materializer.materialize(
-                    filename: $0,
-                    from: source.contribution
-                )
-            }
-            if let mediaFilename { messageMediaNames.insert(mediaFilename) }
-            let replyTo = source.message.replyTo.flatMap {
-                sourceToID[
-                    SourceMessageKey(
-                        contributionID: source.contribution.contribution.id,
-                        messageID: $0
-                    )
-                ]
-            }
-            return try transformedMessage(
-                source.message,
-                id: representative.id,
-                chatID: aggregateChatID,
-                replyTo: replyTo,
-                mediaFilename: mediaFilename
-            )
-        }
-
-        let latest = contributions.max {
+    private static func compositionTarget(
+        in contributions: [ResolvedContribution]
+    ) throws -> ResolvedContribution {
+        guard let target = contributions.max(by: {
             $0.contribution.exportedAt < $1.contribution.exportedAt
-        } ?? contributions[contributions.count - 1]
-        var chosenContacts: [String: (ContactInfo, ResolvedContribution)] = [:]
-        for contribution in contributions {
-            for contact in contribution.exported.document.contacts {
-                chosenContacts[contact.phone] = (contact, contribution)
-            }
+        }) else {
+            throw ConversationCompositionError.noSources
         }
-        let contacts = try chosenContacts.keys.sorted().map { phone in
-            let (contact, contribution) = chosenContacts[phone]!
-            let photoFilename = try contact.photoFilename.map {
-                try materializer.materialize(filename: $0, from: contribution)
-            }
-            return try transformedContact(contact, photoFilename: photoFilename)
-        }
-        let chatPhotoFilename = try latest.exported.document.chat.photoFilename.map {
-            try materializer.materialize(filename: $0, from: latest)
-        }
-        let mediaByteCount = messageMediaNames.reduce(Int64(0)) {
-            $0 + materializer.byteCount(for: $1)
-        }
-        let lastMessageDate = messages.last?.date
-            ?? latest.exported.document.chat.lastMessageDate
-        let chat = try transformedChat(
-            latest.exported.document.chat,
-            id: aggregateChatID,
-            numberMessages: messages.count,
-            lastMessageDate: lastMessageDate,
-            mediaByteCount: mediaByteCount,
-            photoFilename: chatPhotoFilename
-        )
-        return ConversationBuildResult(
-            document: ExportedChatDocument(
-                payload: ChatDumpPayload(chatInfo: chat, messages: messages, contacts: contacts),
-                exportedAt: record.updatedAt
-            ),
-            exclusiveMessageCounts: exclusiveMessageCounts
-        )
+        return target
     }
 
-    private static func messageFingerprint(
-        _ message: MessageInfo,
-        mediaDirectoryURL: URL,
-        hashCache: inout [URL: String]
-    ) throws -> String {
-        let mediaHash: String?
-        if let filename = message.mediaFilename {
-            let url = mediaDirectoryURL.appendingPathComponent(filename).standardizedFileURL
-            if let cached = hashCache[url] {
-                mediaHash = cached
-            } else {
-                let hash = try fileHash(url)
-                hashCache[url] = hash
-                mediaHash = hash
-            }
-        } else {
-            mediaHash = nil
+    /// Identifies the other participant of an individual conversation. This is
+    /// conversation identity, not the owner represented by `isFromMe`.
+    private static func conversationIdentityHint(
+        for record: ConversationArchiveRecord
+    ) -> CanonicalParticipantIdentity? {
+        guard record.key.chatType == .individual else { return nil }
+        let addresses = record.identityKeys.compactMap {
+            participantAddress(for: $0.contactJID)
         }
-
-        let payload = MessageFingerprint(
-            timestampMilliseconds: Int64((message.date.timeIntervalSince1970 * 1_000).rounded()),
-            isFromMe: message.isFromMe,
-            messageType: message.messageType,
-            message: message.message,
-            caption: message.caption,
-            authorIdentity: authorFingerprintIdentity(message.author),
-            mediaHash: mediaHash,
-            seconds: message.seconds,
-            latitude: message.latitude,
-            longitude: message.longitude
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return sha256Hex(try encoder.encode(payload))
+        guard !addresses.isEmpty else { return nil }
+        return CanonicalParticipantIdentity(addresses: addresses)
     }
 
-    private static func authorFingerprintIdentity(_ author: MessageAuthor?) -> String? {
-        guard let author else { return nil }
-
-        if let phone = normalizedPhone(author.phone) {
-            return "phone:\(phone)"
-        }
-
-        guard let jid = author.jid?
+    private static func participantAddress(for rawValue: String) -> ParticipantAddress? {
+        let value = rawValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased(),
-              !jid.isEmpty else { return nil }
-        if jid.hasSuffix("@s.whatsapp.net"),
-           let phone = normalizedPhone(String(jid.prefix { $0 != "@" })) {
-            return "phone:\(phone)"
+            .lowercased()
+        if value.hasSuffix("@s.whatsapp.net") {
+            return ParticipantAddress(kind: .phoneJID, value: value)
         }
-        return "jid:\(jid)"
-    }
-
-    private static func normalizedPhone(_ value: String?) -> String? {
-        guard let value else { return nil }
+        if value.hasSuffix("@lid") {
+            return ParticipantAddress(kind: .lidJID, value: value)
+        }
         let digits = value.filter(\.isNumber)
-        return digits.isEmpty ? nil : digits
-    }
-
-    private static func transformedMessage(
-        _ message: MessageInfo,
-        id: Int,
-        chatID: Int,
-        replyTo: Int?,
-        mediaFilename: String?
-    ) throws -> MessageInfo {
-        var object = try jsonObject(message)
-        object["id"] = id
-        object["chatId"] = chatID
-        set(replyTo, for: "replyTo", in: &object)
-        set(mediaFilename, for: "mediaFilename", in: &object)
-        return try decodeObject(object, as: MessageInfo.self)
-    }
-
-    private static func transformedChat(
-        _ chat: ChatInfo,
-        id: Int,
-        numberMessages: Int,
-        lastMessageDate: Date,
-        mediaByteCount: Int64,
-        photoFilename: String?
-    ) throws -> ChatInfo {
-        var object = try jsonObject(chat)
-        object["id"] = id
-        object["numberMessages"] = numberMessages
-        object["lastMessageDate"] = iso8601Formatter.string(from: lastMessageDate)
-        object["mediaByteCount"] = mediaByteCount
-        set(photoFilename, for: "photoFilename", in: &object)
-        return try decodeObject(object, as: ChatInfo.self)
-    }
-
-    private static func transformedContact(
-        _ contact: ContactInfo,
-        photoFilename: String?
-    ) throws -> ContactInfo {
-        var object = try jsonObject(contact)
-        set(photoFilename, for: "photoFilename", in: &object)
-        return try decodeObject(object, as: ContactInfo.self)
-    }
-
-    private static func jsonObject<T: Encodable>(_ value: T) throws -> [String: Any] {
-        let data = try encoder().encode(value)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ConversationArchiveError.invalidArchive(
-                URL(fileURLWithPath: "chat.json"),
-                "No se ha podido transformar el documento."
-            )
+        if !digits.isEmpty, value.allSatisfy({ $0.isNumber || $0 == "+" }) {
+            return ParticipantAddress(kind: .phone, value: digits)
         }
-        return object
-    }
-
-    private static func decodeObject<T: Decodable>(
-        _ object: [String: Any],
-        as type: T.Type
-    ) throws -> T {
-        try decoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
-    }
-
-    private static func set(_ value: Any?, for key: String, in object: inout [String: Any]) {
-        if let value {
-            object[key] = value
-        } else {
-            object.removeValue(forKey: key)
-        }
+        return nil
     }
 
     private static func validateMedia(
@@ -1133,20 +986,6 @@ enum ConversationArchiveService {
                 )
             }
         }
-    }
-
-    fileprivate static func fileHash(_ url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
-            hasher.update(data: data)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-
-    private static func sha256Hex(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private static func archiveURL(id: ConversationArchiveID, paths: LibraryPaths) -> URL {
@@ -1195,132 +1034,9 @@ enum ConversationArchiveService {
         return decoder
     }
 
-    private static let iso8601Formatter = ISO8601DateFormatter()
 }
 
 private struct ResolvedContribution {
-    let index: Int
     let contribution: ConversationContribution
     let exported: ExportedChat
-}
-
-private struct ConversationBuildResult {
-    let document: ExportedChatDocument
-    let exclusiveMessageCounts: [String: Int]
-}
-
-private struct SourceMessageKey: Hashable {
-    let contributionID: String
-    let messageID: Int
-}
-
-private struct SourceMessage {
-    let contribution: ResolvedContribution
-    let messageIndex: Int
-    let message: MessageInfo
-    let fingerprint: String
-
-    var key: SourceMessageKey {
-        SourceMessageKey(
-            contributionID: contribution.contribution.id,
-            messageID: message.id
-        )
-    }
-}
-
-private struct MessageFingerprint: Encodable {
-    let timestampMilliseconds: Int64
-    let isFromMe: Bool
-    let messageType: String
-    let message: String?
-    let caption: String?
-    let authorIdentity: String?
-    let mediaHash: String?
-    let seconds: Int?
-    let latitude: Double?
-    let longitude: Double?
-}
-
-private struct SourceMediaKey: Hashable {
-    let contributionID: String
-    let filename: String
-}
-
-private final class MediaMaterializer {
-    private let destinationURL: URL
-    private var namesBySource: [SourceMediaKey: String] = [:]
-    private var namesByHash: [String: String] = [:]
-    private var byteCounts: [String: Int64] = [:]
-
-    init(destinationURL: URL) {
-        self.destinationURL = destinationURL
-    }
-
-    func materialize(
-        filename: String,
-        from contribution: ResolvedContribution
-    ) throws -> String {
-        let key = SourceMediaKey(
-            contributionID: contribution.contribution.id,
-            filename: filename
-        )
-        if let existing = namesBySource[key] { return existing }
-
-        let sourceURL = contribution.exported.mediaDirectoryURL
-            .appendingPathComponent(filename)
-            .standardizedFileURL
-        let hash = try ConversationArchiveService.fileHash(sourceURL)
-        if let existing = namesByHash[hash] {
-            namesBySource[key] = existing
-            return existing
-        }
-
-        let safeName = URL(fileURLWithPath: filename).lastPathComponent
-        let destinationName = "\(hash.prefix(12))-\(safeName)"
-        let destinationFileURL = destinationURL.appendingPathComponent(destinationName)
-        try FileManager.default.copyItem(at: sourceURL, to: destinationFileURL)
-        let byteCount = Int64(
-            (try? destinationFileURL.resourceValues(
-                forKeys: [URLResourceKey.fileSizeKey]
-            ).fileSize) ?? 0
-        )
-        namesBySource[key] = destinationName
-        namesByHash[hash] = destinationName
-        byteCounts[destinationName] = byteCount
-        return destinationName
-    }
-
-    func materializeDirect(
-        filename: String,
-        from contribution: ResolvedContribution
-    ) throws -> String {
-        let key = SourceMediaKey(
-            contributionID: contribution.contribution.id,
-            filename: filename
-        )
-        if let existing = namesBySource[key] { return existing }
-
-        let safeName = URL(fileURLWithPath: filename).lastPathComponent
-        guard safeName == filename else {
-            throw ConversationArchiveError.invalidArchive(
-                contribution.exported.directoryURL,
-                "Nombre multimedia no seguro: \(filename)"
-            )
-        }
-        let sourceURL = contribution.exported.mediaDirectoryURL.appendingPathComponent(filename)
-        let destinationFileURL = destinationURL.appendingPathComponent(safeName)
-        try FileManager.default.copyItem(at: sourceURL, to: destinationFileURL)
-        let byteCount = Int64(
-            (try? destinationFileURL.resourceValues(
-                forKeys: [URLResourceKey.fileSizeKey]
-            ).fileSize) ?? 0
-        )
-        namesBySource[key] = safeName
-        byteCounts[safeName] = byteCount
-        return safeName
-    }
-
-    func byteCount(for filename: String) -> Int64 {
-        byteCounts[filename] ?? 0
-    }
 }

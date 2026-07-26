@@ -114,8 +114,8 @@ struct ChatSidebarView: View {
             }
         } message: {
             Text(
-                "Se liberará el espacio ocupado por el backup. Las conversaciones ya exportadas "
-                + "seguirán disponibles, pero no se podrán exportar otros chats de esta versión."
+                "Se liberará el espacio ocupado por el backup. Las conversaciones ya guardadas "
+                + "seguirán disponibles, pero no se podrán añadir otros chats de esta copia a la biblioteca."
             )
         }
         .confirmationDialog(
@@ -158,7 +158,7 @@ struct ChatSidebarView: View {
                 UnifiedViewPresentation.deletionTitle(
                     contributionCount: $0.impact.contributionCount
                 )
-            } ?? "¿Borrar esta exportación?",
+            } ?? "¿Borrar esta copia guardada?",
             isPresented: Binding(
                 get: { store.exportDeletionPreview != nil },
                 set: { if !$0 { store.dismissExportDeletionPreview() } }
@@ -307,7 +307,7 @@ struct ChatSidebarView: View {
     }
 
     private func emptyMessage(for version: LibraryVersionSession) -> String {
-        version.hasSourceBackup ? "No hay chats con este filtro" : "No quedaron chats exportados"
+        version.hasSourceBackup ? "No hay chats con este filtro" : "No quedaron chats guardados"
     }
 }
 
@@ -366,7 +366,7 @@ private struct BackupVersionRow: View {
             )
             return "\(size) · \(version.chats.count) chats"
         }
-        return "Copia eliminada · \(version.chats.count) exportados"
+        return "Copia eliminada · \(version.chats.count) guardados"
     }
 }
 
@@ -475,14 +475,14 @@ private struct ChatSidebarRow: View {
                         systemImage: "folder",
                         action: revealExport
                     )
-                    .help("Abrir esta exportación en Finder")
+                    .help("Abrir la copia guardada de este chat en Finder")
                     actionButton(
                         "Borrar",
                         systemImage: "trash",
                         tint: .red,
                         action: deleteExport
                     )
-                    .help("Borrar únicamente la exportación de esta copia")
+                    .help("Borrar únicamente la copia guardada de este chat")
                 }
             }
         }
@@ -505,7 +505,7 @@ private struct ChatSidebarRow: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
-                Text("Exportando…")
+                Text("Añadiendo a la biblioteca…")
                     .foregroundStyle(.secondary)
             }
         } else {
@@ -519,13 +519,13 @@ private struct ChatSidebarRow: View {
         case .checking:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text("Comprobando exportación…")
+                Text("Comprobando la biblioteca…")
                     .foregroundStyle(.secondary)
             }
         case .notExported:
             if canExport {
-                actionButton("Exportar", action: export)
-                .help("Exportar y crear una conversación en el catálogo")
+                actionButton("Añadir a la biblioteca", action: export)
+                .help("Guardar este chat con sus mensajes y archivos en la biblioteca")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
@@ -533,40 +533,40 @@ private struct ChatSidebarRow: View {
         case .updateAvailable:
             if canExport {
                 actionButton(
-                    "Añadir a Vista unificada",
+                    "Añadir a la biblioteca",
                     systemImage: "plus",
                     action: export
                 )
-                .help("Exportar este chat por separado y añadir sus mensajes a una Vista unificada")
+                .help("Guardar esta copia del chat y añadir sus mensajes a una Vista unificada")
             } else {
                 Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
         case .exported:
-            Label("Exportado", systemImage: "checkmark")
+            Label("En la biblioteca", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
         case .stale:
             if canExport {
                 actionButton(
-                    "Volver a exportar",
+                    "Actualizar en la biblioteca",
                     systemImage: "arrow.clockwise",
                     action: replaceExport
                 )
-                .help("Recrear esta exportación y actualizar la conversación guardada")
+                .help("Actualizar la copia guardada y la conversación de la biblioteca")
             } else {
-                Label("Exportado · fuente no disponible", systemImage: "checkmark")
+                Label("En la biblioteca · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
         case .invalid:
             if canExport {
                 actionButton(
-                    "Volver a exportar",
+                    "Reparar en la biblioteca",
                     systemImage: "arrow.clockwise",
                     action: replaceExport
                 )
-                .help("Reemplazar la exportación no válida y actualizar la conversación guardada")
+                .help("Reemplazar la copia no válida y actualizar la conversación guardada")
             } else {
-                Label("Exportación no válida", systemImage: "exclamationmark.triangle")
+                Label("Copia guardada no válida", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
         }

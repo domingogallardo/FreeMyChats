@@ -16,7 +16,7 @@ struct ExportedChatsListView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = store.exportPanelError, store.exportedChats.isEmpty {
                 UnavailableContentView(
-                    "No se pueden leer las exportaciones",
+                    "No se puede leer el catálogo de conversaciones",
                     systemImage: "exclamationmark.folder",
                     description: error
                 )
@@ -25,7 +25,7 @@ struct ExportedChatsListView: View {
                     "Todavía no hay conversaciones en el catálogo",
                     systemImage: "tray",
                     description:
-                        "Despliega un chat en el panel izquierdo y pulsa Exportar. "
+                        "Despliega un chat en el panel izquierdo y pulsa Añadir a la biblioteca. "
                         + "Aparecerá aquí como una conversación guardada."
                 )
             } else if filteredChats.isEmpty {
@@ -165,15 +165,15 @@ private struct ExportedChatRow: View {
 
     private var detail: String {
         let type = ConversationPresentation.cellTypeLabel(chatType: item.chat.chatType)
-        let exports = item.contributionCount == 1
-            ? "1 exportación"
-            : "\(item.contributionCount) exportaciones"
+        let savedCopies = item.contributionCount == 1
+            ? "1 copia guardada"
+            : "\(item.contributionCount) copias guardadas"
         let unified = item.contributionCount > 1 ? "Vista unificada" : nil
         return [
             unified,
             type,
             "\(item.chat.numberMessages.formatted()) mensajes",
-            exports
+            savedCopies
         ]
         .compactMap { $0 }
         .joined(separator: " · ")

@@ -4,7 +4,9 @@
 
 Este documento contrasta el diseño inicial de
 [fusión de conversaciones exportadas](fusion-conversaciones-exportadas.md) con la
-implementación actual de Free My Chats 1.3.10 y SwiftWABackupAPI 4.5.0.
+implementación de partida de Free My Chats 1.3.10 y SwiftWABackupAPI 4.5.0. El
+resultado de la parte de API está publicado en SwiftWABackupAPI 5.0.0 y la rama
+de integración corresponde a Free My Chats 1.4.0.
 
 La especificación posterior y vinculante para SwiftWABackupAPI está en
 [Motor general de fusión y conversaciones portables](especificacion-swiftwabackupapi-motor-fusion-portable.md).
@@ -16,9 +18,12 @@ La primera entrega, limitada a trasladar a la API la Vista unificada local actua
 está en
 [Composición de Vistas unificadas locales](especificacion-swiftwabackupapi-fusion-local-inicial.md).
 
-No es una implementación. Su objetivo es fijar qué se puede reutilizar, qué debe
-cambiar y cómo debería ser el recorrido de exportación e importación antes de
-modificar el código.
+El documento nació como evaluación. SwiftWABackupAPI 5.0.0 implementa el
+diagnóstico, la materialización respecto al target, el contrato `.fmcchat` v1 y
+su codec seguro. Free My Chats prueba ya el ciclo
+crear–inspeccionar–extraer–componer mediante una ruta interna de staging. Siguen
+pendientes la persistencia de aportaciones importadas, la instalación definitiva
+y la interfaz.
 
 El MVP contemplado aquí permite incorporar un archivo creado por Free My Chats a
 una conversación que ya existe en la biblioteca receptora. No importa ZIP o TXT
@@ -38,18 +43,22 @@ reutilizable, sobre todo:
 - la reconstrucción al retirar una aportación;
 - la instalación temporal con rollback y la reparación desde las fuentes.
 
-Sin embargo, el motor actual no puede recibir sin cambios una exportación de otra
-persona. Está diseñado para varias copias del mismo propietario y considera
-`isFromMe` parte de la huella. El mismo mensaje de la mujer aparecerá como
-`isFromMe == true` en su archivo y como `isFromMe == false` en la biblioteca del
-marido. Con la huella actual se tratarían como mensajes diferentes.
+El perfil `currentUnifiedView` conserva deliberadamente la huella exacta de las
+copias de una misma perspectiva. Para una exportación de otra persona, la API
+5.0.0 usa el perfil `conservativeCrossPerspective`: trata `isFromMe` como un rol
+relativo a cada fuente, infiere la relación entre perspectivas y reorienta la
+salida respecto a `targetSourceID`. Así, el mismo mensaje puede aparecer como
+propio en una fuente y recibido en otra sin duplicarse.
 
 La dificultad principal no es comprimir o copiar archivos, sino demostrar que dos
-documentos son de la misma conversación, expresar los autores con identidades
-absolutas y alinear con suficiente confianza los mensajes compartidos.
+documentos son de la misma conversación, relacionar sus autores relativos y
+alinear con suficiente confianza los mensajes compartidos.
 
-La recomendación es implementar primero un diagnóstico de solo lectura con datos
-reales. No conviene empezar por la escritura definitiva ni por la interfaz final.
+La recomendación de comenzar por un diagnóstico de solo lectura ya se ha
+aplicado. También se han completado la materialización conservadora en staging y
+el contrato portable, manteniéndolos separados de la biblioteca. El siguiente
+paso es persistir una aportación validada y hacer reversible su instalación, aún
+sin exigir una interfaz final.
 
 ## Qué hace hoy la Vista unificada
 
@@ -87,8 +96,9 @@ cambiar de propietario:
 - El catálogo y la apertura de una única conversación materializada.
 - `MergedChats/<conversationId>` como resultado derivado.
 - El esquema de construir en una carpeta temporal, validar y sustituir al final.
-- El materializador de multimedia, sus nombres deterministas y SHA-256.
-- La reasignación de IDs locales y el mapa para `replyTo`.
+- La instalación atómica del staging materializado por la API.
+- La reasignación de IDs, respuestas y multimedia, ahora implementada dentro de
+  SwiftWABackupAPI.
 - La actualización del catálogo y de la conversación abierta en el store.
 - La reconstrucción y degradación al retirar aportaciones.
 - Buena parte de los fixtures de pruebas de solapamiento, multimedia, rollback y
@@ -164,12 +174,12 @@ Este diseño evita duplicar una `Base` y encaja con el sistema de reparación ac
 
 ### Perspectiva de cada fuente
 
-No se persistirá una identidad global obligatoria del propietario. Cada documento
+No se persiste una identidad global obligatoria del propietario. Cada documento
 mantiene su propia perspectiva: `isFromMe` significa “usuario de esta fuente”.
-SwiftWABackupAPI inferirá durante la alineación si dos fuentes representan a la
+SwiftWABackupAPI infiere durante la alineación si dos fuentes representan a la
 misma persona o a personas distintas.
 
-Si el contenido no aporta evidencia suficiente, Free My Chats podrá proporcionar
+Si el contenido no aporta evidencia suficiente, Free My Chats puede proporcionar
 una identidad como pista opcional al construir la fuente o iniciar el análisis.
 Una pista contradictoria se rechaza y su ausencia nunca autoriza una conjetura.
 Las bibliotecas actuales continúan siendo legibles sin migración de propietario.
@@ -191,7 +201,7 @@ struct ImportedConversationContribution: Codable, Identifiable {
     let id: UUID
     let importedAt: Date
     let packageCreatedAt: Date
-    let perspectiveHint: CanonicalParticipantIdentity?
+    let perspectiveHint: ConversationPerspectiveHint?
     let relativeDirectory: String
     let packageDigest: String
     let messageCount: Int
@@ -212,32 +222,33 @@ biblioteca nueva antes que ignorar `Imports` y reconstruir perdiendo datos.
 
 ### Identidad estable de mensaje
 
-Para el MVP, el análisis puede devolver un mapa del mensaje materializado anterior
-al nuevo. A medio plazo se debe incorporar un `ArchiveMessageID` estable. Así las
-posiciones de lectura, respuestas y futuras importaciones no dependen del entero
-correlativo que cambia al reconstruir.
+La API devuelve `ArchiveMessageID`, el mapa estable por ID materializado y los
+mappings por fuente. Free My Chats todavía no persiste esos mappings para la
+posición de lectura; mientras tanto, las respuestas se remapean correctamente
+dentro de cada materialización, pero una reconstrucción posterior vuelve a
+analizar las fuentes.
 
 ## División de responsabilidades
 
 ### SwiftWABackupAPI
 
-Debería ser propietario de lo que define la interoperabilidad:
+Es propietaria de lo que define la interoperabilidad:
 
 - modelos y schema portable;
 - inferencia de perspectivas y pistas opcionales de participantes;
 - creación y validación segura del `.fmcchat`;
-- normalización de autores independiente de `isFromMe`;
-- huellas canónicas, ventanas de contexto, anclas y alineación;
-- clasificación de coincidencias, nuevos, conflictos y regiones ambiguas;
+- autoría relativa a cada fuente y orientación respecto al target;
+- firmas canónicas, anclas únicas y alineación ordenada;
+- equivalencia, disposición, razones y estadísticas de alineación;
 - cálculo de confianza y mapas de mensajes/respuestas;
-- transformación final de `MessageInfo` a la perspectiva receptora.
+- transformación final de `MessageInfo` a la perspectiva target.
 
 Esto también evita que Free My Chats tenga que reconstruir tipos de la API
 mediante conversiones JSON para modificar campos inmutables.
 
 ### Free My Chats
 
-Debe ser propietario de la biblioteca y de la experiencia:
+Es propietario de la biblioteca y de la experiencia:
 
 - paneles de abrir y guardar;
 - `Imports` y su integración con `ConversationArchiveRecord`;
@@ -246,15 +257,15 @@ Debe ser propietario de la biblioteca y de la experiencia:
 - actualización del catálogo, selección y posición de lectura;
 - historial y retirada de importaciones.
 
-La materialización de archivos puede seguir reutilizando el servicio actual,
-alimentado por un resultado de fusión producido por la API.
+La API materializa `chat.json` y `Media` en staging. Free My Chats añade
+`archive.json`, instala el directorio y ejecuta el rollback si falla la
+transacción de biblioteca.
 
 ### Inventario probable de cambios
 
-En SwiftWABackupAPI harán falta nuevos modelos portables, un codec seguro para el
-paquete, el resolvedor de identidad absoluta, el alineador y sus pruebas. También
-habrá que resolver la relación entre perspectivas y transformar el plan aprobado
-respecto a la fuente target.
+SwiftWABackupAPI 5.0.0 contiene los modelos portables, el codec seguro, las
+identidades canónicas, la inferencia de perspectivas, el alineador, la
+materialización target-relative y sus pruebas.
 
 En Free My Chats, el impacto principal será:
 
@@ -268,14 +279,14 @@ En Free My Chats, el impacto principal será:
 - vistas nuevas y pequeñas para la previsualización y la lista de importaciones;
 - pruebas de modelos, servicios y compatibilidad de biblioteca.
 
-Como Free My Chats fija una versión exacta de SwiftWABackupAPI en `Package.swift`,
-el trabajo deberá completarse y versionarse primero en ese paquete; después se
-actualizará la dependencia y se integrará la interfaz. No deben editarse como
-solución permanente los archivos del checkout de `.build`.
+SwiftWABackupAPI 5.0.0 ya está versionada y publicada. La rama actual de Free My
+Chats usa temporalmente el repositorio hermano mediante una dependencia local; el
+siguiente cierre de integración sustituye esa ruta por el tag exacto `5.0.0`.
+Los archivos de `.build/checkouts` no se editan.
 
 ## Formato `.fmcchat`
 
-El archivo será autocontenido y tratado siempre como entrada no confiable:
+El archivo es autocontenido y se trata siempre como entrada no confiable:
 
 ```text
 Conversacion.fmcchat
@@ -284,17 +295,17 @@ Conversacion.fmcchat
 └── Media/
 ```
 
-El manifiesto debe incluir al menos:
+El manifiesto v1 incluye:
 
-- versión del schema y versión del generador;
+- `schemaVersion`, identificador de formato, productor e implementación;
 - identificador aleatorio del paquete;
 - fecha de creación;
 - descriptor de la conversación desde la perspectiva de la fuente;
 - número de mensajes;
-- tamaño, SHA-256 y nombre seguro de cada archivo;
-- digest del documento o del contenido lógico del paquete.
+- tamaño, SHA-256 y ruta segura de `chat.json` y cada medio;
+- `contentDigest` lógico del paquete.
 
-Conviene que `chat.json` portable sea un contrato separado de
+`chat.json` portable es un contrato separado de
 `ExportedChatDocument` v1. De esa manera el formato interno vigente continúa
 leyéndose sin una migración masiva y el documento portable puede representar
 roles de autor relativos a la fuente e IDs de archivo explícitamente.
@@ -304,9 +315,10 @@ interno de sus fuentes. Si una conversación ya incorpora datos recibidos, estos
 pueden volver a compartir como parte del resultado; en el receptor constituyen una
 única aportación atribuida a quien creó el nuevo paquete.
 
-Antes de extraer se deben limitar número de entradas, tamaño declarado y real,
-ratio de compresión y tamaño individual. Se rechazan rutas absolutas, `..`, enlaces
-simbólicos, duplicados de nombre, referencias ausentes y hashes incorrectos.
+Antes de extraer, el codec limita número de entradas, tamaño declarado y real,
+ratio de compresión, tamaño individual, tamaño JSON y longitud de ruta. Rechaza
+rutas absolutas, `..`, entradas que no sean ficheros regulares, duplicados de
+nombre, referencias ausentes y hashes incorrectos.
 
 ## Proceso de exportación para compartir
 
@@ -336,18 +348,19 @@ Cancelar o fallar no modifica la biblioteca y elimina los temporales propios.
 5. Infiere la relación entre perspectivas a partir del solapamiento y las
    identidades disponibles; si no basta, usa una pista opcional proporcionada por
    el llamante. Después recalcula `isFromMe` respecto de la fuente local target.
-6. Calcula huellas fuertes y débiles, ventanas contextuales y la cadena ordenada de
-   anclas. Analiza el solapamiento y clasifica cada diferencia.
+6. Calcula firmas centrales, selecciona anclas fuertes únicas y obtiene su cadena
+   ordenada. Los mensajes débiles repetidos no actúan como anclas ni se
+   desambiguan mediante ventanas en la 5.0.0.
 7. Muestra una hoja de previsualización con:
 
-   - conversación e identidad de quien compartió el archivo;
-   - mensajes coincidentes, nuevos, ambiguos y conflictivos;
-   - nuevos archivos y bytes adicionales;
-   - tramo temporal cubierto y nivel de confianza;
+   - descriptor de la conversación y productor del paquete, sin atribuir una
+     identidad al usuario de la fuente;
+   - mensajes emparejados y exclusivos;
+   - bytes multimedia exclusivos del plan;
+   - cobertura, anclas, orientación de perspectivas y nivel de confianza;
    - causa concreta si no es seguro continuar.
 
-8. Solo con confianza alta, identidad demostrada y cero conflictos se habilita
-   `Añadir mensajes`.
+8. Solo con `disposition == .applicable` se habilita `Añadir mensajes`.
 9. Al confirmar, se copia primero el paquete validado a un `Imports` temporal, se
    construye una nueva materialización y se valida.
 10. Se instalan de forma coordinada la fuente importada, `archive.json` y
@@ -395,36 +408,37 @@ deben mostrar fases comprensibles y permitir cancelar antes de la instalación.
 
 ## Plan de implementación recomendado
 
-### Fase 0 — diagnóstico real, sin escrituras
+### Fase 0 — diagnóstico real, sin escrituras — IMPLEMENTADA
 
-- Preparar dos exportaciones del mismo grupo desde dos propietarios.
-- Preparar dos perspectivas de una conversación individual.
-- Crear en SwiftWABackupAPI un analizador de línea de comandos o tests que
-  produzca autores canónicos, anclas, cobertura, diferencias de timestamps,
-  ambigüedades y conflictos.
-- Medir la calidad real antes de fijar tolerancias y umbrales.
+- SwiftWABackupCLI incluye `diagnose-conversation-composition`.
+- La suite cubre grupos, individuales, perspectivas iguales y opuestas,
+  mensajes repetitivos, anclas, coberturas, diferencias temporales y
+  disposiciones no aplicables.
+- El diagnóstico no escribe y ofrece `privacySafeReport`.
 
-Entregable: informe reproducible de `ConversationMergePlan`; ninguna biblioteca se
-modifica.
+Resultado: `ConversationCompositionDiagnostic` reproducible; ninguna biblioteca
+se modifica.
 
-### Fase 1 — contrato e identidad portable
+### Fase 1 — contrato e identidad portable — IMPLEMENTADA
 
 - Modelos portables y versionados.
 - Roles de autor relativos e inferencia de perspectiva.
-- Conversación individual como conjunto de dos identidades.
-- Escritura y lectura segura de `.fmcchat`.
+- Identidad individual target-relative demostrada por solapamiento e hints, no
+  un conjunto persistido de propietarios.
+- Creación, inspección, extracción y apertura segura de `.fmcchat`.
 - Fixtures de paquetes válidos y maliciosos.
 
-Entregable: crear y validar paquetes, todavía sin incorporarlos.
+Resultado: la API y los wrappers internos de la app crean y validan paquetes sin
+incorporarlos todavía a la biblioteca.
 
-### Fase 2 — alineación y política de contenido
+### Fase 2 — alineación y política de contenido — IMPLEMENTADA
 
 - Representación canónica independiente de perspectiva.
-- Anclas únicas, ventanas, expansión entre anclas y confianza.
+- Anclas únicas, agrupación target-relative y confianza.
 - Política explícita para timestamps, reacciones y metadatos mutables.
 - Mapas de IDs y respuestas.
 
-Entregable: previsualización exacta y determinista de una importación.
+Resultado: diagnóstico y materialización deterministas en staging.
 
 ### Fase 3 — persistencia reversible
 
@@ -469,26 +483,25 @@ Entregable: operaciones completas mediante servicios y tests, aún sin pulir UI.
 - Fallo o cancelación en cada fase deja bit a bit intacta la conversación previa.
 - Una versión antigua de la aplicación rechaza de forma segura el schema nuevo.
 
-## Decisiones que conviene fijar antes de la Fase 1
+## Decisiones ya fijadas por SwiftWABackupAPI 5.0.0
 
-1. El MVP importa únicamente sobre una conversación local existente. Se recomienda
-   mantener este límite; crear una conversación solo desde un paquete puede venir
-   después.
-2. Ante confianza media o conflicto, el MVP informa y no permite forzar la unión.
-   No se recomienda una confirmación manual de identidad que también autorice una
-   alineación dudosa.
-3. Las pistas de perspectiva son opcionales; se proporcionan como parámetro solo
-   cuando la inferencia no es suficiente y siempre se validan contra el contenido.
-4. Debe decidirse el contenedor ZIP concreto y sus límites antes de publicar el
-   formato, porque forma parte de la superficie de seguridad y compatibilidad.
-5. Debe decidirse si el número de teléfono completo se muestra en la interfaz o se
-   enmascara; el paquete necesariamente contiene identidad técnica suficiente para
-   realizar la fusión.
+1. El flujo de Free My Chats importa inicialmente sobre una conversación local
+   existente; la API puede materializar una sola fuente, pero no crea entradas de
+   biblioteca.
+2. `requiresReview` y `rejected` no se materializan; no existe una opción para
+   forzar una alineación dudosa.
+3. Las pistas de perspectiva son opcionales, operativas y se validan contra la
+   evidencia.
+4. El contenedor es ZIP mediante ZIPFoundation 0.9.20 y
+   `PortableArchiveLimits.default` fija límites configurables.
+5. El paquete no contiene identidad del propietario. Solo conserva identidades
+   técnicas de participantes cuando la fuente demuestra que no son su usuario;
+   `sourceUser` permanece relativo.
 
-## Primer paso concreto
+## Siguiente paso concreto
 
-Crear el prototipo de solo lectura de la Fase 0 en SwiftWABackupAPI y ejecutarlo
-contra el caso real del grupo familiar. Ese prototipo determinará si la fecha de
-los mensajes coincide entre teléfonos, cuánto autor queda sin resolver y qué
-cobertura de anclas se obtiene. Con esas medidas se podrá cerrar el contrato y la
-política de confianza sin arriesgar bibliotecas reales.
+Implementar la Fase 3 en Free My Chats: almacenar el directorio portable ya
+validado, registrar la aportación en un schema de biblioteca versionado, volver a
+abrir todas las fuentes, ejecutar `analyze`/`materialize`, instalar el resultado
+con rollback y reconstruirlo al retirar una importación. La API 5.0.0 ya cubre la
+validación, diagnóstico, orientación y materialización necesarias.

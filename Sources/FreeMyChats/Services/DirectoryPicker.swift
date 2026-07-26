@@ -33,7 +33,7 @@ enum DirectoryPicker {
     static func chooseNewLibrary(suggestedName: String = "Mi biblioteca Free My Chats") -> URL? {
         let panel = NSSavePanel()
         panel.title = "Crea una biblioteca de Free My Chats"
-        panel.message = "Se crearán dentro el manifiesto y las carpetas Sources y Exports."
+        panel.message = "Se crearán dentro el manifiesto y las carpetas internas de la biblioteca."
         panel.prompt = "Crear biblioteca"
         panel.nameFieldStringValue = suggestedName
         panel.canCreateDirectories = true

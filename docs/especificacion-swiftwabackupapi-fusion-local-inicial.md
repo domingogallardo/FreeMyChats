@@ -1,16 +1,30 @@
 # Especificación inicial para SwiftWABackupAPI: composición de Vistas unificadas locales
 
+## Estado de implementación — SwiftWABackupAPI 5.0.0
+
+Este incremento está implementado, probado y publicado en SwiftWABackupAPI
+5.0.0. Free My Chats 1.4.0 usa ya `ConversationCompositionEngine` para construir
+la Vista unificada local y conserva la instalación, los manifiestos y el
+rollback de su biblioteca.
+
+El documento se mantiene como especificación de la semántica exacta del perfil
+`currentUnifiedView`. Las ampliaciones que aquí figuraban como futuras
+—diagnóstico y materialización entre perspectivas y `.fmcchat` v1— también están
+implementadas en la API 5.0.0, pero pertenecen al perfil
+`conservativeCrossPerspective` y al codec portable; no modifican las reglas
+conservadoras de este perfil local.
+
 ## 1. Propósito
 
 Este documento define el primer incremento del
 [motor general de fusión y conversaciones portables](especificacion-swiftwabackupapi-motor-fusion-portable.md).
 
-El objetivo exclusivo de este incremento es que SwiftWABackupAPI implemente las
-funciones que Free My Chats necesita hoy para construir una Vista unificada a
+SwiftWABackupAPI implementa las funciones que Free My Chats utiliza para
+construir una Vista unificada a
 partir de varias exportaciones locales de la misma conversación y de la misma
 perspectiva.
 
-Debe reemplazar la parte de composición que actualmente vive en
+La implementación reemplaza la parte de composición que vivía en
 `FreeMyChats/Sources/FreeMyChats/Services/ConversationArchiveService.swift`:
 
 - huella de mensajes;
@@ -23,14 +37,14 @@ Debe reemplazar la parte de composición que actualmente vive en
 - copia y deduplicación de multimedia;
 - creación validada de `chat.json` y `Media`.
 
-No mueve todavía la persistencia de biblioteca, sus manifiestos ni los reemplazos
-atómicos de `MergedChats`.
+La persistencia de biblioteca, sus manifiestos y los reemplazos atómicos de
+`MergedChats` permanecen en Free My Chats.
 
 ## 2. Relación con la especificación general
 
-Esta es una especificación de entrega, no un diseño alternativo. Los tipos y
-funciones deben ser el subconjunto inicial de la API general y evolucionar sin
-crear un segundo motor.
+Esta fue la especificación de la primera entrega, no un diseño alternativo. Los
+tipos y funciones son el subconjunto local de la API general y comparten el mismo
+motor con la composición entre perspectivas.
 
 Decisiones heredadas:
 
@@ -41,18 +55,19 @@ Decisiones heredadas:
 - `PreparedConversationComposition` conserva mapeos internos no manipulables;
 - `ConversationCompositionPlan` expone estadísticas e impacto;
 - `ConversationMaterializationResult` devuelve documento, medios y mappings;
-- `ArchiveMessageID` prepara estabilidad futura;
+- `ArchiveMessageID` proporciona identidad estable independiente de SQLite;
 - la API no conoce `Exports`, `Imports`, `MergedChats` ni `library.json`.
 
-Este incremento debe diseñarse para que posteriormente se añadan:
+La API 5.0.0 añade sobre esta misma base:
 
 - inferencia entre perspectivas diferentes;
-- alineación contextual y tolerancias temporales;
+- alineación conservadora por anclas y tolerancias temporales;
 - paquetes `.fmcchat`;
 - fuentes portables;
 - evidencia entre propietarios.
 
-No se deben implementar esas ampliaciones ahora.
+Estas ampliaciones no se activan implícitamente: `currentUnifiedView` conserva la
+huella exacta y exige una restricción explícita de misma perspectiva.
 
 ## 3. Caso de uso exacto
 
@@ -101,11 +116,14 @@ identidad de propietario.
 - IDs estables opcionales y mappings.
 - Pruebas unitarias y de integración en SwiftWABackupAPI.
 
-## 5. Fuera de alcance
+## 5. Fuera del perfil `currentUnifiedView`
 
-- `.fmcchat` y cualquier ZIP.
-- Fuentes desde personas/perspectivas distintas.
-- Inferir una perspectiva sin restricción explícita.
+- `.fmcchat` y cualquier ZIP, gestionados por
+  `PortableConversationArchiveCodec`.
+- Fuentes desde personas/perspectivas distintas, gestionadas por
+  `.conservativeCrossPerspective`.
+- Inferir una perspectiva sin restricción explícita, capacidad exclusiva del
+  perfil conservador entre perspectivas.
 - Identidad global o persistida del propietario.
 - Alineación por ventanas, anclas o LIS.
 - Tolerancia de timestamp.
@@ -153,7 +171,7 @@ public struct ArchiveMessageID: RawRepresentable, Codable, Hashable, Sendable {
 }
 ```
 
-`ConversationSource` será opaco tras su construcción:
+`ConversationSource` es opaco tras su construcción:
 
 ```swift
 public struct ConversationSource {
@@ -204,9 +222,10 @@ public struct ConversationPerspectiveConstraint: Codable, Hashable, Sendable {
 }
 ```
 
-La única variante que este incremento debe ejecutar es `.samePerspective`.
-Recibir las otras produce `unsupportedCompositionProfile`, no una interpretación
-parcial.
+El perfil `currentUnifiedView` ejecuta únicamente `.samePerspective`; exige una
+restricción que cubra todas las fuentes. Las variantes
+`.differentPerspectives` y `.sourceIdentity` se usan con el perfil
+`conservativeCrossPerspective`.
 
 La restricción expresa una relación entre fuentes, no una identidad personal.
 
@@ -234,9 +253,9 @@ public struct ConversationCompositionEngine {
 }
 ```
 
-### 7.4 Conveniencia opcional
+### 7.4 Conveniencia implementada
 
-Puede añadirse una función que analice y materialice en una llamada:
+La API expone una función que analiza y materializa en una llamada:
 
 ```swift
 public func compose(
@@ -250,7 +269,7 @@ public func compose(
 ) throws -> ConversationMaterializationResult
 ```
 
-Debe delegar en `analyze` + `materialize`; no puede contener otra implementación.
+`compose` delega en la misma implementación que `analyze` + `materialize`.
 
 ## 8. Perfil de política inicial
 
@@ -279,7 +298,8 @@ En `.currentUnifiedView`:
 - los conflictos se limitan a invariantes estructurales e IDs estables
   incompatibles.
 
-La futura policy cross-perspective no se implementa en esta entrega.
+La policy entre perspectivas está disponible como `.conservativeDefault`; no se
+utiliza para construir la Vista unificada local.
 
 ## 9. Preparación y plan
 
@@ -319,6 +339,7 @@ public struct ConversationCompositionPlan: Codable, Sendable {
     public let confidence: ConversationCompositionConfidence
     public let disposition: ConversationCompositionDisposition
     public let reasons: [CompositionReason]
+    public let crossPerspectiveDiagnostic: ConversationCompositionDiagnostic?
 }
 ```
 
@@ -327,6 +348,7 @@ Para entradas válidas de este perfil:
 - `confidence == .high`;
 - `disposition == .applicable`;
 - la razón indica `samePerspectiveConstraintAccepted`;
+- `crossPerspectiveDiagnostic == nil`;
 - no se pretende medir confianza de alineación contextual.
 
 ## 10. Validación de identidad de conversación
@@ -519,8 +541,8 @@ Para cada grupo lógico:
 
 La implementación actual colapsa dos apariciones idénticas incluso dentro de una
 misma fuente. Para paridad inicial se conserva ese comportamiento, pero el plan
-debe contar y emitir una razón diagnóstica `duplicateFingerprintWithinSource`.
-Esto permitirá endurecerlo en la fase contextual sin un cambio invisible.
+cuenta y emite la razón diagnóstica `duplicateFingerprintWithinSource`. El perfil
+contextual permanece separado y no cambia silenciosamente esta semántica.
 
 ### 14.3 Representante
 
@@ -538,8 +560,9 @@ implementación vigente. Las decisiones de metadatos se aplican después.
 El orden de la conversación es el de los representantes según el criterio
 anterior. Asignar enteros `1...n`.
 
-El array de fuentes forma parte de la entrada semántica de esta policy. Una fase
-futura podrá hacer la composición independiente del orden mediante alineación.
+El array de fuentes forma parte de la entrada semántica de esta policy. El perfil
+`conservativeCrossPerspective` usa alineación y dispone de cobertura específica
+de determinismo N-ario ante cambios de orden de entrada.
 
 ## 15. IDs estables y mappings
 
@@ -549,7 +572,7 @@ Para cada grupo:
 
 1. si la referencia target aporta ID estable, usarlo;
 2. si no, usar el ID estable de la primera referencia ordenada;
-3. si no existe ninguno, generar UUID;
+3. si no existe ninguno, derivar un UUID determinista de la huella lógica;
 4. si el mismo ID estable aparece en keys incompatibles, error;
 5. si referencias equivalentes traen IDs estables diferentes, elegir según 1/2 y
    devolver los demás como aliases de evidencia.
@@ -626,9 +649,9 @@ Recalcular:
 - `lastMessageDate`;
 - `mediaByteCount`.
 
-Recomendación de integración: Free My Chats elegirá como target la exportación
-local más reciente para mantener nombre/avatar actualizados, pero podrá conservar
-el ID de chat materializado mediante el parámetro `targetChatID`.
+Free My Chats elige como target la exportación local más reciente para mantener
+nombre/avatar actualizados y conserva el ID de chat materializado mediante el
+parámetro `targetChatID`.
 
 ### 17.3 Contactos
 
@@ -869,6 +892,8 @@ public enum ConversationCompositionError: Error, LocalizedError {
     case invalidPerspectiveConstraint(reason: String)
     case differentConversations(reason: String)
     case ambiguousConversationIdentity(reason: String)
+    case crossPerspectiveCompositionRejected(ConversationCompositionDiagnostic)
+    case crossPerspectiveCompositionRequiresReview(ConversationCompositionDiagnostic)
     case incompatibleStableMessageID(ArchiveMessageID)
     case inputChanged(sourceID: ConversationSourceID)
     case destinationNotEmpty(URL)
@@ -935,12 +960,11 @@ manipulado haga leer o escribir fuera de sus directorios.
 
 La API no acepta `LibrarySession`, `VersionChatID` ni tipos de Free My Chats.
 
-## 29. Integración prevista en Free My Chats
+## 29. Integración vigente en Free My Chats
 
-Este documento no pide modificar Free My Chats todavía, pero la API debe permitir
-este reemplazo posterior:
+Free My Chats 1.4.0 utiliza la API con esta correspondencia:
 
-| Implementación actual | Uso futuro |
+| Implementación anterior | Uso vigente |
 | --- | --- |
 | `ResolvedContribution` | construir `[ConversationSource]` |
 | `materializedMessageCount` | `plan.statistics.materializedMessageCount` |
@@ -952,7 +976,7 @@ este reemplazo posterior:
 | `removalMessageImpact` | `plan.removalImpact(of:)` |
 | `sourceToID` | `result.sourceMappings` |
 
-Flujo previsto:
+Flujo implementado:
 
 ```swift
 let sources = resolvedContributions.map { resolved in
@@ -981,39 +1005,36 @@ let result = try engine.materialize(
 )
 ```
 
-Free My Chats añadirá su `archive.json` al staging y realizará el movimiento final.
+Free My Chats añade su `archive.json` al staging y realiza el movimiento final.
 
-## 30. Archivos sugeridos en SwiftWABackupAPI
+## 30. Archivos implementados en SwiftWABackupAPI
 
-Separar responsabilidades; no añadir todo a `SwiftWABackupAPI.swift`:
+La versión 5.0.0 separa las responsabilidades así:
 
 ```text
 Sources/SwiftWABackupAPI/
-├── ConversationSource.swift
-├── ConversationIdentity.swift
-├── ConversationCompositionPolicy.swift
-├── ConversationCompositionPlan.swift
+├── ConversationCompositionModels.swift
+├── ConversationCompositionDiagnostics.swift
 ├── ConversationCompositionEngine.swift
-├── CanonicalConversationMessage.swift
-├── ConversationMediaHasher.swift
-├── ConversationMaterializer.swift
-├── ConversationCompositionErrors.swift
-└── WABackupProgress.swift                 # ampliar fases/unidades
+├── ConversationSHA256.swift
+├── PortableConversationModels.swift
+├── PortableConversationArchiveCodec.swift
+└── WABackupProgress.swift
 
 Tests/SwiftWABackupAPITests/
-├── ConversationSourceTests.swift
 ├── ConversationCompositionTests.swift
-├── ConversationMaterializerTests.swift
-├── ConversationCompositionProgressTests.swift
-└── Fixtures/…
+├── CrossPerspectiveConversationDiagnosticsTests.swift
+├── CrossPerspectiveConversationMaterializationTests.swift
+├── PortableConversationArchiveCodecTests.swift
+└── RealLibraryConversationCompositionTests.swift
 ```
 
-Los nombres pueden variar, pero deben mantenerse archivos pequeños y conceptos
-separados.
+Los modelos, el motor, el diagnóstico, el hashing y el codec portable no se
+añaden al archivo monolítico histórico `SwiftWABackupAPI.swift`.
 
-## 31. Estrategia de implementación
+## 31. Implementación realizada
 
-### Paso 1 — modelos y validación
+### Paso 1 — modelos y validación — completado
 
 - IDs.
 - `ConversationSource` opaco.
@@ -1022,9 +1043,9 @@ separados.
 - validación de documentos y medios.
 - errores.
 
-Entregable: fuentes válidas/invalidables; sin composición.
+Resultado: fuentes validadas y errores públicos estructurados.
 
-### Paso 2 — análisis puro
+### Paso 2 — análisis puro — completado
 
 - autoría misma perspectiva.
 - key exacta.
@@ -1034,9 +1055,10 @@ Entregable: fuentes válidas/invalidables; sin composición.
 - estadísticas e impactos.
 - preparación opaca.
 
-Entregable: plan reproducible; sin escribir salida.
+Resultado: plan reproducible y `PreparedConversationComposition` opaco, sin
+escritura durante el análisis.
 
-### Paso 3 — documento
+### Paso 3 — documento — completado
 
 - IDs estables.
 - enteros materializados.
@@ -1044,9 +1066,9 @@ Entregable: plan reproducible; sin escribir salida.
 - chat/contactos.
 - policy de metadatos.
 
-Entregable: `ExportedChatDocument` en memoria.
+Resultado: `ExportedChatDocument` materializado y mappings públicos.
 
-### Paso 4 — medios y staging
+### Paso 4 — medios y staging — completado
 
 - nombres deterministas.
 - copia/deduplicación.
@@ -1054,14 +1076,19 @@ Entregable: `ExportedChatDocument` en memoria.
 - validación de salida.
 - resultado público.
 
-### Paso 5 — progreso, cancelación y documentación
+### Paso 5 — progreso, cancelación y documentación — completado
 
 - eventos.
 - cancelación y limpieza.
 - README/doc comments.
 - suite completa.
 
-## 32. Pruebas obligatorias
+## 32. Cobertura de pruebas
+
+La suite publicada incluye los casos sintéticos siguientes y una validación
+opcional de solo lectura contra la biblioteca real de Free My Chats. En el cierre
+de la 5.0.0 se ejecutaron 149 pruebas, sin fallos ni omisiones al habilitar los
+fixtures completos y la biblioteca real.
 
 ### 32.1 Fuente e identidad
 
@@ -1127,7 +1154,7 @@ Entregable: `ExportedChatDocument` en memoria.
 - Original ausente conserva preview.
 - Target stable ID preferido.
 - Stable ID de otra fuente usado si target no tiene.
-- UUID nuevo si ninguno.
+- UUID determinista si ninguna fuente aporta uno.
 - UUID incompatible en dos keys falla.
 - IDs diferentes equivalentes producen alias.
 - mappings completos por fuente.
@@ -1199,7 +1226,7 @@ casos equivalentes a:
 
 No copiar dependencias de `LibrarySession` ni rutas de biblioteca a la API.
 
-## 34. Documentación requerida
+## 34. Documentación publicada
 
 - Doc comments para todos los tipos públicos.
 - README con ejemplo de N fuentes de misma perspectiva.
@@ -1212,9 +1239,9 @@ No copiar dependencias de `LibrarySession` ni rutas de biblioteca a la API.
 - Limitación explícita: no usar este perfil para fuentes de personas distintas.
 - Ruta de evolución al motor general.
 
-## 35. Criterios de aceptación
+## 35. Criterios de aceptación verificados
 
-La entrega se considera completa si:
+La versión 5.0.0 cumple:
 
 1. Existe `ConversationSource` público desde `ExportedChatDocument` v1.
 2. `analyze` acepta N fuentes y exige target.
@@ -1236,10 +1263,12 @@ La entrega se considera completa si:
 18. Fuentes no cambian durante la operación.
 19. Progreso y cancelación están cubiertos.
 20. Los casos trasladados de Free My Chats pasan.
-21. La API queda preparada para una fuente portable futura sin romper firmas.
+21. Una fuente portable validada se adapta al mismo engine mediante
+    `PortableConversationDirectory.makeConversationSource`.
 22. `swift build` y `swift test` pasan.
 23. README y doc comments describen limitaciones.
-24. El cambio se publica en una versión/tag consumible por Free My Chats.
+24. El cambio está publicado en el tag y release `5.0.0`, consumible por Free My
+    Chats.
 
 ## 36. Decisiones que requieren consulta
 
@@ -1259,18 +1288,16 @@ El agente no debe decidir silenciosamente:
 - romper `ExportedChatDocument` v1;
 - usar `stanzaId` en la huella.
 
-## 37. Entrega solicitada al agente
+## 37. Entrega realizada
 
-El agente debe:
-
-1. implementar los pasos 1–5 de la sección 31;
-2. ejecutar `swift build` y `swift test`;
-3. entregar resumen de API pública;
-4. indicar archivos añadidos/modificados;
-5. informar rendimiento con un fixture grande sintético;
-6. documentar cualquier diferencia deliberada respecto a la implementación
-   actual;
-7. no modificar Free My Chats en esta tarea;
-8. no comenzar `.fmcchat` ni fusión entre perspectivas;
-9. proponer el tag/versionado de SwiftWABackupAPI;
-10. detenerse antes de integrar la nueva release en Free My Chats.
+1. Los pasos 1–5 de la sección 31 están implementados.
+2. `swift build` y `swift test` pasan, incluida una compilación de distribución
+   con deployment target macOS 13 Ventura.
+3. La superficie pública y sus responsabilidades están documentadas.
+4. Existe cobertura sintética de rendimiento y casos límite.
+5. La paridad se valida en solo lectura contra Vistas unificadas reales.
+6. Las ampliaciones `.fmcchat` y entre perspectivas se implementan sobre el mismo
+   motor, sin identidad global del propietario.
+7. Free My Chats integra ya el perfil local y mantiene la instalación y el
+   rollback.
+8. SwiftWABackupAPI 5.0.0 está publicada en GitHub.

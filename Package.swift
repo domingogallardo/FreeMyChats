@@ -14,10 +14,9 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/domingogallardo/SwiftWABackupAPI.git",
-            exact: "4.5.0"
-        )
+        // This integration branch consumes the unreleased conversation-composition API.
+        // Restore the remote dependency when SwiftWABackupAPI 5.0.0 is published.
+        .package(path: "../SwiftWABackupAPI")
     ],
     targets: [
         .executableTarget(

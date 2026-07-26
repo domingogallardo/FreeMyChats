@@ -1,6 +1,8 @@
 import Foundation
 @preconcurrency import SwiftWABackupAPI
 
+private let appProgressUpdateCoalescer = AppProgressUpdateCoalescer()
+
 @MainActor
 final class FreeMyChatsStore: ObservableObject {
     static let defaultBackupPath = NSString(
@@ -380,7 +382,13 @@ final class FreeMyChatsStore: ObservableObject {
                 try ConversationArchiveService.removalMessageImpact(
                     of: selection,
                     in: session
-                )
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: "Calculando los mensajes de “\(chatName)”…"
+                    )
+                }
             }
             DispatchQueue.main.async {
                 guard let self,
@@ -519,7 +527,13 @@ final class FreeMyChatsStore: ObservableObject {
                 try ConversationArchiveService.removeContribution(
                     source: selection,
                     from: session
-                )
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: "Borrando la exportación de “\(chatName)”…"
+                    )
+                }
             }
             DispatchQueue.main.async {
                 guard let self, self.operation?.id == operationID else { return }
@@ -693,7 +707,13 @@ final class FreeMyChatsStore: ObservableObject {
                         source: selection,
                         context: context,
                         in: session
-                    )
+                    ) { progress in
+                        self?.publish(
+                            progress,
+                            operationID: operationID,
+                            fallbackTitle: operationTitle
+                        )
+                    }
                     let previousContributionCount = context.record?.contributions.count ?? 0
                     let sourceWasAlreadyIncluded = context.record?.contributions.contains {
                         $0.source == selection
@@ -1019,11 +1039,26 @@ final class FreeMyChatsStore: ObservableObject {
         operationID: UUID,
         fallbackTitle: String
     ) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, var operation = self.operation, operation.id == operationID else { return }
-            operation.title = Self.title(for: progress.phase, fallback: fallbackTitle)
-            operation.detail = progress.currentItem ?? operation.detail
-            operation.fractionCompleted = progress.fractionCompleted
+        let update = AppProgressUpdateCoalescer.Update(
+            progress: progress,
+            operationID: operationID,
+            fallbackTitle: fallbackTitle
+        )
+        guard appProgressUpdateCoalescer.submit(update) else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            guard let update = appProgressUpdateCoalescer.takeLatest(),
+                  let self,
+                  var operation = self.operation,
+                  operation.id == update.operationID else {
+                return
+            }
+            operation.title = Self.title(
+                for: update.progress.phase,
+                fallback: update.fallbackTitle
+            )
+            operation.detail = update.progress.currentItem ?? operation.detail
+            operation.fractionCompleted = update.progress.fractionCompleted
             self.operation = operation
         }
     }
@@ -1038,6 +1073,18 @@ final class FreeMyChatsStore: ObservableObject {
         case .loadingChats: return "Leyendo las conversaciones…"
         case .exportingChat, .loadingMessages, .processingMessages, .buildingContacts,
              .exportingMedia: return fallback
+        case .validatingConversationSources, .hashingConversationMedia,
+             .canonicalizingConversationMessages, .inferringConversationPerspectives,
+             .aligningConversationMessages, .classifyingConversationComposition:
+            return "Combinando la conversación…"
+        case .materializingConversation, .copyingConversationMedia:
+            return "Creando la Vista unificada…"
+        case .creatingPortableConversationArchive:
+            return "Creando el archivo de conversación…"
+        case .inspectingPortableConversationArchive:
+            return "Validando el archivo de conversación…"
+        case .extractingPortableConversationArchive:
+            return "Extrayendo el archivo de conversación…"
         case .completed: return fallback
         }
     }

@@ -2,8 +2,10 @@
 
 ## Estado
 
-Este documento describe la implementación actual. El diseño de importación de
-paquetes `.fmcchat` está documentado por separado y todavía no está implementado.
+Este documento describe la implementación actual. SwiftWABackupAPI 5.0.0 y los
+wrappers internos de Free My Chats ya crean, validan, extraen y componen paquetes
+`.fmcchat` en staging. Todavía no están implementados su registro persistente en
+la biblioteca, la instalación reversible ni la interfaz.
 
 ## Dos representaciones posibles
 
@@ -46,7 +48,9 @@ chat y de su JID normalizado, no del nombre visible.
 Si solo existe una aportación, no se construye otra cronología: la vista utiliza
 directamente el documento exportado.
 
-Cuando existen varias aportaciones, Free My Chats:
+Cuando existen varias aportaciones, Free My Chats construye un
+`ConversationSource` por aportación, declara que comparten perspectiva y delega
+en `ConversationCompositionEngine`:
 
 1. Reúne todos sus mensajes.
 2. Calcula una huella SHA-256 para cada mensaje.
@@ -56,12 +60,17 @@ Cuando existen varias aportaciones, Free My Chats:
 5. Asigna identificadores correlativos a la cronología resultante.
 6. Reescribe `replyTo` para que las respuestas apunten a los nuevos
    identificadores.
-7. Escribe el documento combinado en `MergedChats/<conversationId>/chat.json`.
+7. Materializa un staging autocontenido con `chat.json` y `Media`.
+
+Free My Chats elige como target la aportación más reciente, añade `archive.json`
+al staging y coordina su instalación o rollback en
+`MergedChats/<conversationId>`. La API no conoce la estructura de la biblioteca.
 
 La huella de un mensaje incluye:
 
 - fecha con precisión de milisegundos;
-- dirección (`isFromMe`), tipo y autor normalizado;
+- rol relativo de autor (`sourceUser` para `isFromMe`) y participante
+  normalizado;
 - texto y pie de foto;
 - hash del archivo multimedia, cuando existe;
 - duración y coordenadas, cuando existen.
@@ -71,8 +80,9 @@ cambiar entre dos exportaciones de la misma conversación. Dos mensajes con la
 misma huella se consideran la misma aparición y se guardan una sola vez en la
 cronología materializada.
 
-Los contactos se agrupan por teléfono. Los datos generales y la fotografía del
-chat se toman de la aportación más reciente.
+Los contactos se agrupan por identidad telefónica normalizada y prefieren la
+fuente target. Los datos generales y la fotografía del chat se toman de esa
+aportación más reciente.
 
 ## Lectura y reparación
 

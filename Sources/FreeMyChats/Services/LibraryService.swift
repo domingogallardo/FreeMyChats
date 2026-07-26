@@ -25,7 +25,7 @@ enum LibraryServiceError: Error, LocalizedError {
         case .sourceAlreadyDeleted:
             return "La copia fuente ya había sido eliminada."
         case .exportedChatNotFound:
-            return "El chat exportado ya no está disponible."
+            return "El chat guardado ya no está disponible."
         case .originalIPhoneBackupNotFound(let url):
             return "La copia original del iPhone ya no está en \(url.path)."
         case .layoutMigrationConflict(let url):

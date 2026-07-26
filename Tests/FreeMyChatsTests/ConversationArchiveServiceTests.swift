@@ -122,6 +122,296 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertNotEqual(opened.contentRevisionID, reopened.contentRevisionID)
     }
 
+    func testUnifiedViewCompositionReportsSwiftWABackupAPIProgress() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "new",
+                    chatID: 8,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
+        let oldExport = try oldVersion.exportStore.openChat(chatId: 7)
+        let oldContext = try ConversationArchiveService.prepareIncorporation(
+            for: oldExport.document.chat,
+            in: oldVersion,
+            session: fixture.session
+        )
+        _ = try ConversationArchiveService.incorporate(
+            oldExport,
+            source: VersionChatID(versionID: "old", chatID: 7),
+            context: oldContext,
+            in: fixture.session
+        )
+
+        let newVersion = try XCTUnwrap(fixture.session.version(id: "new"))
+        let newExport = try newVersion.exportStore.openChat(chatId: 8)
+        let newContext = try ConversationArchiveService.prepareIncorporation(
+            for: newExport.document.chat,
+            in: newVersion,
+            session: fixture.session
+        )
+        var phases: [WABackupProgress.Phase] = []
+        _ = try ConversationArchiveService.incorporate(
+            newExport,
+            source: VersionChatID(versionID: "new", chatID: 8),
+            context: newContext,
+            in: fixture.session
+        ) { phases.append($0.phase) }
+
+        XCTAssertTrue(phases.contains(.validatingConversationSources))
+        XCTAssertTrue(phases.contains(.canonicalizingConversationMessages))
+        XCTAssertTrue(phases.contains(.classifyingConversationComposition))
+        XCTAssertTrue(phases.contains(.materializingConversation))
+        XCTAssertEqual(phases.last, .completed)
+    }
+
+    func testStagesOppositeIndividualPerspectiveRelativeToLocalTarget() throws {
+        let fixture = try makeLibrary(
+            exports: oppositeIndividualExports()
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let targetVersion = try XCTUnwrap(fixture.session.version(id: "local"))
+        let sourceVersion = try XCTUnwrap(fixture.session.version(id: "received"))
+        let targetExport = try targetVersion.exportStore.openChat(chatId: 10)
+        let sourceExport = try sourceVersion.exportStore.openChat(chatId: 20)
+        let target = try ConversationSource(
+            id: ConversationSourceID(rawValue: "local"),
+            exportedChat: targetExport
+        )
+        let source = try ConversationSource(
+            id: ConversationSourceID(rawValue: "received"),
+            exportedChat: sourceExport
+        )
+        let destination = fixture.rootURL.appendingPathComponent("import-staging")
+        var phases: [WABackupProgress.Phase] = []
+
+        let result = try ConversationArchiveService.stageCrossPerspectiveComposition(
+            sources: [source, target],
+            targetSourceID: target.id,
+            targetChatID: 77,
+            destinationDirectory: destination,
+            progress: { phases.append($0.phase) }
+        )
+
+        XCTAssertEqual(result.document.chat.id, 77)
+        XCTAssertEqual(result.document.chat.contactJid, "34600000002@s.whatsapp.net")
+        XCTAssertEqual(result.document.messages.count, 5)
+        XCTAssertEqual(
+            result.document.messages.map(\.isFromMe),
+            [true, false, true, false, true]
+        )
+        XCTAssertEqual(result.document.messages[3].author?.kind, .participant)
+        XCTAssertEqual(result.document.messages[4].author?.kind, .me)
+        XCTAssertTrue(phases.contains(.inferringConversationPerspectives))
+        XCTAssertTrue(phases.contains(.aligningConversationMessages))
+        XCTAssertTrue(phases.contains(.materializingConversation))
+        XCTAssertEqual(phases.last, .completed)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("chat.json").path))
+    }
+
+    func testCreatesInspectsAndExtractsPortableConversationThroughAppBoundary() throws {
+        let fixture = try makeLibrary(exports: oppositeIndividualExports())
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let receivedExport = try XCTUnwrap(fixture.session.version(id: "received"))
+            .exportStore.openChat(chatId: 20)
+        let received = try ConversationSource(
+            id: ConversationSourceID(rawValue: "received"),
+            exportedChat: receivedExport
+        )
+        let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
+        let extractionURL = fixture.rootURL.appendingPathComponent("received-portable")
+        var creationPhases: [WABackupProgress.Phase] = []
+
+        let created = try ConversationArchiveService.createPortableConversationArchive(
+            from: received,
+            producerVersion: "test",
+            destinationURL: archiveURL,
+            progress: { creationPhases.append($0.phase) }
+        )
+        let inspected = try ConversationArchiveService.inspectPortableConversationArchive(
+            at: archiveURL
+        )
+        let extracted = try ConversationArchiveService.extractPortableConversationArchive(
+            at: archiveURL,
+            to: extractionURL
+        )
+        let imported = try extracted.makeConversationSource(
+            id: ConversationSourceID(rawValue: "portable")
+        )
+
+        XCTAssertEqual(created.archiveSHA256, inspected.archiveSHA256)
+        XCTAssertEqual(created.manifest.producer.name, "Free My Chats")
+        XCTAssertEqual(created.manifest.producer.version, "test")
+        XCTAssertEqual(extracted.document.messages.count, 5)
+        XCTAssertEqual(imported.kind, .portableDocument)
+        XCTAssertTrue(creationPhases.contains(.creatingPortableConversationArchive))
+        XCTAssertEqual(creationPhases.last, .completed)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: extracted.documentURL.path))
+    }
+
+    func testPortableSourceUsesSameCrossPerspectiveCompositionPathAsLocalExport() throws {
+        let fixture = try makeLibrary(exports: oppositeIndividualExports())
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let localExport = try XCTUnwrap(fixture.session.version(id: "local"))
+            .exportStore.openChat(chatId: 10)
+        let receivedExport = try XCTUnwrap(fixture.session.version(id: "received"))
+            .exportStore.openChat(chatId: 20)
+        let local = try ConversationSource(
+            id: ConversationSourceID(rawValue: "local"),
+            exportedChat: localExport
+        )
+        let received = try ConversationSource(
+            id: ConversationSourceID(rawValue: "received"),
+            exportedChat: receivedExport
+        )
+        let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: received,
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+        let portableDirectory =
+            try ConversationArchiveService.extractPortableConversationArchive(
+                at: archiveURL,
+                to: fixture.rootURL.appendingPathComponent("portable")
+            )
+        let portable = try portableDirectory.makeConversationSource(
+            id: ConversationSourceID(rawValue: "portable-received")
+        )
+
+        let result = try ConversationArchiveService.stageCrossPerspectiveComposition(
+            sources: [portable, local],
+            targetSourceID: local.id,
+            targetChatID: 77,
+            destinationDirectory: fixture.rootURL.appendingPathComponent("portable-staging")
+        )
+
+        XCTAssertEqual(result.document.messages.count, 5)
+        XCTAssertEqual(
+            result.document.messages.map(\.message),
+            [
+                "First shared individual",
+                "Second shared individual",
+                "Third shared individual",
+                "Exclusive from B",
+                "Exclusive from A"
+            ]
+        )
+        XCTAssertEqual(
+            result.document.messages.map(\.isFromMe),
+            [true, false, true, false, true]
+        )
+        XCTAssertEqual(result.document.chat.contactJid, "34600000002@s.whatsapp.net")
+    }
+
+    func testStagesOppositeGroupPerspectiveWithSeveralAuthors() throws {
+        let fixture = try makeLibrary(
+            exports: oppositeGroupExports()
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let targetVersion = try XCTUnwrap(fixture.session.version(id: "local-group"))
+        let sourceVersion = try XCTUnwrap(fixture.session.version(id: "received-group"))
+        let targetExport = try targetVersion.exportStore.openChat(chatId: 30)
+        let sourceExport = try sourceVersion.exportStore.openChat(chatId: 40)
+        let target = try ConversationSource(
+            id: ConversationSourceID(rawValue: "local-group"),
+            exportedChat: targetExport
+        )
+        let source = try ConversationSource(
+            id: ConversationSourceID(rawValue: "received-group"),
+            exportedChat: sourceExport
+        )
+
+        let result = try ConversationArchiveService.stageCrossPerspectiveComposition(
+            sources: [target, source],
+            targetSourceID: target.id,
+            targetChatID: 88,
+            destinationDirectory: fixture.rootURL.appendingPathComponent("group-import-staging")
+        )
+
+        XCTAssertEqual(result.document.messages.count, 6)
+        XCTAssertEqual(result.document.messages.map(\.isFromMe), [true, false, true, false, true, false])
+        XCTAssertEqual(result.document.messages[3].author?.phone, "34600000002")
+        XCTAssertEqual(result.document.messages[4].author?.kind, .me)
+        XCTAssertEqual(result.document.messages[5].author?.phone, "34600000003")
+    }
+
+    func testRejectedCrossPerspectiveStagingLeavesNoOutput() throws {
+        let fixture = try makeLibrary(
+            exports: [
+                ExportFixture(
+                    versionID: "local",
+                    chatID: 10,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "Only shared", date: "2026-01-01T10:00:01Z")
+                    ]
+                ),
+                ExportFixture(
+                    versionID: "received",
+                    chatID: 20,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    exportedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 11, text: "Only shared", date: "2026-01-01T10:00:01Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let targetExport = try XCTUnwrap(fixture.session.version(id: "local"))
+            .exportStore.openChat(chatId: 10)
+        let sourceExport = try XCTUnwrap(fixture.session.version(id: "received"))
+            .exportStore.openChat(chatId: 20)
+        let target = try ConversationSource(
+            id: ConversationSourceID(rawValue: "local"),
+            exportedChat: targetExport
+        )
+        let source = try ConversationSource(
+            id: ConversationSourceID(rawValue: "received"),
+            exportedChat: sourceExport
+        )
+        let destination = fixture.rootURL.appendingPathComponent("rejected-staging")
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.stageCrossPerspectiveComposition(
+                sources: [target, source],
+                targetSourceID: target.id,
+                targetChatID: 1,
+                destinationDirectory: destination
+            )
+        ) { error in
+            guard case ConversationCompositionError.crossPerspectiveCompositionRejected = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+
     func testLIDIdentityResolvesToTheSamePhoneConversation() throws {
         let backupURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1121,6 +1411,75 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
+    private func oppositeIndividualExports() -> [ExportFixture] {
+        [
+            ExportFixture(
+                versionID: "local",
+                chatID: 10,
+                jid: "34600000002@s.whatsapp.net",
+                name: "B",
+                exportedAt: "2026-01-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 1, text: "First shared individual", date: "2026-01-01T10:00:01Z", isFromMe: true),
+                    MessageFixture(id: 2, text: "Second shared individual", date: "2026-01-01T10:00:02Z"),
+                    MessageFixture(id: 3, text: "Third shared individual", date: "2026-01-01T10:00:03Z", isFromMe: true)
+                ]
+            ),
+            ExportFixture(
+                versionID: "received",
+                chatID: 20,
+                jid: "34600000001@s.whatsapp.net",
+                name: "A",
+                exportedAt: "2026-02-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 11, text: "First shared individual", date: "2026-01-01T10:00:01Z"),
+                    MessageFixture(id: 12, text: "Second shared individual", date: "2026-01-01T10:00:02Z", isFromMe: true),
+                    MessageFixture(id: 13, text: "Third shared individual", date: "2026-01-01T10:00:03Z"),
+                    MessageFixture(id: 14, text: "Exclusive from B", date: "2026-01-01T10:00:04Z", isFromMe: true),
+                    MessageFixture(id: 15, text: "Exclusive from A", date: "2026-01-01T10:00:05Z")
+                ]
+            )
+        ]
+    }
+
+    private func oppositeGroupExports() -> [ExportFixture] {
+        [
+            ExportFixture(
+                versionID: "local-group",
+                chatID: 30,
+                jid: "family@g.us",
+                name: "Familia",
+                exportedAt: "2026-01-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 1, text: "First shared group", date: "2026-01-01T10:00:01Z", isFromMe: true),
+                    MessageFixture(
+                        id: 2,
+                        text: "Second shared group",
+                        date: "2026-01-01T10:00:02Z",
+                        authorJID: "34600000002@s.whatsapp.net",
+                        authorPhone: "34600000002"
+                    ),
+                    MessageFixture(id: 3, text: "Third shared group", date: "2026-01-01T10:00:03Z", isFromMe: true)
+                ]
+            ),
+            ExportFixture(
+                versionID: "received-group",
+                chatID: 40,
+                jid: "family@g.us",
+                name: "Familia recibida",
+                exportedAt: "2026-02-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 11, text: "First shared group", date: "2026-01-01T10:00:01Z", authorJID: "34600000001@s.whatsapp.net", authorPhone: "34600000001"),
+                    MessageFixture(id: 12, text: "Second shared group", date: "2026-01-01T10:00:02Z", isFromMe: true),
+                    MessageFixture(id: 13, text: "Third shared group", date: "2026-01-01T10:00:03Z", authorJID: "34600000001@s.whatsapp.net", authorPhone: "34600000001"),
+                    MessageFixture(id: 14, text: "Exclusive from B", date: "2026-01-01T10:00:04Z", isFromMe: true),
+                    MessageFixture(id: 15, text: "Exclusive from A", date: "2026-01-01T10:00:05Z", authorJID: "34600000001@s.whatsapp.net", authorPhone: "34600000001"),
+                    MessageFixture(id: 16, text: "Exclusive from C", date: "2026-01-01T10:00:06Z", authorJID: "34600000003@s.whatsapp.net", authorPhone: "34600000003")
+                ]
+            )
+        ]
+    }
+
     private func incorporateAllExports(
         in fixture: LibraryFixture
     ) throws -> [ExportedChatListItem] {
@@ -1161,7 +1520,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
                 "chatId": fixture.chatID,
                 "message": message.text,
                 "date": message.date,
-                "isFromMe": false,
+                "isFromMe": message.isFromMe,
                 "messageType": "Text"
             ]
             if let mediaFilename = message.mediaFilename {
@@ -1263,6 +1622,7 @@ private struct MessageFixture {
     let id: Int
     let text: String
     let date: String
+    let isFromMe: Bool
     let mediaFilename: String?
     let mediaData: Data?
     let authorJID: String?
@@ -1272,6 +1632,7 @@ private struct MessageFixture {
         id: Int,
         text: String,
         date: String,
+        isFromMe: Bool = false,
         mediaFilename: String? = nil,
         mediaData: Data? = nil,
         authorJID: String? = nil,
@@ -1280,6 +1641,7 @@ private struct MessageFixture {
         self.id = id
         self.text = text
         self.date = date
+        self.isFromMe = isFromMe
         self.mediaFilename = mediaFilename
         self.mediaData = mediaData
         self.authorJID = authorJID
