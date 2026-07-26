@@ -56,7 +56,7 @@ struct ConversationView: View {
 
     private var selectedContributionCount: Int {
         if let selected = store.selectedConversation {
-            return selected.record.contributions.count
+            return selected.record.totalContributionCount
         }
         guard let selection = store.selectedConversationID else { return 1 }
         return store.conversationCatalog.first(where: { $0.id == selection })?.contributionCount ?? 1
@@ -69,9 +69,13 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             ConversationHeaderView(
                 conversation: conversation,
-                sourceTitles: conversation.record.contributions.compactMap { contribution in
-                    store.session?.version(id: contribution.source.versionID)?.record.title
-                },
+                sourceTitles:
+                    conversation.record.contributions.compactMap { contribution in
+                        store.session?.version(id: contribution.source.versionID)?.record.title
+                    }
+                    + conversation.record.importedContributions.map {
+                        "Chat importado · \($0.displayName)"
+                    },
                 isSearching: $isSearching,
                 searchText: $messageSearchText,
                 isSearchPending: isMessageSearchPending,
@@ -81,7 +85,8 @@ struct ConversationView: View {
                 finishSearch: finishMessageSearch,
                 cancelSearch: cancelMessageSearch,
                 goBack: store.showConversationCatalog,
-                revealInFinder: store.revealSelectedChat
+                revealInFinder: store.revealSelectedChat,
+                exportConversation: store.exportSelectedConversation
             )
             Divider()
             MessageListView(
@@ -203,6 +208,7 @@ private struct ConversationHeaderView: View {
     let cancelSearch: () -> Void
     let goBack: () -> Void
     let revealInFinder: () -> Void
+    let exportConversation: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -221,7 +227,7 @@ private struct ConversationHeaderView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        if conversation.record.contributions.count > 1 {
+                        if conversation.record.totalContributionCount > 1 {
                             Button {
                                 isShowingUnifiedViewHelp.toggle()
                             } label: {
@@ -266,11 +272,21 @@ private struct ConversationHeaderView: View {
                         : "Buscar en la conversación"
                 )
 
-                Button(action: revealInFinder) {
-                    Label("Abrir conversación en Finder", systemImage: "folder")
+                Menu {
+                    Button("Abrir en Finder", systemImage: "folder", action: revealInFinder)
+                    Divider()
+                    Button(
+                        "Exportar conversación…",
+                        systemImage: "square.and.arrow.up",
+                        action: exportConversation
+                    )
+                } label: {
+                    Label("Acciones de la conversación", systemImage: "folder")
+                        .labelStyle(.iconOnly)
                 }
-                .labelStyle(.iconOnly)
-                .help("Abrir la carpeta de esta conversación en Finder")
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Abrir o exportar esta conversación")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
@@ -392,7 +408,8 @@ private struct ConversationHeaderView: View {
         return ConversationPresentation.subtitle(
             chatType: chat.chatType,
             messageCount: chat.numberMessages,
-            contributionCount: conversation.record.contributions.count,
+            localContributionCount: conversation.record.contributions.count,
+            importedContributionCount: conversation.record.importedContributions.count,
             date: date
         )
     }
@@ -421,16 +438,40 @@ enum ConversationPresentation {
         contributionCount: Int,
         date: String
     ) -> String {
+        subtitle(
+            chatType: chatType,
+            messageCount: messageCount,
+            localContributionCount: contributionCount,
+            importedContributionCount: 0,
+            date: date
+        )
+    }
+
+    static func subtitle(
+        chatType: ChatInfo.ChatType,
+        messageCount: Int,
+        localContributionCount: Int,
+        importedContributionCount: Int,
+        date: String
+    ) -> String {
         let type = chatType == .group ? "Grupo" : "Conversación individual"
-        let savedCopies = contributionCount == 1
+        let savedCopies = localContributionCount == 1
             ? "1 copia guardada"
-            : "\(contributionCount) copias guardadas"
-        let unified = contributionCount > 1 ? "Vista unificada" : nil
+            : "\(localContributionCount) copias guardadas"
+        let importedChats: String? = switch importedContributionCount {
+        case 0: nil
+        case 1: "1 chat importado"
+        default: "\(importedContributionCount) chats importados"
+        }
+        let unified = localContributionCount + importedContributionCount > 1
+            ? "Vista unificada"
+            : nil
         return [
             unified,
             type,
             "\(messageCount.formatted()) mensajes",
             savedCopies,
+            importedChats,
             date
         ]
         .compactMap { $0 }

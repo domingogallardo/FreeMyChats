@@ -10,6 +10,15 @@
       }
     },
     {
+      "identity" : "swiftwabackupapi",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/domingogallardo/SwiftWABackupAPI.git",
+      "state" : {
+        "revision" : "fbb8b9710d9c4880992c60371a03f52b0fd6a608",
+        "version" : "6.0.0"
+      }
+    },
+    {
       "identity" : "zipfoundation",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/weichsel/ZIPFoundation.git",

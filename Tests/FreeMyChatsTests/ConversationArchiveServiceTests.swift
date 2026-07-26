@@ -325,6 +325,454 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(result.document.chat.contactJid, "34600000002@s.whatsapp.net")
     }
 
+    func testImportedConversationPersistsAndExportsAsPartOfTheUnifiedView() throws {
+        let fixture = try makeLibrary(storedChats: oppositeIndividualStoredChats())
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let localVersion = try XCTUnwrap(fixture.session.version(id: "local"))
+        let receivedVersion = try XCTUnwrap(fixture.session.version(id: "received"))
+        let localChat = try XCTUnwrap(localVersion.chats.first)
+        let localStored = try localVersion.storedChatStore.openChat(chatId: localChat.id)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: localChat,
+            in: localVersion,
+            session: fixture.session
+        )
+        _ = try ConversationArchiveService.incorporate(
+            localStored,
+            source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
+            context: context,
+            in: fixture.session
+        )
+
+        let receivedStored = try receivedVersion.storedChatStore.openChat(chatId: 20)
+        let receivedSource = try ConversationSource(
+            id: ConversationSourceID(rawValue: "received"),
+            storedChat: receivedStored
+        )
+        let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: receivedSource,
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+
+        let result = try ConversationArchiveService.importPortableConversationArchive(
+            at: archiveURL,
+            into: fixture.session
+        )
+        let importedURL = fixture.session.paths.importedChatsURL
+            .appendingPathComponent(result.importedContribution.relativeDirectory)
+        let catalog = try ConversationArchiveService.catalog(in: result.session)
+        let item = try XCTUnwrap(catalog.first)
+        let reopenedSession = try LibraryService.open(selectedURL: fixture.rootURL)
+        let reopened = try ConversationArchiveService.openRepairing(
+            id: item.id,
+            in: reopenedSession
+        )
+
+        XCTAssertEqual(result.session.manifest.schemaVersion, LibraryManifest.currentSchemaVersion)
+        XCTAssertEqual(result.conversation.document.messages.count, 5)
+        XCTAssertEqual(result.addedMessageCount, 2)
+        XCTAssertEqual(result.conversation.record.contributions.count, 1)
+        XCTAssertEqual(result.conversation.record.importedContributions.count, 1)
+        XCTAssertEqual(item.localContributionCount, 1)
+        XCTAssertEqual(item.importedContributionCount, 1)
+        XCTAssertEqual(reopened.document.messages.count, 5)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: importedURL.appendingPathComponent("manifest.json").path
+            )
+        )
+
+        let unifiedArchiveURL = fixture.rootURL.appendingPathComponent(
+            "unified-conversation.fmcchat"
+        )
+        let exported = try ConversationArchiveService.createPortableConversationArchive(
+            for: item.id,
+            in: result.session,
+            producerVersion: "test",
+            destinationURL: unifiedArchiveURL
+        )
+        let exportedDirectory =
+            try ConversationArchiveService.extractPortableConversationArchive(
+                at: unifiedArchiveURL,
+                to: fixture.rootURL.appendingPathComponent("exported-unified-conversation")
+            )
+
+        XCTAssertEqual(exported.manifest.messageCount, 5)
+        XCTAssertEqual(exportedDirectory.document.messages.count, 5)
+        XCTAssertEqual(
+            exportedDirectory.document.messages.map(\.text),
+            result.conversation.document.messages.map(\.message)
+        )
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.importPortableConversationArchive(
+                at: archiveURL,
+                into: result.session
+            )
+        ) { error in
+            guard case ConversationArchiveError.importedConversationAlreadyExists = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testImportsPortableGroupIntoItsExistingConversation() throws {
+        let fixture = try makeLibrary(storedChats: oppositeGroupStoredChats())
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let localVersion = try XCTUnwrap(fixture.session.version(id: "local-group"))
+        let receivedVersion = try XCTUnwrap(fixture.session.version(id: "received-group"))
+        let localChat = try XCTUnwrap(localVersion.chats.first)
+        let localStored = try localVersion.storedChatStore.openChat(chatId: localChat.id)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: localChat,
+            in: localVersion,
+            session: fixture.session
+        )
+        _ = try ConversationArchiveService.incorporate(
+            localStored,
+            source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
+            context: context,
+            in: fixture.session
+        )
+
+        let receivedStored = try receivedVersion.storedChatStore.openChat(chatId: 40)
+        let archiveURL = fixture.rootURL.appendingPathComponent("received-group.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "received-group"),
+                storedChat: receivedStored
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+
+        let result = try ConversationArchiveService.importPortableConversationArchive(
+            at: archiveURL,
+            into: fixture.session
+        )
+
+        XCTAssertEqual(result.conversation.document.chat.name, "Familia")
+        XCTAssertEqual(result.conversation.document.messages.count, 6)
+        XCTAssertEqual(result.addedMessageCount, 3)
+        XCTAssertEqual(result.importedContribution.displayName, "Familia recibida")
+        XCTAssertEqual(result.conversation.record.totalContributionCount, 2)
+    }
+
+    func testImportRejectsAnArchiveThatMatchesSeveralExistingConversations() throws {
+        let localMessages = [
+            MessageFixture(
+                id: 1,
+                text: "First shared individual",
+                date: "2026-01-01T10:00:01Z",
+                isFromMe: true
+            ),
+            MessageFixture(
+                id: 2,
+                text: "Second shared individual",
+                date: "2026-01-01T10:00:02Z"
+            ),
+            MessageFixture(
+                id: 3,
+                text: "Third shared individual",
+                date: "2026-01-01T10:00:03Z",
+                isFromMe: true
+            )
+        ]
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "local-b",
+                    chatID: 10,
+                    jid: "34600000002@s.whatsapp.net",
+                    name: "B",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: localMessages
+                ),
+                StoredChatFixture(
+                    versionID: "local-c",
+                    chatID: 30,
+                    jid: "34600000003@s.whatsapp.net",
+                    name: "C",
+                    storedAt: "2026-01-11T12:00:00Z",
+                    messages: localMessages
+                ),
+                oppositeIndividualStoredChats()[1]
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        for versionID in ["local-b", "local-c"] {
+            let version = try XCTUnwrap(fixture.session.version(id: versionID))
+            let chat = try XCTUnwrap(version.chats.first)
+            let stored = try version.storedChatStore.openChat(chatId: chat.id)
+            let context = try ConversationArchiveService.prepareIncorporation(
+                for: chat,
+                in: version,
+                session: fixture.session
+            )
+            _ = try ConversationArchiveService.incorporate(
+                stored,
+                source: VersionChatID(versionID: versionID, chatID: chat.id),
+                context: context,
+                in: fixture.session
+            )
+        }
+
+        let received = try XCTUnwrap(fixture.session.version(id: "received"))
+            .storedChatStore.openChat(chatId: 20)
+        let archiveURL = fixture.rootURL.appendingPathComponent("ambiguous.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "received"),
+                storedChat: received
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.importPortableConversationArchive(
+                at: archiveURL,
+                into: fixture.session
+            )
+        ) { error in
+            guard case ConversationArchiveError.ambiguousMatchingConversations(let names) = error
+            else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(Set(names), Set(["B", "C"]))
+        }
+        XCTAssertTrue(
+            (try? FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.importedChatsURL.path
+            ).isEmpty) == true
+        )
+    }
+
+    func testRemovingImportedConversationRestoresLocalConversation() throws {
+        let fixture = try makeLibrary(storedChats: oppositeIndividualStoredChats())
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let localVersion = try XCTUnwrap(fixture.session.version(id: "local"))
+        let receivedVersion = try XCTUnwrap(fixture.session.version(id: "received"))
+        let localChat = try XCTUnwrap(localVersion.chats.first)
+        let localStored = try localVersion.storedChatStore.openChat(chatId: localChat.id)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: localChat,
+            in: localVersion,
+            session: fixture.session
+        )
+        _ = try ConversationArchiveService.incorporate(
+            localStored,
+            source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
+            context: context,
+            in: fixture.session
+        )
+        let receivedStored = try receivedVersion.storedChatStore.openChat(chatId: 20)
+        let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "received"),
+                storedChat: receivedStored
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+        let imported = try ConversationArchiveService.importPortableConversationArchive(
+            at: archiveURL,
+            into: fixture.session
+        )
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.removeContribution(
+                source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
+                from: imported.session
+            )
+        ) { error in
+            guard case ConversationArchiveError.cannotRemoveLastLocalContribution = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+
+        let removal = try ConversationArchiveService.removeImportedContribution(
+            id: imported.importedContribution.id,
+            from: imported.session
+        )
+        let importedURL = fixture.session.paths.importedChatsURL
+            .appendingPathComponent(imported.importedContribution.relativeDirectory)
+        let mergedURL = fixture.session.paths.mergedChatsURL
+            .appendingPathComponent(imported.conversation.record.id.rawValue)
+
+        XCTAssertEqual(removal.conversation.document.messages.count, 3)
+        XCTAssertEqual(removal.conversation.record.contributions.count, 1)
+        XCTAssertTrue(removal.conversation.record.importedContributions.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: importedURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mergedURL.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: localStored.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+    }
+
+    func testAddingNewLocalCopyAfterImportPreservesImportedContribution() throws {
+        let fixtures = [
+            StoredChatFixture(
+                versionID: "local-old",
+                chatID: 10,
+                jid: "34600000002@s.whatsapp.net",
+                name: "B",
+                storedAt: "2026-01-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 1, text: "First shared individual", date: "2026-01-01T10:00:01Z", isFromMe: true),
+                    MessageFixture(id: 2, text: "Second shared individual", date: "2026-01-01T10:00:02Z"),
+                    MessageFixture(id: 3, text: "Third shared individual", date: "2026-01-01T10:00:03Z", isFromMe: true)
+                ]
+            ),
+            StoredChatFixture(
+                versionID: "local-new",
+                chatID: 11,
+                jid: "34600000002@s.whatsapp.net",
+                name: "B",
+                storedAt: "2026-03-10T12:00:00Z",
+                messages: [
+                    MessageFixture(id: 21, text: "First shared individual", date: "2026-01-01T10:00:01Z", isFromMe: true),
+                    MessageFixture(id: 22, text: "Second shared individual", date: "2026-01-01T10:00:02Z"),
+                    MessageFixture(id: 23, text: "Third shared individual", date: "2026-01-01T10:00:03Z", isFromMe: true),
+                    MessageFixture(id: 24, text: "Exclusive new local", date: "2026-01-01T10:00:06Z", isFromMe: true)
+                ]
+            ),
+            oppositeIndividualStoredChats()[1]
+        ]
+        let fixture = try makeLibrary(storedChats: fixtures)
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "local-old"))
+        let newVersion = try XCTUnwrap(fixture.session.version(id: "local-new"))
+        let receivedVersion = try XCTUnwrap(fixture.session.version(id: "received"))
+        let oldChat = try XCTUnwrap(oldVersion.chats.first)
+        _ = try ConversationArchiveService.incorporate(
+            oldVersion.storedChatStore.openChat(chatId: oldChat.id),
+            source: VersionChatID(versionID: oldVersion.id, chatID: oldChat.id),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: oldChat,
+                in: oldVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+        let receivedStored = try receivedVersion.storedChatStore.openChat(chatId: 20)
+        let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "received"),
+                storedChat: receivedStored
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+        let imported = try ConversationArchiveService.importPortableConversationArchive(
+            at: archiveURL,
+            into: fixture.session
+        )
+        let newChat = try XCTUnwrap(newVersion.chats.first)
+        let update = try ConversationArchiveService.incorporate(
+            newVersion.storedChatStore.openChat(chatId: newChat.id),
+            source: VersionChatID(versionID: newVersion.id, chatID: newChat.id),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: newChat,
+                in: newVersion,
+                session: imported.session
+            ),
+            in: imported.session
+        )
+        let importedURL = fixture.session.paths.importedChatsURL
+            .appendingPathComponent(imported.importedContribution.relativeDirectory)
+
+        XCTAssertEqual(update.conversation.record.contributions.count, 2)
+        XCTAssertEqual(update.conversation.record.importedContributions.count, 1)
+        XCTAssertEqual(update.conversation.document.messages.count, 6)
+        XCTAssertTrue(
+            update.conversation.document.messages.contains {
+                $0.message == "Exclusive new local"
+            }
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
+    }
+
+    func testImportRejectsPortableConversationWithoutExistingMatch() throws {
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "local",
+                    chatID: 10,
+                    jid: "local-group@g.us",
+                    name: "Grupo local",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "Local A", date: "2026-01-01T10:00:01Z"),
+                        MessageFixture(id: 2, text: "Local B", date: "2026-01-01T10:00:02Z"),
+                        MessageFixture(id: 3, text: "Local C", date: "2026-01-01T10:00:03Z")
+                    ]
+                ),
+                StoredChatFixture(
+                    versionID: "other",
+                    chatID: 20,
+                    jid: "other-group@g.us",
+                    name: "Otro grupo",
+                    storedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 11, text: "Other A", date: "2026-01-01T10:00:01Z"),
+                        MessageFixture(id: 12, text: "Other B", date: "2026-01-01T10:00:02Z"),
+                        MessageFixture(id: 13, text: "Other C", date: "2026-01-01T10:00:03Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let localVersion = try XCTUnwrap(fixture.session.version(id: "local"))
+        let localChat = try XCTUnwrap(localVersion.chats.first)
+        _ = try ConversationArchiveService.incorporate(
+            localVersion.storedChatStore.openChat(chatId: localChat.id),
+            source: VersionChatID(versionID: "local", chatID: localChat.id),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: localChat,
+                in: localVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+        let otherStored = try XCTUnwrap(fixture.session.version(id: "other"))
+            .storedChatStore.openChat(chatId: 20)
+        let archiveURL = fixture.rootURL.appendingPathComponent("other.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "other"),
+                storedChat: otherStored
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.importPortableConversationArchive(
+                at: archiveURL,
+                into: fixture.session
+            )
+        ) { error in
+            guard case ConversationArchiveError.noMatchingConversation = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertTrue(
+            (try FileManager.default.contentsOfDirectory(
+                at: fixture.session.paths.importedChatsURL,
+                includingPropertiesForKeys: nil
+            )).isEmpty
+        )
+    }
+
     func testStagesOppositeGroupPerspectiveWithSeveralAuthors() throws {
         let fixture = try makeLibrary(
             storedChats: oppositeGroupStoredChats()

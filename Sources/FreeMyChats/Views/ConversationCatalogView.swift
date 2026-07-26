@@ -165,15 +165,21 @@ private struct ConversationCatalogRow: View {
 
     private var detail: String {
         let type = ConversationPresentation.cellTypeLabel(chatType: item.chat.chatType)
-        let savedCopies = item.contributionCount == 1
+        let savedCopies = item.localContributionCount == 1
             ? "1 copia guardada"
-            : "\(item.contributionCount) copias guardadas"
+            : "\(item.localContributionCount) copias guardadas"
+        let importedChats: String? = switch item.importedContributionCount {
+        case 0: nil
+        case 1: "1 chat importado"
+        default: "\(item.importedContributionCount) chats importados"
+        }
         let unified = item.contributionCount > 1 ? "Vista unificada" : nil
         return [
             unified,
             type,
             "\(item.chat.numberMessages.formatted()) mensajes",
-            savedCopies
+            savedCopies,
+            importedChats
         ]
         .compactMap { $0 }
         .joined(separator: " · ")

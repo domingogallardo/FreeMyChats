@@ -3,7 +3,7 @@
 ## Estado de implementación — SwiftWABackupAPI 5.0.0
 
 Este incremento está implementado, probado y publicado en SwiftWABackupAPI
-5.0.0. Free My Chats 1.4.0 usa ya `ConversationCompositionEngine` para construir
+5.0.0. Free My Chats 2.0.0 usa ya `ConversationCompositionEngine` para construir
 la Vista unificada local y conserva la instalación, los manifiestos y el
 rollback de su biblioteca.
 
@@ -56,7 +56,7 @@ Decisiones heredadas:
 - `ConversationCompositionPlan` expone estadísticas e impacto;
 - `ConversationMaterializationResult` devuelve documento, medios y mappings;
 - `ArchiveMessageID` proporciona identidad estable independiente de SQLite;
-- la API no conoce `StoredChats`, `Imports`, `MergedChats` ni `library.json`.
+- la API no conoce `StoredChats`, `ImportedChats`, `MergedChats` ni `library.json`.
 
 La API 5.0.0 añade sobre esta misma base:
 
@@ -962,7 +962,7 @@ La API no acepta `LibrarySession`, `VersionChatID` ni tipos de Free My Chats.
 
 ## 29. Integración vigente en Free My Chats
 
-Free My Chats 1.4.0 utiliza la API con esta correspondencia:
+Free My Chats 2.0.0 utiliza la API con esta correspondencia:
 
 | Implementación anterior | Uso vigente |
 | --- | --- |

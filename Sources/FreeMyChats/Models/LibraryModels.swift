@@ -5,6 +5,7 @@ struct LibraryPaths: Equatable {
     let rootURL: URL
     let sourcesURL: URL
     let storedChatsURL: URL
+    let importedChatsURL: URL
     let mergedChatsURL: URL
     let manifestURL: URL
 
@@ -13,6 +14,7 @@ struct LibraryPaths: Equatable {
         self.rootURL = root
         self.sourcesURL = root.appendingPathComponent("Sources", isDirectory: true)
         self.storedChatsURL = root.appendingPathComponent("StoredChats", isDirectory: true)
+        self.importedChatsURL = root.appendingPathComponent("ImportedChats", isDirectory: true)
         self.mergedChatsURL = root.appendingPathComponent("MergedChats", isDirectory: true)
         self.manifestURL = root.appendingPathComponent("library.json")
     }
@@ -34,6 +36,15 @@ struct LibraryPaths: Equatable {
         storedChatsURL.appendingPathComponent(record.storageDirectoryName, isDirectory: true)
     }
 
+    func importedConversationURL(
+        conversationID: ConversationArchiveID,
+        importID: String
+    ) -> URL {
+        importedChatsURL
+            .appendingPathComponent(conversationID.rawValue, isDirectory: true)
+            .appendingPathComponent(importID, isDirectory: true)
+    }
+
     static func resolvingSelection(_ selectedURL: URL) -> LibraryPaths {
         var candidate = selectedURL.standardizedFileURL
         let fileManager = FileManager.default
@@ -53,7 +64,8 @@ struct LibraryPaths: Equatable {
 }
 
 struct LibraryManifest: Codable, Equatable {
-    static let currentSchemaVersion = 2
+    static let previousSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     var schemaVersion: Int
     var createdAt: Date
@@ -63,6 +75,11 @@ struct LibraryManifest: Codable, Equatable {
         self.schemaVersion = Self.currentSchemaVersion
         self.createdAt = createdAt
         self.versions = versions
+    }
+
+    var isSupported: Bool {
+        schemaVersion == Self.previousSchemaVersion
+            || schemaVersion == Self.currentSchemaVersion
     }
 }
 
@@ -162,15 +179,85 @@ struct ConversationContribution: Codable, Equatable, Identifiable {
     }
 }
 
-struct ConversationArchiveRecord: Codable, Identifiable {
-    static let currentSchemaVersion = 2
+struct ImportedConversationContribution: Codable, Equatable, Identifiable {
+    let id: String
+    let importedAt: Date
+    let packageID: UUID
+    let packageCreatedAt: Date
+    let producerName: String
+    let producerVersion: String
+    let relativeDirectory: String
+    let archiveSHA256: String
+    let contentDigest: String
+    let displayName: String
+    let perspectiveHint: ConversationPerspectiveHint?
+    let messageCount: Int?
+    let exclusiveMessageCount: Int?
+    let exclusiveMediaByteCount: Int64?
 
-    let schemaVersion: Int
+    init(
+        id: String = UUID().uuidString.lowercased(),
+        importedAt: Date = Date(),
+        packageID: UUID,
+        packageCreatedAt: Date,
+        producerName: String,
+        producerVersion: String,
+        relativeDirectory: String,
+        archiveSHA256: String,
+        contentDigest: String,
+        displayName: String,
+        perspectiveHint: ConversationPerspectiveHint? = nil,
+        messageCount: Int? = nil,
+        exclusiveMessageCount: Int? = nil,
+        exclusiveMediaByteCount: Int64? = nil
+    ) {
+        self.id = id
+        self.importedAt = importedAt
+        self.packageID = packageID
+        self.packageCreatedAt = packageCreatedAt
+        self.producerName = producerName
+        self.producerVersion = producerVersion
+        self.relativeDirectory = relativeDirectory
+        self.archiveSHA256 = archiveSHA256
+        self.contentDigest = contentDigest
+        self.displayName = displayName
+        self.perspectiveHint = perspectiveHint
+        self.messageCount = messageCount
+        self.exclusiveMessageCount = exclusiveMessageCount
+        self.exclusiveMediaByteCount = exclusiveMediaByteCount
+    }
+
+    func withImpact(_ impact: ConversationSourceImpact) -> Self {
+        ImportedConversationContribution(
+            id: id,
+            importedAt: importedAt,
+            packageID: packageID,
+            packageCreatedAt: packageCreatedAt,
+            producerName: producerName,
+            producerVersion: producerVersion,
+            relativeDirectory: relativeDirectory,
+            archiveSHA256: archiveSHA256,
+            contentDigest: contentDigest,
+            displayName: displayName,
+            perspectiveHint: perspectiveHint,
+            messageCount: impact.sourceMessageCount,
+            exclusiveMessageCount: impact.exclusiveMessageCount,
+            exclusiveMediaByteCount: impact.exclusiveMediaByteCount
+        )
+    }
+}
+
+struct ConversationArchiveRecord: Codable, Identifiable {
+    static let previousSchemaVersion = 2
+    static let currentSchemaVersion = 3
+
+    var schemaVersion: Int
     let id: ConversationArchiveID
     let key: ConversationIdentityKey
     let createdAt: Date
     var updatedAt: Date
     var contributions: [ConversationContribution]
+    var importedContributions: [ImportedConversationContribution]
     var summary: ChatInfo?
     var contactJIDAliases: [String]?
 
@@ -180,6 +267,7 @@ struct ConversationArchiveRecord: Codable, Identifiable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         contributions: [ConversationContribution] = [],
+        importedContributions: [ImportedConversationContribution] = [],
         summary: ChatInfo? = nil,
         contactJIDAliases: [String]? = nil
     ) {
@@ -189,8 +277,56 @@ struct ConversationArchiveRecord: Codable, Identifiable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.contributions = contributions
+        self.importedContributions = importedContributions
         self.summary = summary
         self.contactJIDAliases = contactJIDAliases
+    }
+
+    var isSupported: Bool {
+        schemaVersion == Self.previousSchemaVersion
+            || schemaVersion == Self.currentSchemaVersion
+    }
+
+    var totalContributionCount: Int {
+        contributions.count + importedContributions.count
+    }
+
+    mutating func markCurrentSchema() {
+        schemaVersion = Self.currentSchemaVersion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case id
+        case key
+        case createdAt
+        case updatedAt
+        case contributions
+        case importedContributions
+        case summary
+        case contactJIDAliases
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        id = try container.decode(ConversationArchiveID.self, forKey: .id)
+        key = try container.decode(ConversationIdentityKey.self, forKey: .key)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        contributions = try container.decode(
+            [ConversationContribution].self,
+            forKey: .contributions
+        )
+        importedContributions = try container.decodeIfPresent(
+            [ImportedConversationContribution].self,
+            forKey: .importedContributions
+        ) ?? []
+        summary = try container.decodeIfPresent(ChatInfo.self, forKey: .summary)
+        contactJIDAliases = try container.decodeIfPresent(
+            [String].self,
+            forKey: .contactJIDAliases
+        )
     }
 
     var identityKeys: Set<ConversationIdentityKey> {
@@ -230,10 +366,24 @@ struct ConversationCatalogItem: Identifiable {
     let chat: ChatInfo
     let updatedAt: Date
     let contributionSources: [VersionChatID]
+    let importedContributions: [ImportedConversationContribution]
     let directoryURL: URL
     let photoURL: URL?
 
-    var contributionCount: Int { contributionSources.count }
+    var contributionCount: Int {
+        contributionSources.count + importedContributions.count
+    }
+
+    var localContributionCount: Int { contributionSources.count }
+    var importedContributionCount: Int { importedContributions.count }
+}
+
+struct ImportedChatSidebarItem: Identifiable {
+    let contribution: ImportedConversationContribution
+    let conversationID: ConversationArchiveID
+    let conversationName: String
+
+    var id: String { contribution.id }
 }
 
 enum ChatDetailsState: Equatable {
@@ -366,6 +516,7 @@ enum StoredChatDisplayState: Equatable {
         case .checking, .notStored, .updateAvailable: return false
         }
     }
+
 }
 
 struct AppOperation: Equatable {
@@ -380,6 +531,9 @@ struct AppOperation: Equatable {
         case preparingStoredCopyDeletion(VersionChatID)
         case loadingChats
         case storingChat(VersionChatID)
+        case exportingConversation(ConversationArchiveID)
+        case importingPortableConversation
+        case removingImportedConversation(String)
     }
 
     let id: UUID

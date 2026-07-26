@@ -6,7 +6,7 @@ Este documento contrasta el diseño inicial de
 [fusión de conversaciones portables](fusion-conversaciones-portables.md) con la
 implementación de partida de Free My Chats 1.3.10 y SwiftWABackupAPI 4.5.0. El
 resultado de la parte de API está publicado en SwiftWABackupAPI 5.0.0 y la rama
-de integración corresponde a Free My Chats 1.4.0.
+de integración corresponde a Free My Chats 2.0.0.
 
 La especificación posterior y vinculante para SwiftWABackupAPI está en
 [Motor general de fusión y conversaciones portables](especificacion-swiftwabackupapi-motor-fusion-portable.md).
@@ -20,10 +20,9 @@ está en
 
 El documento nació como evaluación. SwiftWABackupAPI 5.0.0 implementa el
 diagnóstico, la materialización respecto al target, el contrato `.fmcchat` v1 y
-su codec seguro. Free My Chats prueba ya el ciclo
-crear–inspeccionar–extraer–componer mediante una ruta interna de staging. Siguen
-pendientes la persistencia de aportaciones importadas, la instalación definitiva
-y la interfaz.
+su codec seguro. Free My Chats implementa el ciclo completo
+crear–inspeccionar–extraer–componer–instalar, la persistencia reversible de las
+aportaciones importadas y su interfaz.
 
 El MVP contemplado aquí permite incorporar un archivo creado por Free My Chats a
 una conversación que ya existe en la biblioteca receptora. No importa ZIP o TXT
@@ -55,10 +54,8 @@ documentos son de la misma conversación, relacionar sus autores relativos y
 alinear con suficiente confianza los mensajes compartidos.
 
 La recomendación de comenzar por un diagnóstico de solo lectura ya se ha
-aplicado. También se han completado la materialización conservadora en staging y
-el contrato portable, manteniéndolos separados de la biblioteca. El siguiente
-paso es persistir una aportación validada y hacer reversible su instalación, aún
-sin exigir una interfaz final.
+aplicado. También se han completado la materialización conservadora en staging,
+el contrato portable y la instalación reversible dentro de la biblioteca.
 
 ## Qué hace hoy la Vista unificada
 
@@ -109,7 +106,7 @@ cambiar de propietario:
 - `ConversationArchiveRecord`: debe registrar aportaciones importadas además de
   copias guardadas locales.
 - `ResolvedContribution`: debe poder abrir una fuente de `StoredChats` o de
-  `Imports`.
+  `ImportedChats`.
 - `buildDocument`: debe recibir el resultado de un alineador que ya haya
   normalizado perspectiva y autores.
 - Los contadores de aportaciones y mensajes exclusivos deben incluir ambos tipos
@@ -142,7 +139,7 @@ Mi biblioteca Free My Chats/
 ├── library.json
 ├── Sources/
 ├── StoredChats/                         # Aportaciones de copias locales
-├── Imports/                         # Aportaciones recibidas
+├── ImportedChats/                   # Aportaciones recibidas
 │   └── <conversationId>/
 │       └── <importId>/
 │           ├── manifest.json
@@ -162,11 +159,12 @@ Reglas de materialización:
 - Varias aportaciones locales se materializan en `MergedChats`, como ahora.
 - Cualquier conversación con al menos una importación se materializa en
   `MergedChats`, aunque solo quede esa importación.
-- `Imports` y `StoredChats` son fuentes; `MergedChats` se puede borrar y reconstruir.
+- `ImportedChats` y `StoredChats` son fuentes; `MergedChats` se puede borrar y
+  reconstruir.
 - Retirar una importación borra únicamente su carpeta después de haber instalado
   correctamente el resultado reconstruido.
-- Si se borra la última aportación local pero quedan importaciones, la conversación
-  permanece en el catálogo.
+- La última aportación local no se puede borrar mientras haya importaciones: se
+  conserva así el target local que orienta la Vista unificada.
 
 Este diseño evita duplicar una `Base` y encaja con el sistema de reparación actual.
 
@@ -218,7 +216,7 @@ que el resaltado del panel izquierdo continúe funcionando.
 Añadir importaciones cambia la semántica del manifiesto. Debe incrementarse el
 schema de `ConversationArchiveRecord` y, preferiblemente, el de la biblioteca o
 añadir una capacidad mínima requerida. Una versión antigua debe rechazar una
-biblioteca nueva antes que ignorar `Imports` y reconstruir perdiendo datos.
+biblioteca nueva antes que ignorar `ImportedChats` y reconstruir perdiendo datos.
 
 ### Identidad estable de mensaje
 
@@ -251,7 +249,7 @@ mediante conversiones JSON para modificar campos inmutables.
 Es propietario de la biblioteca y de la experiencia:
 
 - paneles de abrir y guardar;
-- `Imports` y su integración con `ConversationArchiveRecord`;
+- `ImportedChats` y su integración con `ConversationArchiveRecord`;
 - preparación, confirmación, progreso y cancelación;
 - instalación y rollback de la conversación materializada;
 - actualización del catálogo, selección y posición de lectura;
@@ -269,7 +267,7 @@ materialización target-relative y sus pruebas.
 
 En Free My Chats, el impacto principal será:
 
-- `LibraryModels.swift`: ruta `Imports`, schema nuevo, aportación importada,
+- `LibraryModels.swift`: ruta `ImportedChats`, schema nuevo, aportación importada,
   contadores y nuevas clases de operación;
 - `ConversationArchiveService.swift`: resolver ambos tipos de fuente,
   materializar con el plan de la API, instalar y retirar importaciones;
@@ -279,10 +277,10 @@ En Free My Chats, el impacto principal será:
 - vistas nuevas y pequeñas para la previsualización y la lista de importaciones;
 - pruebas de modelos, servicios y compatibilidad de biblioteca.
 
-SwiftWABackupAPI 5.0.0 ya está versionada y publicada. La rama actual de Free My
-Chats usa temporalmente el repositorio hermano mediante una dependencia local; el
-siguiente cierre de integración sustituye esa ruta por el tag exacto `5.0.0`.
-Los archivos de `.build/checkouts` no se editan.
+SwiftWABackupAPI introdujo el motor portable en 5.0.0. Free My Chats 2.0.0 fija
+la versión exacta 6.0.0, que incorpora la terminología definitiva de chats
+guardados y elimina las conversiones antiguas. Los archivos de
+`.build/checkouts` no se editan.
 
 ## Formato `.fmcchat`
 
@@ -322,10 +320,10 @@ nombre, referencias ausentes y hashes incorrectos.
 
 ## Proceso de exportación para compartir
 
-1. El usuario abre una conversación del catálogo y elige
-   `Crear archivo para compartir…` en un menú de acciones del encabezado.
-2. La aplicación comprueba que la conversación es válida y dispone de identidad
-   portable suficiente.
+1. El usuario abre una conversación del catálogo y, en el menú del icono de
+   carpeta de su encabezado, pulsa `Exportar conversación…`.
+2. La aplicación abre y valida la conversación materializada visible, que reúne
+   todas sus copias locales y chats importados.
 3. Se abre el panel de guardado con un nombre legible y extensión `.fmcchat`.
 4. En segundo plano se crea una carpeta temporal, se genera el documento portable,
    se copian solo los medios referenciados y se calculan hashes y tamaños.
@@ -339,45 +337,37 @@ Cancelar o fallar no modifica la biblioteca y elimina los temporales propios.
 
 ## Proceso de importación
 
-1. El usuario abre la conversación receptora y elige
-   `Añadir mensajes de otra exportación…`.
-2. Selecciona o arrastra un `.fmcchat`.
+1. El usuario pulsa `Importar chat…` en el grupo `Chats importados` o en el menú
+   de la aplicación.
+2. Selecciona un `.fmcchat`.
 3. La aplicación hace una validación estructural y de seguridad sin escribir en la
    conversación: schema, límites, rutas, hashes y referencias.
-4. Comprueba que la identidad portable corresponde a la conversación receptora.
+4. Recorre el catálogo y exige que exista exactamente una conversación receptora
+   con diagnóstico seguro. Si no hay ninguna o hay varias, muestra un error sin
+   modificar la biblioteca.
 5. Infiere la relación entre perspectivas a partir del solapamiento y las
    identidades disponibles; si no basta, usa una pista opcional proporcionada por
    el llamante. Después recalcula `isFromMe` respecto de la fuente local target.
 6. Calcula firmas centrales, selecciona anclas fuertes únicas y obtiene su cadena
    ordenada. Los mensajes débiles repetidos no actúan como anclas ni se
    desambiguan mediante ventanas en la 5.0.0.
-7. Muestra una hoja de previsualización con:
-
-   - descriptor de la conversación y productor del paquete, sin atribuir una
-     identidad al usuario de la fuente;
-   - mensajes emparejados y exclusivos;
-   - bytes multimedia exclusivos del plan;
-   - cobertura, anclas, orientación de perspectivas y nivel de confianza;
-   - causa concreta si no es seguro continuar.
-
-8. Solo con `disposition == .applicable` se habilita `Añadir mensajes`.
-9. Al confirmar, se copia primero el paquete validado a un `Imports` temporal, se
-   construye una nueva materialización y se valida.
-10. Se instalan de forma coordinada la fuente importada, `archive.json` y
-    `MergedChats`. Si cualquier paso falla, se restaura el estado anterior.
-11. Se refrescan catálogo y conversación abierta. La posición de lectura se
-    traduce mediante el mapa de mensajes; si no es posible, se usa el mensaje
-    temporalmente más cercano.
-12. El resultado indica cuántos mensajes y archivos se han incorporado realmente.
+7. Solo con `disposition == .applicable` continúa automáticamente la importación.
+8. Se copia primero el paquete validado a un staging temporal, se construye una
+   nueva materialización y se valida.
+9. Se instalan de forma coordinada la fuente importada en `ImportedChats`,
+   `archive.json` y `MergedChats`. Si cualquier paso falla, se restaura el estado
+   anterior.
+10. Se refrescan catálogo y conversación abierta.
+11. El resultado indica cuántos mensajes se han incorporado realmente.
 
 El archivo recibido nunca se importa automáticamente solo porque el nombre del
 chat coincida.
 
 ## Historial y retirada
 
-El menú de la conversación incluirá `Importaciones de esta conversación…`. Una
-hoja mostrará fecha de importación, productor del paquete, fecha del paquete,
-mensajes totales y mensajes actualmente exclusivos.
+El grupo `Chats importados`, situado encima de las copias de backup en el panel
+izquierdo, muestra el nombre y la fecha de cada importación. Cada fila permite
+abrir la conversación, mostrar su carpeta o retirar la aportación.
 
 Al retirar una importación:
 
@@ -389,22 +379,13 @@ Al retirar una importación:
 
 Si otra fuente contiene el mismo mensaje o medio, no desaparece del resultado.
 
-## Interfaz propuesta
+## Interfaz implementada
 
-Las acciones principales deben estar en un menú `…` del encabezado de la
-conversación, junto a búsqueda y Finder:
-
-- `Crear archivo para compartir…`
-- `Añadir mensajes de otra exportación…`
-- `Importaciones de esta conversación…` cuando existan
-
-También pueden exponerse en un menú de aplicación contextual cuando haya una
-conversación seleccionada. El arrastre de `.fmcchat` es un acceso directo
-posterior, no una ruta distinta de validación.
-
-El análisis y la confirmación encajan mejor en una hoja que en una alerta: hay
-varias cifras, estados, progreso y posibles diagnósticos. Las operaciones largas
-deben mostrar fases comprensibles y permitir cancelar antes de la instalación.
+La exportación aparece en el menú del icono de carpeta del encabezado de la
+conversación, junto a `Abrir en Finder`. La importación aparece en el encabezado
+de `Chats importados` y en el menú de aplicación. Las operaciones largas muestran
+su progreso y todos los errores de identidad o ambigüedad se presentan antes de
+instalar nada.
 
 ## Plan de implementación recomendado
 
@@ -440,23 +421,23 @@ incorporarlos todavía a la biblioteca.
 
 Resultado: diagnóstico y materialización deterministas en staging.
 
-### Fase 3 — persistencia reversible
+### Fase 3 — persistencia reversible — IMPLEMENTADA
 
-- `Imports` y schema nuevo de la biblioteca.
+- `ImportedChats` y schema nuevo de la biblioteca.
 - Generalización de aportaciones resueltas.
 - Materialización atómica y rollback.
 - Retirada, reparación y actualización de una copia guardada local sin perder
   importaciones.
 - Traducción de la posición de lectura.
 
-Entregable: operaciones completas mediante servicios y tests, aún sin pulir UI.
+Entregable: operaciones completas mediante servicios y tests.
 
-### Fase 4 — experiencia macOS
+### Fase 4 — experiencia macOS — IMPLEMENTADA
 
-- Menú de acciones, paneles, hoja de análisis y progreso.
-- Resultado, Finder, historial y retirada.
-- Arrastre opcional del paquete.
-- Accesibilidad, cancelación y mensajes de error accionables.
+- Exportación de la conversación completa desde su menú de carpeta.
+- Importación global con coincidencia única, resultado y progreso.
+- Lista de chats importados con fecha, Finder y retirada.
+- Mensajes de error accionables para ausencia, duplicado o ambigüedad.
 
 ### Fase 5 — endurecimiento
 
@@ -476,9 +457,8 @@ Entregable: operaciones completas mediante servicios y tests, aún sin pulir UI.
 - Diferencias pequeñas de timestamp no crean duplicados ni coincidencias falsas.
 - Importación idéntica repetida y paquete regenerado con el mismo contenido.
 - Respuesta cuyo original solo existe en la importación.
-- Una nueva copia guardada local después de importar no elimina `Imports`.
-- Eliminar la última fuente local conserva una conversación respaldada por
-  importaciones.
+- Una nueva copia guardada local después de importar no elimina `ImportedChats`.
+- Eliminar la última fuente local se bloquea mientras existan importaciones.
 - Retirar una importación mantiene mensajes y medios compartidos por otra fuente.
 - Fallo o cancelación en cada fase deja bit a bit intacta la conversación previa.
 - Una versión antigua de la aplicación rechaza de forma segura el schema nuevo.
@@ -500,8 +480,6 @@ Entregable: operaciones completas mediante servicios y tests, aún sin pulir UI.
 
 ## Siguiente paso concreto
 
-Implementar la Fase 3 en Free My Chats: almacenar el directorio portable ya
-validado, registrar la aportación en un schema de biblioteca versionado, volver a
-abrir todas las fuentes, ejecutar `analyze`/`materialize`, instalar el resultado
-con rollback y reconstruirlo al retirar una importación. La API 5.0.0 ya cubre la
-validación, diagnóstico, orientación y materialización necesarias.
+Probar el flujo con bibliotecas reales de distintos propietarios y ampliar los
+fixtures cuando aparezcan casos de identidad o alineación no representados por
+la suite sintética.

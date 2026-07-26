@@ -38,6 +38,11 @@ struct FreeMyChatsApp: App {
                     }
                     .disabled(store.operation != nil)
 
+                    Button("Importar chat…") {
+                        store.chooseAndImportChat()
+                    }
+                    .disabled(store.operation != nil)
+
                     Button("Cerrar biblioteca") {
                         store.closeLibrary()
                     }

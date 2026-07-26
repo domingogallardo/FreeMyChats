@@ -54,10 +54,10 @@ La implementación sirve a dos casos con un único motor:
    se alinea con la conversación local, se reorienta y se incorpora sin duplicar
    el tramo común.
 
-La especificación nació sobre SwiftWABackupAPI 4.5.0 y Free My Chats 1.3.10. La
-implementación resultante está publicada en SwiftWABackupAPI 5.0.0 y la rama de
-Free My Chats 1.4.0 consume el repositorio real como dependencia local durante su
-integración; los checkouts de `.build` no son fuente editable.
+La especificación nació sobre SwiftWABackupAPI 4.5.0 y Free My Chats 1.3.10. El
+motor resultante se publicó inicialmente en SwiftWABackupAPI 5.0.0. Free My Chats
+2.0.0 consume la versión exacta 6.0.0, que adopta la terminología definitiva de
+chats guardados; los checkouts de `.build` no son fuente editable.
 
 Documentos de contexto:
 
@@ -124,7 +124,7 @@ SwiftWABackupAPI 5.0.0:
 - Resolver manualmente conflictos mensaje a mensaje.
 - Concatenar conversaciones sin solapamiento demostrado.
 - Inferir teléfonos por sufijos, nombres de agenda o dígitos de un LID.
-- Hacer que SwiftWABackupAPI conozca `library.json`, `StoredChats`, `Imports` o
+- Hacer que SwiftWABackupAPI conozca `library.json`, `StoredChats`, `ImportedChats` o
   `MergedChats`.
 - Mantener el proyecto Python legado.
 
@@ -1201,7 +1201,7 @@ Ejemplo abreviado de manifiesto sin propietario global:
   "createdAt": "2026-07-22T10:15:30.000Z",
   "producer": {
     "name": "Free My Chats",
-    "version": "1.4.0"
+    "version": "2.0.0"
   },
   "implementation": {
     "name": "SwiftWABackupAPI",
@@ -1993,11 +1993,8 @@ El agente debe presentar evidencia y pedir decisión antes de:
 ## 34. Entrega realizada
 
 El incremento local, el diagnóstico, la composición entre perspectivas y el
-codec `.fmcchat` v1 están implementados en SwiftWABackupAPI 5.0.0. Free My Chats
-1.4.0 integra el perfil local y dispone de wrappers internos para crear,
-inspeccionar, extraer y componer paquetes en staging.
-
-La siguiente tarea pertenece a Free My Chats: registrar una aportación portable
-validada, instalar de forma reversible la nueva vista materializada y reconstruir
-al retirar una importación. SwiftWABackupAPI continúa sin escribir
-`library.json`, `archive.json`, `Imports` ni `MergedChats`.
+codec `.fmcchat` v1 se introdujeron en SwiftWABackupAPI 5.0.0 y se consumen con
+la terminología pública de SwiftWABackupAPI 6.0.0. Free My Chats 2.0.0 completa
+la exportación, el registro de aportaciones portables, su instalación reversible
+y la reconstrucción al retirarlas. SwiftWABackupAPI continúa sin escribir
+`library.json`, `archive.json`, `ImportedChats` ni `MergedChats`.

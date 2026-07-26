@@ -1,7 +1,13 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 enum DirectoryPicker {
+    private static let portableConversationType = UTType(
+        importedAs: "com.domingogallardo.freemychats.portable-conversation",
+        conformingTo: .zip
+    )
+
     @MainActor
     static func choose(startingAt currentPath: String) -> URL? {
         let panel = NSOpenPanel()
@@ -38,6 +44,39 @@ enum DirectoryPicker {
         panel.nameFieldStringValue = suggestedName
         panel.canCreateDirectories = true
         panel.isExtensionHidden = true
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    @MainActor
+    static func choosePortableConversationArchive(startingAt directoryURL: URL? = nil) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = "Importa un chat exportado"
+        panel.message = "Selecciona un archivo .fmcchat creado por Free My Chats."
+        panel.prompt = "Importar"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [portableConversationType]
+        panel.directoryURL = directoryURL
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    @MainActor
+    static func choosePortableConversationDestination(
+        suggestedName: String,
+        startingAt directoryURL: URL? = nil
+    ) -> URL? {
+        let panel = NSSavePanel()
+        panel.title = "Exportar conversación"
+        panel.message = "Se creará un archivo autocontenido que se puede importar en otra biblioteca."
+        panel.prompt = "Exportar"
+        panel.allowedContentTypes = [portableConversationType]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = suggestedName.hasSuffix(".fmcchat")
+            ? suggestedName
+            : "\(suggestedName).fmcchat"
+        panel.directoryURL = directoryURL
         return panel.runModal() == .OK ? panel.url : nil
     }
 }

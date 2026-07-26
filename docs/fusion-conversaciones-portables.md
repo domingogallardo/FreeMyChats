@@ -2,15 +2,15 @@
 
 ## Estado
 
-Implementación parcial de la funcionalidad completa, con la parte de API
-publicada en SwiftWABackupAPI 5.0.0:
+Implementación completa del flujo acordado, sobre la parte de API publicada en
+SwiftWABackupAPI 5.0.0:
 
 - implementados el diagnóstico y la materialización entre perspectivas;
 - implementada la creación de staging desde Free My Chats;
 - implementado el contrato `.fmcchat` v1 y su codec seguro en SwiftWABackupAPI;
-- probados desde Free My Chats la creación, inspección, extracción y uso del
-  paquete como entrada del mismo motor de composición;
-- pendientes la persistencia reversible, la instalación definitiva y la interfaz.
+- implementadas y probadas la exportación de conversaciones materializadas, la búsqueda
+  automática de una única conversación receptora, la persistencia reversible en
+  `ImportedChats`, la instalación definitiva y la interfaz.
 
 Este documento sigue describiendo el flujo final esperado. La especificación
 vinculante y su estado detallado están en
@@ -60,31 +60,30 @@ copia de iPhone ni intenta reinsertar mensajes en WhatsApp.
 
 ### Crear un archivo para compartir
 
-En el menú de una conversación del catálogo aparecerá:
+En el menú del icono de carpeta del encabezado de una conversación aparece:
 
-> Crear archivo para compartir…
+> Exportar conversación…
 
-Esta operación no vuelve a extraer la conversación desde la copia de iPhone. Abre
-la copia guardada existente, la valida y crea un paquete `.fmcchat` autocontenido.
-Debe funcionar incluso cuando ya se haya eliminado la copia fuente.
+Esta operación no vuelve a extraer la conversación desde la copia de iPhone.
+Abre la conversación materializada visible, que incluye todas sus copias locales
+y chats importados, la valida y crea un paquete `.fmcchat` autocontenido. Debe
+funcionar incluso cuando ya se haya eliminado una copia fuente.
 
 ### Añadir mensajes
 
-En el mismo menú aparecerá:
+En la cabecera del grupo `Chats importados` aparece:
 
-> Añadir mensajes de otra exportación…
+> Importar chat…
 
 El flujo será:
 
-1. Seleccionar o arrastrar un archivo `.fmcchat`.
+1. Seleccionar un archivo `.fmcchat`.
 2. Validar su formato e identidad de conversación.
 3. Analizar el solapamiento sin modificar la biblioteca.
-4. Mostrar mensajes emparejados y exclusivos, anclas, cobertura, orientación de
-   perspectivas, confianza, razones y multimedia exclusiva según el plan
-   aplicable.
-5. Confirmar la importación.
-6. Materializar la conversación combinada de forma atómica.
-7. Volver a abrir el chat manteniendo en lo posible la posición de lectura.
+4. Exigir una única conversación aplicable del catálogo; cero o varias
+   coincidencias producen un error.
+5. Materializar la conversación combinada de forma atómica.
+6. Abrir la nueva Vista unificada.
 
 Un resumen posible sería:
 
@@ -100,9 +99,10 @@ Confianza de la fusión: alta
 
 ### Consultar y deshacer
 
-La opción `Importaciones de esta conversación…` mostrará la fecha, procedencia y
-resultado de cada importación. Desde ahí se podrá retirar una aportación y
-reconstruir la conversación sin sus mensajes exclusivos.
+El grupo `Chats importados`, situado encima de las copias de backup, muestra el
+nombre y la fecha de cada importación. Desde ahí se puede abrir, revelar en Finder
+o retirar una aportación y reconstruir la conversación sin sus mensajes
+exclusivos.
 
 ## Formato de intercambio `.fmcchat`
 
@@ -121,7 +121,7 @@ La creación del paquete:
 - Archiva el `ConversationSource` que recibe. Free My Chats proporciona la
   conversación visible materializada cuando quiere compartir también mensajes
   incorporados anteriormente.
-- Excluir las capas internas `Base` e `Imports` y su historial de procedencia.
+- Excluir las capas internas de la biblioteca y su historial de procedencia.
 - Incluir únicamente archivos multimedia referenciados por `chat.json`.
 - Añadir tamaño y SHA-256 de cada archivo al manifiesto.
 - Escribir en una ubicación temporal y mover el resultado al terminar.
@@ -403,7 +403,7 @@ Chats/<chatId>/
 ├── Base/
 │   ├── chat.json
 │   └── Media/
-├── Imports/
+├── ImportedChats/
 │   └── <importId>/
 │       ├── manifest.json
 │       ├── chat.json
@@ -412,11 +412,12 @@ Chats/<chatId>/
 ```
 
 `chat.json` y `Media` continúan siendo la vista que abre FreeMyChats. `Base` e
-`Imports` son las fuentes que permiten reconstruirla.
+`ImportedChats` son las fuentes que permiten reconstruirla.
 
 Al reemplazar la copia guardada base desde una copia de iPhone, Free My Chats
-preserva `Imports`, vuelve a analizar todas las fuentes, instala la nueva vista y
-ejecuta rollback si falla. SwiftWABackupAPI no conoce ni modifica `Imports`,
+preserva `ImportedChats`, vuelve a analizar todas las fuentes, instala la nueva
+vista y ejecuta rollback si falla. SwiftWABackupAPI no conoce ni modifica
+`ImportedChats`,
 `MergedChats`, `archive.json` o `library.json`.
 
 La semántica no dependerá de la estrategia física utilizada para materializar la
@@ -455,28 +456,27 @@ importaciones: esas operaciones pertenecen a Free My Chats.
 
 FreeMyChats no debe implementar un segundo motor de fusión manipulando JSON.
 
-## Ampliaciones propuestas en FreeMyChats
+## Integración implementada en FreeMyChats
 
 ### Estado y servicios
 
-- Añadir operaciones `creatingSharePackage`, `inspectingImport`, `importingMessages`
-  y `removingImport` a `FreeMyChatsStore`.
-- Incorporar un servicio delgado para elegir destinos y archivos mediante paneles
-  de macOS.
-- Refrescar el catálogo de conversaciones, la conversación abierta y la posición
-  de lectura tras materializar.
-- Persistir únicamente la aportación, el paquete validado y cualquier pista
-  operativa necesaria; no persistir un propietario global.
+- `FreeMyChatsStore` publica las operaciones de exportación, importación y
+  retirada con progreso.
+- Los paneles nativos de macOS seleccionan destinos y archivos `.fmcchat`.
+- Tras materializar se refrescan el catálogo y la conversación abierta.
+- Solo se persisten la aportación, el paquete validado y la pista operativa
+  necesaria; no se persiste un propietario global.
 
 ### Interfaz
 
-- Añadir las acciones al menú del encabezado de la conversación guardada.
-- Mostrar el análisis en una hoja modal antes de aplicar cambios.
-- Exponer el historial en un inspector o una hoja secundaria, sin cargar cada
-  burbuja con información de procedencia.
-- Ofrecer `Mostrar en Finder` para el `.fmcchat` recién creado.
-- Aceptar arrastrar un `.fmcchat` sobre una conversación como acceso directo al
-  mismo flujo validado.
+- El menú de carpeta de cada conversación expone `Exportar conversación…`
+  junto a `Abrir en Finder`.
+- `Chats importados` aparece encima de las copias de backup y ofrece la
+  importación global.
+- La lista muestra nombre y fecha, y permite abrir, revelar en Finder o retirar
+  cada aportación.
+- La importación solo continúa si el análisis encuentra exactamente una
+  conversación aplicable.
 
 ### Posición de lectura
 
@@ -507,8 +507,8 @@ SwiftWABackupAPI ya:
 - extrae únicamente en el staging proporcionado;
 - elimina temporales propios si se cancela o falla.
 
-Free My Chats todavía debe coordinar la instalación del paquete, `archive.json` y
-la nueva vista para conservar intacta la biblioteca ante un fallo.
+Free My Chats coordina la instalación del paquete, `archive.json` y la nueva
+vista, con staging y rollback para conservar intacta la biblioteca ante un fallo.
 
 ## Rendimiento
 
@@ -523,8 +523,9 @@ la nueva vista para conservar intacta la biblioteca ante un fallo.
 ## Cobertura de pruebas
 
 Las pruebas de correspondencia, identidad, contenido y seguridad de la API están
-implementadas en SwiftWABackupAPI 5.0.0. Las pruebas de persistencia enumeradas
-más abajo siguen pendientes en Free My Chats.
+implementadas en SwiftWABackupAPI 5.0.0. Free My Chats añade cobertura de
+persistencia, reapertura, duplicados, ausencia de coincidencia, retirada y
+actualización de la copia local tras importar.
 
 ### Correspondencia
 
@@ -584,15 +585,14 @@ y confianza. No implementa ventanas contextuales; los mensajes débiles repetido
 se mantienen separados. Los fixtures sintéticos y la biblioteca real validan el
 resultado.
 
-### Fase 3: persistencia reversible en Free My Chats — PENDIENTE
+### Fase 3: persistencia reversible en Free My Chats — IMPLEMENTADA
 
-Introducir `Imports`, versionar `ConversationArchiveRecord`, registrar
-aportaciones portables y coordinar instalación/rollback. La API ya reasigna IDs,
-respuestas y multimedia en el staging.
+Se ha introducido `ImportedChats`, versionado `ConversationArchiveRecord`,
+registrado las aportaciones portables y coordinado instalación/rollback.
 
-### Fase 4: experiencia en FreeMyChats
+### Fase 4: experiencia en FreeMyChats — IMPLEMENTADA
 
-Añadir crear archivo, inspeccionar, confirmar, importar, consultar procedencia y
+Incluye exportar, importar sobre una coincidencia única, consultar procedencia y
 deshacer.
 
 ### Fase 5: endurecimiento
@@ -612,7 +612,7 @@ Cumplidos por SwiftWABackupAPI 5.0.0:
 - Conserva y remapea respuestas dentro de los datos disponibles.
 - Las copias guardadas con el formato actual continúan siendo legibles.
 
-Pendientes de la Fase 3 de Free My Chats:
+Cumplidos por la Fase 3 de Free My Chats:
 
 - Permite deshacer una importación.
 - Una actualización de la copia guardada base no elimina aportaciones importadas.

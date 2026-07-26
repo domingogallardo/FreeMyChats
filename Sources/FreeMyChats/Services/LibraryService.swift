@@ -45,6 +45,10 @@ enum LibraryService {
 
         try fileManager.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: paths.storedChatsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(
+            at: paths.importedChatsURL,
+            withIntermediateDirectories: true
+        )
         try fileManager.createDirectory(at: paths.mergedChatsURL, withIntermediateDirectories: true)
         try write(LibraryManifest(), to: paths.manifestURL)
         return try open(paths: paths)
@@ -260,12 +264,16 @@ enum LibraryService {
         }
 
         let manifest = try readManifest(at: paths.manifestURL)
-        guard manifest.schemaVersion == LibraryManifest.currentSchemaVersion else {
+        guard manifest.isSupported else {
             throw LibraryServiceError.unsupportedSchema(manifest.schemaVersion)
         }
 
         try FileManager.default.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: paths.storedChatsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: paths.importedChatsURL,
+            withIntermediateDirectories: true
+        )
         try FileManager.default.createDirectory(
             at: paths.mergedChatsURL,
             withIntermediateDirectories: true
@@ -424,7 +432,7 @@ enum LibraryService {
         return try decoder.decode(LibraryManifest.self, from: Data(contentsOf: url))
     }
 
-    private static func write(_ manifest: LibraryManifest, to url: URL) throws {
+    static func write(_ manifest: LibraryManifest, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

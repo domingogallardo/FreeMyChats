@@ -60,6 +60,27 @@ final class FreeMyChatsStore: ObservableObject {
         session?.versions ?? []
     }
 
+    var importedChats: [ImportedChatSidebarItem] {
+        conversationCatalog
+            .flatMap { item in
+                item.importedContributions.map {
+                    ImportedChatSidebarItem(
+                        contribution: $0,
+                        conversationID: item.id,
+                        conversationName: item.chat.name
+                    )
+                }
+            }
+            .sorted {
+                if $0.contribution.importedAt != $1.contribution.importedAt {
+                    return $0.contribution.importedAt > $1.contribution.importedAt
+                }
+                return $0.contribution.displayName.localizedStandardCompare(
+                    $1.contribution.displayName
+                ) == .orderedAscending
+            }
+    }
+
     nonisolated static func shouldPresentBackupImporter(
         for session: LibrarySession
     ) -> Bool {
@@ -494,6 +515,172 @@ final class FreeMyChatsStore: ObservableObject {
         WorkspaceService.reveal(storedChatURL)
     }
 
+    func exportSelectedConversation() {
+        guard let session,
+              let conversationID = selectedConversationID,
+              let conversation = selectedConversation else {
+            errorMessage = "Abre una conversación de la biblioteca para poder exportarla."
+            return
+        }
+        let chat = conversation.document.chat
+        let suggestedName = Self.portableFilename(for: chat.name)
+        guard let destinationURL = DirectoryPicker.choosePortableConversationDestination(
+            suggestedName: suggestedName,
+            startingAt: session.paths.rootURL
+        ) else { return }
+
+        let operationTitle = "Exportando “\(chat.name)”…"
+        let operationID = beginOperation(
+            kind: .exportingConversation(conversationID),
+            title: operationTitle,
+            detail: destinationURL.lastPathComponent
+        )
+        let producerVersion = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "2.0.0"
+        workQueue.async { [weak self] in
+            let result = Result {
+                try ConversationArchiveService.createPortableConversationArchive(
+                    for: conversationID,
+                    in: session,
+                    producerVersion: producerVersion,
+                    destinationURL: destinationURL
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: operationTitle
+                    )
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success(let archive):
+                    let size = ByteCountFormatter.string(
+                        fromByteCount: archive.archiveByteCount,
+                        countStyle: .file
+                    )
+                    self.informationMessage = "Se ha exportado la conversación “"
+                        + chat.name + "” como "
+                        + "\(destinationURL.lastPathComponent) (\(size))."
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func chooseAndImportChat() {
+        guard let session else { return }
+        guard let archiveURL = DirectoryPicker.choosePortableConversationArchive(
+            startingAt: session.paths.rootURL
+        ) else { return }
+        importChat(from: archiveURL)
+    }
+
+    func importChat(from archiveURL: URL) {
+        guard let session else { return }
+        let operationTitle = "Importando el chat…"
+        let operationID = beginOperation(
+            kind: .importingPortableConversation,
+            title: operationTitle,
+            detail: archiveURL.lastPathComponent
+        )
+        workQueue.async { [weak self] in
+            let result = Result {
+                try ConversationArchiveService.importPortableConversationArchive(
+                    at: archiveURL,
+                    into: session
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: operationTitle
+                    )
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success(let imported):
+                    self.install(imported.session, preservingSelection: true)
+                    self.selectedConversationID = imported.conversation.record.id
+                    self.selectedConversation = imported.conversation
+                    self.highlightedChatIDs = Set(
+                        imported.conversation.record.contributions.map(\.source)
+                    )
+                    let added = imported.addedMessageCount
+                    let addedDescription = added == 1
+                        ? "1 mensaje nuevo"
+                        : "\(added.formatted()) mensajes nuevos"
+                    self.informationMessage = "Se ha importado “"
+                        + imported.importedContribution.displayName
+                        + "” y se ha creado la nueva Vista unificada con "
+                        + addedDescription + "."
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func revealImportedChat(_ item: ImportedChatSidebarItem) {
+        guard let session else { return }
+        let url = session.paths.importedChatsURL
+            .appendingPathComponent(item.contribution.relativeDirectory, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            errorMessage = "La carpeta de este chat importado ya no está disponible."
+            return
+        }
+        WorkspaceService.reveal(url)
+    }
+
+    func removeImportedChat(_ item: ImportedChatSidebarItem) {
+        guard let session else { return }
+        let operationTitle = "Retirando “\(item.conversationName)”…"
+        let operationID = beginOperation(
+            kind: .removingImportedConversation(item.id),
+            title: operationTitle,
+            detail: "Reconstruyendo la Vista unificada sin este chat importado."
+        )
+        workQueue.async { [weak self] in
+            let result = Result {
+                try ConversationArchiveService.removeImportedContribution(
+                    id: item.id,
+                    from: session
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: operationTitle
+                    )
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success(let removal):
+                    if self.selectedConversationID == removal.conversation.record.id {
+                        self.selectedConversation = removal.conversation
+                        self.highlightedChatIDs = Set(
+                            removal.conversation.record.contributions.map(\.source)
+                        )
+                    }
+                    self.refreshConversationCatalog(in: session)
+                    self.informationMessage = "Se ha retirado el chat importado de “"
+                        + item.conversationName
+                        + "” y se ha reconstruido su conversación."
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     func deleteStoredContribution(_ selection: VersionChatID) {
         guard let session,
               storedChatStates[selection]?.isPhysicallyStored == true else { return }
@@ -559,7 +746,7 @@ final class FreeMyChatsStore: ObservableObject {
                     }
 
                     if let conversation = removal.conversation {
-                        let count = conversation.record.contributions.count
+                        let count = conversation.record.totalContributionCount
                         if count == 1 {
                             self.informationMessage = "Se ha borrado la copia guardada de “\(chatName)”. "
                                 + "La Vista unificada ha desaparecido y el catálogo muestra "
@@ -567,7 +754,7 @@ final class FreeMyChatsStore: ObservableObject {
                         } else {
                             self.informationMessage = "Se ha borrado la copia guardada de “\(chatName)”. "
                                 + "La Vista unificada se ha reconstruido con las \(count) "
-                                + "copias restantes, que siguen guardadas por separado."
+                                + "aportaciones restantes."
                         }
                     } else {
                         self.informationMessage = "Se ha borrado la última copia guardada de “\(chatName)” y la conversación ha salido del catálogo."
@@ -710,7 +897,7 @@ final class FreeMyChatsStore: ObservableObject {
                             fallbackTitle: operationTitle
                         )
                     }
-                    let previousContributionCount = context.record?.contributions.count ?? 0
+                    let previousContributionCount = context.record?.totalContributionCount ?? 0
                     let sourceWasAlreadyIncluded = context.record?.contributions.contains {
                         $0.source == selection
                     } ?? false
@@ -777,7 +964,7 @@ final class FreeMyChatsStore: ObservableObject {
         guard reportUpdate else { return }
 
         let count = update.addedMessageCount
-        let contributionCount = update.conversation.record.contributions.count
+        let contributionCount = update.conversation.record.totalContributionCount
         if contributionCount > 1 {
             informationMessage = UnifiedViewPresentation.incorporationCompletionMessage(
                 chatName: chatName,
@@ -1083,6 +1270,15 @@ final class FreeMyChatsStore: ObservableObject {
             return "Extrayendo el archivo de conversación…"
         case .completed: return fallback
         }
+    }
+
+    private static func portableFilename(for chatName: String) -> String {
+        let forbidden = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+        let sanitized = chatName
+            .components(separatedBy: forbidden)
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "Chat exportado" : sanitized
     }
 
     private static let dateFormatter: DateFormatter = {

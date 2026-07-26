@@ -5,12 +5,42 @@ import SwiftWABackupAPI
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
+    @State private var isImportedChatsExpanded = true
     @State private var versionPendingDeletion: LibraryVersionSession?
+    @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
 
     var body: some View {
         VStack(spacing: 0) {
             sidebarHeader
             List(selection: $store.selectedChatID) {
+                DisclosureGroup(isExpanded: $isImportedChatsExpanded) {
+                    if store.importedChats.isEmpty {
+                        Text("Todavía no hay chats importados")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 27)
+                            .padding(.vertical, 5)
+                    } else {
+                        ForEach(store.importedChats) { item in
+                            ImportedChatSidebarRow(
+                                item: item,
+                                reveal: { store.revealImportedChat(item) },
+                                openConversation: {
+                                    store.openConversation(item.conversationID)
+                                },
+                                remove: {
+                                    importedChatPendingDeletion = item
+                                }
+                            )
+                        }
+                    }
+                } label: {
+                    ImportedChatsGroupRow(
+                        count: store.importedChats.count,
+                        importChat: store.chooseAndImportChat
+                    )
+                }
+
                 ForEach(store.versions) { version in
                     DisclosureGroup(isExpanded: expansionBinding(for: version.id)) {
                         let chats = store.visibleChats(in: version)
@@ -94,6 +124,29 @@ struct ChatSidebarView: View {
                 expandedVersionIDs.insert(first)
             }
             expandedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
+        }
+        .confirmationDialog(
+            "¿Retirar este chat importado?",
+            isPresented: Binding(
+                get: { importedChatPendingDeletion != nil },
+                set: { if !$0 { importedChatPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Retirar chat importado", role: .destructive) {
+                if let item = importedChatPendingDeletion {
+                    store.removeImportedChat(item)
+                }
+                importedChatPendingDeletion = nil
+            }
+            Button("Cancelar", role: .cancel) {
+                importedChatPendingDeletion = nil
+            }
+        } message: {
+            Text(
+                "La aportación importada se eliminará de ImportedChats y la Vista unificada "
+                    + "se reconstruirá con las copias y chats restantes."
+            )
         }
         .confirmationDialog(
             "¿Eliminar esta copia fuente?",
@@ -204,9 +257,12 @@ struct ChatSidebarView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Copias de WhatsApp")
+                    Text("Biblioteca")
                         .font(.title2.bold())
-                    Text("\(store.versions.count) versiones en la biblioteca")
+                    Text(
+                        "\(store.importedChats.count) chats importados · "
+                            + "\(store.versions.count) copias de WhatsApp"
+                    )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -217,7 +273,7 @@ struct ChatSidebarView: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Despliega una copia para navegar por sus chats")
+                Text("Importa chats o despliega una copia para navegar")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
 
@@ -309,6 +365,123 @@ struct ChatSidebarView: View {
     private func emptyMessage(for version: LibraryVersionSession) -> String {
         version.hasSourceBackup ? "No hay chats con este filtro" : "No quedaron chats guardados"
     }
+}
+
+private struct ImportedChatsGroupRow: View {
+    let count: Int
+    let importChat: () -> Void
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "tray.and.arrow.down.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 17)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Chats importados")
+                    .fontWeight(.medium)
+                Text(countDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 4)
+
+            Button(action: importChat) {
+                Label("Importar chat…", systemImage: "plus")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("Importar un archivo .fmcchat y buscar su conversación en la biblioteca")
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var countDescription: String {
+        switch count {
+        case 0: return "Ningún chat importado"
+        case 1: return "1 chat importado"
+        default: return "\(count) chats importados"
+        }
+    }
+}
+
+private struct ImportedChatSidebarRow: View {
+    let item: ImportedChatSidebarItem
+    let reveal: () -> Void
+    let openConversation: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Button(action: openConversation) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(.quaternary)
+                        Image(systemName: "arrow.down.message")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(width: 38, height: 38)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.contribution.displayName)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        Text(
+                            "Importado el "
+                                + Self.dateFormatter.string(
+                                    from: item.contribution.importedAt
+                                )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Abrir la Vista unificada de \(item.conversationName)")
+
+            HStack(spacing: 6) {
+                compactAction("Abrir", systemImage: "bubble.left", action: openConversation)
+                compactAction("Carpeta", systemImage: "folder", action: reveal)
+                compactAction("Retirar", systemImage: "trash", tint: .red, action: remove)
+            }
+            .padding(.leading, 48)
+        }
+        .padding(.leading, 18)
+        .padding(.vertical, 5)
+    }
+
+    private func compactAction(
+        _ title: String,
+        systemImage: String,
+        tint: Color = .accentColor,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(.white.opacity(0.92), in: Capsule())
+                .overlay {
+                    Capsule().stroke(tint.opacity(0.22), lineWidth: 0.75)
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }
 
 private struct BackupVersionRow: View {
@@ -485,6 +658,7 @@ private struct ChatSidebarRow: View {
                     .help("Borrar únicamente la copia guardada de este chat")
                 }
             }
+
         }
         .font(.caption)
     }

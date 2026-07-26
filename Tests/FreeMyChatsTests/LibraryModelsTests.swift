@@ -175,6 +175,7 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(paths.rootURL.path, "/tmp/My Library")
         XCTAssertEqual(paths.sourcesURL.path, "/tmp/My Library/Sources")
         XCTAssertEqual(paths.storedChatsURL.path, "/tmp/My Library/StoredChats")
+        XCTAssertEqual(paths.importedChatsURL.path, "/tmp/My Library/ImportedChats")
         XCTAssertEqual(paths.mergedChatsURL.path, "/tmp/My Library/MergedChats")
         XCTAssertEqual(paths.manifestURL.path, "/tmp/My Library/library.json")
         XCTAssertEqual(paths.backupURL(for: "july").path, "/tmp/My Library/Sources/july/Backup")
@@ -192,6 +193,13 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(
             paths.storedChatURL(for: record).path,
             "/tmp/My Library/StoredChats/Copia 2024-07-03 11.46"
+        )
+        XCTAssertEqual(
+            paths.importedConversationURL(
+                conversationID: ConversationArchiveID(rawValue: "family"),
+                importID: "shared-july"
+            ).path,
+            "/tmp/My Library/ImportedChats/family/shared-july"
         )
     }
 
@@ -219,6 +227,8 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.manifestURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.sourcesURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.storedChatsURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.importedChatsURL.path))
+        XCTAssertEqual(session.manifest.schemaVersion, LibraryManifest.currentSchemaVersion)
         XCTAssertTrue(session.versions.isEmpty)
     }
 
@@ -304,7 +314,8 @@ final class LibraryModelsTests: XCTestCase {
                 "numberMessages": 0,
                 "lastMessageDate": "2026-07-12T12:00:00Z",
                 "chatType": "group",
-                "isArchived": false
+                "isArchived": false,
+                "mediaByteCount": 0
               },
               "messages": [],
               "contacts": []
@@ -754,7 +765,8 @@ final class LibraryModelsTests: XCTestCase {
                 "numberMessages": 0,
                 "lastMessageDate": "2026-07-12T12:00:00Z",
                 "chatType": "group",
-                "isArchived": false
+                "isArchived": false,
+                "mediaByteCount": 0
               },
               "messages": [],
               "contacts": []

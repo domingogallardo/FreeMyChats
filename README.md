@@ -24,6 +24,14 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
   y orden por fecha o por tamaño de mayor a menor.
 - Vista previa de número de mensajes y fechas antes de añadir un chat a la biblioteca.
 - Incorporación explícita a la biblioteca desde la fila desplegada del chat.
+- Exportación de la conversación visible completa como archivo autocontenido
+  `.fmcchat`, incluyendo todas las copias locales y chats importados de su Vista
+  unificada.
+- Importación de `.fmcchat` sobre una conversación existente: la aplicación
+  localiza automáticamente una única coincidencia segura, crea la Vista unificada
+  y conserva la aportación de forma reversible en `ImportedChats`.
+- Grupo `Chats importados` en la parte superior de la columna izquierda, con
+  nombre, fecha de importación y acciones para abrir o retirar cada aportación.
 - Actualización incremental: si el mismo chat ya se guardó desde una copia anterior,
   `Añadir a la biblioteca` conserva la nueva copia por separado y reúne los
   mensajes de todas las copias guardadas en una sola cronología, sin crear un duplicado
@@ -67,25 +75,34 @@ Mi biblioteca Free My Chats/
 │               ├── archive.json  # Solo si es la única aportación
 │               ├── chat.json
 │               └── Media/
+├── ImportedChats/
+│   └── <conversationId>/
+│       └── <importId>/
+│           ├── manifest.json
+│           ├── chat.json
+│           └── Media/
 └── MergedChats/
-    └── <conversationId>/         # Solo si reúne varias aportaciones
+    └── <conversationId>/         # Varias copias locales o algún chat importado
         ├── archive.json
         ├── chat.json
         └── Media/
 ```
 
 `StoredChats` conserva cada aportación ligada a la copia de la que procede.
+`ImportedChats` conserva cada paquete recibido como una fuente independiente y
+reversible.
 
 Si una conversación solo tiene una aportación, su `archive.json` se guarda dentro
 de la propia copia guardada y el panel derecho abre directamente ese `chat.json` y
 su carpeta `Media`. No se crea una segunda carpeta para ella en `MergedChats`.
 
-`MergedChats` contiene únicamente conversaciones que reúnen varias
-aportaciones. Cada una es una materialización completa: su `chat.json` combina
-los mensajes, los ordena cronológicamente, elimina los coincidentes y reconstruye
-sus identificadores y respuestas. La vista abre ese único documento y su carpeta
-`Media`; no va saltando entre copias guardadas. Si varias aportaciones contienen un
-archivo idéntico, la conversación combinada lo guarda una sola vez.
+`MergedChats` contiene las conversaciones que reúnen varias copias locales o al
+menos un chat importado. Cada una es una materialización completa: su `chat.json`
+combina los mensajes, los ordena cronológicamente, elimina los coincidentes y
+reconstruye sus identificadores y respuestas. La vista abre ese único documento
+y su carpeta `Media`; no va saltando entre copias guardadas. Si varias
+aportaciones contienen un archivo idéntico, la conversación combinada lo guarda
+una sola vez.
 
 La descripción técnica completa está en
 [Conversaciones materializadas](docs/conversaciones-materializadas.md).
@@ -117,9 +134,17 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 ## Relación con SwiftWABackupAPI
 
-Este proyecto integra [SwiftWABackupAPI 5.0.0](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/5.0.0), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
+Este proyecto integra [SwiftWABackupAPI 6.0.0](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/6.0.0), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
 
-La rama de integración de Free My Chats 1.4.0 usa la API de composición para construir las Vistas unificadas. También contiene la ruta interna de staging entre perspectivas y la frontera del formato `.fmcchat` v1: la API crea, inspecciona, extrae, diagnostica, reorienta al target y materializa, mientras Free My Chats conserva la responsabilidad de registrar una aportación, instalarla o hacer rollback. El codec y su integración interna están implementados y probados; siguen pendientes la persistencia reversible y la interfaz. Durante el desarrollo de esta rama, `Package.swift` resuelve temporalmente el repositorio hermano `../SwiftWABackupAPI`; antes de cerrar la integración debe sustituirse por la dependencia exacta `5.0.0`.
+Free My Chats 2.0.0 usa la API de composición para
+construir las Vistas unificadas y el formato `.fmcchat` v1. La API crea,
+inspecciona, extrae, diagnostica, reorienta al target y materializa; Free My Chats
+registra cada aportación en `ImportedChats`, instala el resultado o hace rollback
+y permite retirarla posteriormente. La exportación, la búsqueda automática de
+una única conversación receptora y la interfaz de importaciones están
+implementadas y probadas. `Package.swift` fija la versión exacta `6.0.0` para
+mantener sincronizados el contrato JSON, la terminología de chats guardados y el
+motor de composición.
 
 ## Requisitos
 

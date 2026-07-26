@@ -2,7 +2,7 @@
 
 ## Estado
 
-Este documento describe la implementación actual. SwiftWABackupAPI 5.0.0 y los
+Este documento describe la implementación actual. SwiftWABackupAPI 6.0.0 y los
 wrappers internos de Free My Chats ya crean, validan, extraen y componen paquetes
 `.fmcchat` en staging. Todavía no están implementados su registro persistente en
 la biblioteca, la instalación reversible ni la interfaz.

@@ -19,8 +19,8 @@ struct StoredCopyDeletionPreview: Equatable, Identifiable {
 enum UnifiedViewPresentation {
     static let explanation =
         "Una Vista unificada reúne en una sola cronología los mensajes de varias "
-        + "copias guardadas de la misma conversación. Las copias originales "
-        + "permanecen guardadas por separado y pueden borrarse individualmente. "
+        + "copias guardadas y chats importados de la misma conversación. Todas las "
+        + "aportaciones permanecen guardadas por separado y pueden retirarse individualmente. "
         + "Si un mensaje aparece en varias copias, se muestra una sola vez."
 
     static func additionTitle(chatName: String, existingContributionCount: Int) -> String {
