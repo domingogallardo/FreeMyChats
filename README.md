@@ -9,11 +9,11 @@
 La biblioteca mantiene dos niveles deliberadamente distintos:
 
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
-- Al seleccionar un chat se despliega su información; la exportación física y autocontenida solo se crea al pulsar `Exportar`.
-- Cada exportación de la columna izquierda se puede abrir en Finder o borrar de forma independiente.
-- La columna derecha contiene el catálogo y muestra cada conversación una sola vez. Si procede de varias exportaciones, al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
+- Al seleccionar un chat se despliega su información; la copia física y autocontenida solo se crea al pulsar `Añadir a la biblioteca`.
+- Cada copia guardada desde la columna izquierda se puede abrir en Finder o borrar de forma independiente.
+- La columna derecha contiene el catálogo y muestra cada conversación una sola vez. Si procede de varias copias guardadas, al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
-- Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran exportados.
+- Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran guardados en la biblioteca.
 
 ## Funciones del MVP
 
@@ -22,27 +22,27 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Incorporación y eliminación de copias desde el navegador lateral.
 - Listado de los chats de cada copia con tamaño multimedia en GB, filtros por grupo, persona o archivado,
   y orden por fecha o por tamaño de mayor a menor.
-- Vista previa de número de mensajes y fechas antes de exportar.
-- Exportación explícita desde la fila desplegada del chat.
+- Vista previa de número de mensajes y fechas antes de añadir un chat a la biblioteca.
+- Incorporación explícita a la biblioteca desde la fila desplegada del chat.
 - Actualización incremental: si el mismo chat ya se guardó desde una copia anterior,
-  `Añadir a Vista unificada` conserva la nueva exportación por separado y reúne los
-  mensajes de todas las exportaciones en una sola cronología, sin crear un duplicado
+  `Añadir a la biblioteca` conserva la nueva copia por separado y reúne los
+  mensajes de todas las copias guardadas en una sola cronología, sin crear un duplicado
   en el catálogo.
-- Antes de añadir una exportación, la confirmación indica cuántos mensajes contiene
+- Antes de añadir una copia, la confirmación indica cuántos mensajes contiene
   y cuántos puede añadir como máximo; al terminar muestra la cifra incorporada realmente.
   Antes de borrar, indica al instante cuántos mensajes exclusivos desaparecerán.
 - Identificación por JID y tipo de chat, deduplicación de mensajes coincidentes y
   conservación de cada copia como aportación reconstruible.
-- Indicador de actividad mientras se exporta un chat.
-- Detección de exportaciones vigentes, desactualizadas o inválidas.
+- Indicador de actividad mientras se añade un chat a la biblioteca.
+- Detección de copias guardadas vigentes, desactualizadas o inválidas.
 - Visor de mensajes, autores, respuestas con vista previa, reacciones, ubicaciones
   y adjuntos, con reproductor integrado para los audios.
 - Navegación entre los mensajes de respuesta y sus originales, con resaltado
   temporal y retorno al punto de partida.
 - Búsqueda de texto dentro de la conversación guardada.
-- Acciones para abrir la biblioteca, cada exportación y la carpeta de la conversación combinada en Finder.
-- Borrado por exportación desde la columna izquierda: el catálogo reconstruye la conversación con las exportaciones restantes y la retira si ya no queda ninguna.
-- Limpieza automática de una copia sin fuente cuando se borra su último chat exportado.
+- Acciones para abrir la biblioteca, cada copia guardada y la carpeta de la conversación combinada en Finder.
+- Borrado por copia guardada desde la columna izquierda: el catálogo reconstruye la conversación con las copias restantes y la retira si ya no queda ninguna.
+- Limpieza automática de una copia sin fuente cuando se borra su último chat guardado.
 - Guía para conceder acceso total al disco y volver a intentar la inspección cuando sea necesario.
 - Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
 - Recordatorio de que, tras guardar un chat en la biblioteca, puedes usar `Vaciar chat` en WhatsApp para liberar espacio en el iPhone.
@@ -77,14 +77,14 @@ Mi biblioteca Free My Chats/
 `Exports` conserva cada aportación ligada a la copia de la que procede.
 
 Si una conversación solo tiene una aportación, su `archive.json` se guarda dentro
-de la propia exportación y el panel derecho abre directamente ese `chat.json` y
+de la propia copia guardada y el panel derecho abre directamente ese `chat.json` y
 su carpeta `Media`. No se crea una segunda carpeta para ella en `MergedChats`.
 
 `MergedChats` contiene únicamente conversaciones que reúnen varias
 aportaciones. Cada una es una materialización completa: su `chat.json` combina
 los mensajes, los ordena cronológicamente, elimina los coincidentes y reconstruye
 sus identificadores y respuestas. La vista abre ese único documento y su carpeta
-`Media`; no va saltando entre exportaciones. Si varias aportaciones contienen un
+`Media`; no va saltando entre copias guardadas. Si varias aportaciones contienen un
 archivo idéntico, la conversación combinada lo guarda una sola vez.
 
 La descripción técnica completa está en
@@ -96,7 +96,7 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 ## Relación con SwiftWABackupAPI
 
-Este proyecto integra [SwiftWABackupAPI 5.0.0](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/5.0.0), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, las exportaciones persistentes, la composición de conversaciones y el formato portable `.fmcchat` v1.
+Este proyecto integra [SwiftWABackupAPI 5.0.0](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/5.0.0), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
 
 La rama de integración de Free My Chats 1.4.0 usa la API de composición para construir las Vistas unificadas. También contiene la ruta interna de staging entre perspectivas y la frontera del formato `.fmcchat` v1: la API crea, inspecciona, extrae, diagnostica, reorienta al target y materializa, mientras Free My Chats conserva la responsabilidad de registrar una aportación, instalarla o hacer rollback. El codec y su integración interna están implementados y probados; siguen pendientes la persistencia reversible y la interfaz. Durante el desarrollo de esta rama, `Package.swift` resuelve temporalmente el repositorio hermano `../SwiftWABackupAPI`; antes de cerrar la integración debe sustituirse por la dependencia exacta `5.0.0`.
 

@@ -5,7 +5,7 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
-    func testConversationPresentationOnlyCallsMultipleExportsUnified() {
+    func testConversationPresentationOnlyCallsMultipleSavedCopiesUnified() {
         XCTAssertEqual(
             ConversationPresentation.cellTypeLabel(chatType: .individual),
             "Individual"
@@ -25,7 +25,7 @@ final class LibraryModelsTests: XCTestCase {
                 contributionCount: 1,
                 date: "hoy, 10:10"
             ),
-            "Grupo · 820 mensajes · 1 exportación · hoy, 10:10"
+            "Grupo · 820 mensajes · 1 copia guardada · hoy, 10:10"
         )
         XCTAssertEqual(
             ConversationPresentation.headerTitle(contributionCount: 2),
@@ -38,11 +38,11 @@ final class LibraryModelsTests: XCTestCase {
                 contributionCount: 2,
                 date: "hoy, 10:10"
             ),
-            "Vista unificada · Grupo · 900 mensajes · 2 exportaciones · hoy, 10:10"
+            "Vista unificada · Grupo · 900 mensajes · 2 copias guardadas · hoy, 10:10"
         )
     }
 
-    func testUnifiedViewCreationCopyExplainsThatExportsRemainSeparate() {
+    func testUnifiedViewCreationCopyExplainsThatSavedCopiesRemainSeparate() {
         XCTAssertEqual(
             UnifiedViewPresentation.exportTitle(
                 chatName: "Familia",
@@ -54,9 +54,9 @@ final class LibraryModelsTests: XCTestCase {
             existingContributionCount: 1,
             sourceMessageCount: 900
         )
-        XCTAssertTrue(message.contains("ambas exportaciones seguirán guardadas por separado"))
+        XCTAssertTrue(message.contains("ambas copias seguirán guardadas por separado"))
         XCTAssertTrue(message.contains("reúne sus mensajes en una sola cronología"))
-        XCTAssertTrue(message.contains("La nueva exportación contiene 900 mensajes"))
+        XCTAssertTrue(message.contains("La nueva copia guardada contiene 900 mensajes"))
         XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
         XCTAssertTrue(message.contains("se han añadido realmente"))
         XCTAssertEqual(
@@ -65,7 +65,7 @@ final class LibraryModelsTests: XCTestCase {
         )
     }
 
-    func testUnifiedViewUpdateCopyExplainsThatEveryExportRemainsSeparate() {
+    func testUnifiedViewUpdateCopyExplainsThatEverySavedCopyRemainsSeparate() {
         XCTAssertEqual(
             UnifiedViewPresentation.exportTitle(
                 chatName: "Familia",
@@ -77,14 +77,14 @@ final class LibraryModelsTests: XCTestCase {
             existingContributionCount: 2,
             sourceMessageCount: 900
         )
-        XCTAssertTrue(message.contains("creada a partir de 2 exportaciones"))
-        XCTAssertTrue(message.contains("La nueva exportación se guardará por separado"))
+        XCTAssertTrue(message.contains("creada a partir de 2 copias guardadas"))
+        XCTAssertTrue(message.contains("La nueva copia se guardará por separado"))
         XCTAssertTrue(message.contains("mensajes de todas ellas"))
         XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
         XCTAssertTrue(message.contains("se mostrarán una sola vez"))
         XCTAssertEqual(
             UnifiedViewPresentation.exportButtonTitle(existingContributionCount: 2),
-            "Exportar y actualizar"
+            "Añadir y actualizar"
         )
     }
 
@@ -107,10 +107,10 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertNil(contribution.exclusiveMessageCount)
     }
 
-    func testDeletingOneOfTwoExportsExplainsThatUnifiedViewDisappears() {
+    func testDeletingOneOfTwoSavedCopiesExplainsThatUnifiedViewDisappears() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 2),
-            "¿Borrar esta exportación y deshacer la Vista unificada?"
+            "¿Borrar esta copia guardada y deshacer la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -123,17 +123,17 @@ final class LibraryModelsTests: XCTestCase {
                 resultingMessageCount: 850
             )
         )
-        XCTAssertTrue(message.contains("La otra exportación no se modificará"))
+        XCTAssertTrue(message.contains("La otra copia no se modificará"))
         XCTAssertTrue(message.contains("la Vista unificada desaparecerá"))
-        XCTAssertTrue(message.contains("Esta exportación contiene 850 mensajes"))
+        XCTAssertTrue(message.contains("Esta copia contiene 850 mensajes"))
         XCTAssertTrue(message.contains("50 mensajes exclusivos dejarán de aparecer"))
         XCTAssertTrue(message.contains("quedará con 850 mensajes"))
     }
 
-    func testDeletingOneOfThreeExportsExplainsThatUnifiedViewIsRebuilt() {
+    func testDeletingOneOfThreeSavedCopiesExplainsThatUnifiedViewIsRebuilt() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 3),
-            "¿Borrar esta exportación de la Vista unificada?"
+            "¿Borrar esta copia guardada de la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -146,7 +146,7 @@ final class LibraryModelsTests: XCTestCase {
                 resultingMessageCount: 900
             )
         )
-        XCTAssertTrue(message.contains("Las 2 exportaciones restantes no se modificarán"))
+        XCTAssertTrue(message.contains("Las 2 copias restantes no se modificarán"))
         XCTAssertTrue(message.contains("La Vista unificada se reconstruirá"))
         XCTAssertTrue(message.contains("no desaparecerá ninguno"))
         XCTAssertEqual(

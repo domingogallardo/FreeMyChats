@@ -261,7 +261,7 @@ final class FreeMyChatsStore: ObservableObject {
         let operationID = beginOperation(
             kind: .deletingBackup(versionID),
             title: "Eliminando la copia fuente…",
-            detail: "Las conversaciones ya exportadas se conservarán."
+            detail: "Las conversaciones ya guardadas se conservarán."
         )
 
         workQueue.async { [weak self] in
@@ -375,7 +375,7 @@ final class FreeMyChatsStore: ObservableObject {
         let operationID = beginOperation(
             kind: .preparingExportDeletion(selection),
             title: "Calculando los mensajes de “\(chatName)”…",
-            detail: "Comprobando cuáles están también en otras exportaciones."
+            detail: "Comprobando cuáles están también en otras copias guardadas."
         )
         workQueue.async { [weak self] in
             let result = Result {
@@ -422,7 +422,7 @@ final class FreeMyChatsStore: ObservableObject {
                 containing: selection,
                 in: session
             ) else {
-                errorMessage = "No se ha encontrado la conversación a la que pertenece esta exportación."
+                errorMessage = "No se ha encontrado la conversación a la que pertenece esta copia guardada."
                 return nil
             }
             return count
@@ -495,7 +495,7 @@ final class FreeMyChatsStore: ObservableObject {
             .appendingPathComponent("Chats", isDirectory: true)
             .appendingPathComponent(String(selection.chatID), isDirectory: true)
         guard FileManager.default.fileExists(atPath: exportURL.path) else {
-            errorMessage = "La carpeta de esta exportación ya no está disponible."
+            errorMessage = "La carpeta de esta copia guardada ya no está disponible."
             return
         }
         WorkspaceService.reveal(exportURL)
@@ -510,15 +510,15 @@ final class FreeMyChatsStore: ObservableObject {
         let operationDetail: String
         switch contributionCount {
         case 2:
-            operationDetail = "Retirando la Vista unificada y conservando la exportación restante."
+            operationDetail = "Retirando la Vista unificada y conservando la copia restante."
         case 3...:
-            operationDetail = "Reconstruyendo la Vista unificada con las demás exportaciones."
+            operationDetail = "Reconstruyendo la Vista unificada con las demás copias guardadas."
         default:
             operationDetail = "Retirando la conversación del catálogo."
         }
         let operationID = beginOperation(
             kind: .deletingExportedContribution(selection),
-            title: "Borrando la exportación de “\(chatName)”…",
+            title: "Borrando la copia guardada de “\(chatName)”…",
             detail: operationDetail
         )
 
@@ -531,7 +531,7 @@ final class FreeMyChatsStore: ObservableObject {
                     self?.publish(
                         progress,
                         operationID: operationID,
-                        fallbackTitle: "Borrando la exportación de “\(chatName)”…"
+                        fallbackTitle: "Borrando la copia guardada de “\(chatName)”…"
                     )
                 }
             }
@@ -568,16 +568,16 @@ final class FreeMyChatsStore: ObservableObject {
                     if let conversation = removal.conversation {
                         let count = conversation.record.contributions.count
                         if count == 1 {
-                            self.informationMessage = "Se ha borrado la exportación de “\(chatName)”. "
+                            self.informationMessage = "Se ha borrado la copia guardada de “\(chatName)”. "
                                 + "La Vista unificada ha desaparecido y el catálogo muestra "
-                                + "directamente la exportación restante."
+                                + "directamente la copia restante."
                         } else {
-                            self.informationMessage = "Se ha borrado la exportación de “\(chatName)”. "
+                            self.informationMessage = "Se ha borrado la copia guardada de “\(chatName)”. "
                                 + "La Vista unificada se ha reconstruido con las \(count) "
-                                + "exportaciones restantes, que siguen guardadas por separado."
+                                + "copias restantes, que siguen guardadas por separado."
                         }
                     } else {
-                        self.informationMessage = "Se ha borrado la última exportación de “\(chatName)” y la conversación ha salido del catálogo."
+                        self.informationMessage = "Se ha borrado la última copia guardada de “\(chatName)” y la conversación ha salido del catálogo."
                     }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
@@ -646,7 +646,7 @@ final class FreeMyChatsStore: ObservableObject {
               let version = session.version(id: selection.versionID),
               let reader = version.reader,
               let chat = version.chats.first(where: { $0.id == selection.chatID }) else {
-            errorMessage = "La copia fuente fue eliminada; este chat no se puede volver a exportar."
+            errorMessage = "La copia fuente fue eliminada; este chat no se puede volver a añadir a la biblioteca."
             return
         }
         let chatName = chat.name
@@ -666,16 +666,19 @@ final class FreeMyChatsStore: ObservableObject {
             )
             if count == 1 {
                 operationTitle = "Creando la Vista unificada de “\(chatName)”…"
-                operationDetail = "Guardando ambas exportaciones por separado y reuniendo sus mensajes."
+                operationDetail = "Guardando ambas copias por separado y reuniendo sus mensajes."
             } else {
                 operationTitle = "Actualizando la Vista unificada de “\(chatName)”…"
-                operationDetail = "Guardando la nueva exportación por separado y reuniendo todos sus mensajes."
+                operationDetail = "Guardando la nueva copia por separado y reuniendo todos sus mensajes."
             }
-        case .stale, .invalid:
-            operationTitle = "Volviendo a exportar “\(chatName)”…"
-            operationDetail = "Recreando la exportación y actualizando la conversación guardada."
+        case .stale:
+            operationTitle = "Actualizando “\(chatName)” en la biblioteca…"
+            operationDetail = "Recreando la copia y actualizando la conversación guardada."
+        case .invalid:
+            operationTitle = "Reparando “\(chatName)” en la biblioteca…"
+            operationDetail = "Reemplazando la copia no válida y actualizando la conversación guardada."
         default:
-            operationTitle = "Exportando “\(chatName)”…"
+            operationTitle = "Añadiendo “\(chatName)” a la biblioteca…"
             operationDetail = "Creando una conversación independiente con sus mensajes y archivos."
         }
         let operationID = beginOperation(

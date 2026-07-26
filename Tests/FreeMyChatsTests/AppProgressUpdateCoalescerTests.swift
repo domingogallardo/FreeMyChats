@@ -18,7 +18,7 @@ final class AppProgressUpdateCoalescerTests: XCTestCase {
                         unit: .messages
                     ),
                     operationID: operationID,
-                    fallbackTitle: "Exportando"
+                    fallbackTitle: "Añadiendo a la biblioteca"
                 )
             )
             if shouldSchedule {
@@ -40,7 +40,7 @@ final class AppProgressUpdateCoalescerTests: XCTestCase {
                         unit: .phases
                     ),
                     operationID: operationID,
-                    fallbackTitle: "Exportando"
+                    fallbackTitle: "Añadiendo a la biblioteca"
                 )
             )
         )

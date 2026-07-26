@@ -11,9 +11,9 @@ enum ConversationArchiveError: Error, LocalizedError {
         case .invalidArchive(let url, let reason):
             return "La conversación guardada en \(url.lastPathComponent) no es válida: \(reason)"
         case .missingSource(let selection):
-            return "Falta la exportación de origen \(selection.versionID)/\(selection.chatID)."
+            return "Falta la copia guardada de origen \(selection.versionID)/\(selection.chatID)."
         case .contributionNotFound(let selection):
-            return "La exportación \(selection.versionID)/\(selection.chatID) no forma parte de ninguna conversación guardada."
+            return "La copia \(selection.versionID)/\(selection.chatID) no forma parte de ninguna conversación guardada."
         }
     }
 }
@@ -245,7 +245,7 @@ enum ConversationArchiveService {
             guard existing.matches(identity) else {
                 throw ConversationArchiveError.invalidArchive(
                     exported.directoryURL,
-                    "La exportación ya no coincide con la conversación preparada."
+                    "La copia guardada ya no coincide con la conversación preparada."
                 )
             }
             record = existing
@@ -545,7 +545,7 @@ enum ConversationArchiveService {
         if let invalid = materialized.first(where: { $0.contributions.count < 2 }) {
             throw ConversationArchiveError.invalidArchive(
                 archiveURL(id: invalid.id, paths: session.paths),
-                "Las conversaciones materializadas deben contener varias exportaciones."
+                "Las conversaciones materializadas deben contener varias copias guardadas."
             )
         }
         return materialized + (try loadSourceRecords(in: session))
@@ -570,7 +570,7 @@ enum ConversationArchiveService {
                       record.contributions.first?.source == source else {
                     throw ConversationArchiveError.invalidArchive(
                         directoryURL,
-                        "El manifiesto individual no corresponde a esta exportación."
+                        "El manifiesto individual no corresponde a esta copia guardada."
                     )
                 }
                 return record
@@ -641,7 +641,7 @@ enum ConversationArchiveService {
               let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "La conversación individual no tiene una exportación de origen válida."
+                "La conversación individual no tiene una copia de origen válida."
             )
         }
         let exported = try version.exportStore.openChat(chatId: source.chatID)
@@ -722,7 +722,7 @@ enum ConversationArchiveService {
               let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "La conversación individual no tiene una exportación de origen válida."
+                "La conversación individual no tiene una copia de origen válida."
             )
         }
         let exported = try version.exportStore.openChat(chatId: source.chatID)
@@ -756,7 +756,7 @@ enum ConversationArchiveService {
         guard record.contributions.count > 1 else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "Una conversación combinada requiere varias exportaciones."
+                "Una conversación combinada requiere varias copias guardadas."
             )
         }
 
