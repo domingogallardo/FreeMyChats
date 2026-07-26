@@ -60,7 +60,7 @@ Mi biblioteca Free My Chats/
 │       │   └── …
 │       └── Catalog/
 │           └── ChatProfilePhotos/
-├── Exports/
+├── StoredChats/
 │   └── Copia 2026-04-03 21.26/
 │       └── Chats/
 │           └── <chatId>/
@@ -74,7 +74,7 @@ Mi biblioteca Free My Chats/
         └── Media/
 ```
 
-`Exports` conserva cada aportación ligada a la copia de la que procede.
+`StoredChats` conserva cada aportación ligada a la copia de la que procede.
 
 Si una conversación solo tiene una aportación, su `archive.json` se guarda dentro
 de la propia copia guardada y el panel derecho abre directamente ese `chat.json` y

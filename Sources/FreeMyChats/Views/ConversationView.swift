@@ -13,37 +13,37 @@ struct ConversationView: View {
 
     var body: some View {
         Group {
-            if store.selectedExportID == nil {
-                ExportedChatsListView(store: store)
-            } else if store.isOpeningExport {
-                exportLoadingView
-            } else if let reason = store.exportPanelError {
-                exportErrorView(reason)
-            } else if let exported = store.selectedExport,
-                      let selection = store.selectedExportID {
-                conversation(exported, selection: selection)
+            if store.selectedConversationID == nil {
+                ConversationCatalogView(store: store)
+            } else if store.isOpeningConversation {
+                conversationLoadingView
+            } else if let reason = store.conversationPanelError {
+                conversationErrorView(reason)
+            } else if let conversation = store.selectedConversation,
+                      let selection = store.selectedConversationID {
+                conversationContent(conversation, selection: selection)
             } else {
-                exportLoadingView
+                conversationLoadingView
             }
         }
     }
 
-    private var exportLoadingView: some View {
+    private var conversationLoadingView: some View {
         VStack(spacing: 0) {
-            ExportBackHeader(title: "Abriendo chat", action: store.showExportList)
+            ConversationBackHeader(title: "Abriendo chat", action: store.showConversationCatalog)
             Divider()
             ProgressView("Abriendo la conversación…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private func exportErrorView(_ reason: String) -> some View {
+    private func conversationErrorView(_ reason: String) -> some View {
         VStack(spacing: 0) {
-            ExportBackHeader(
+            ConversationBackHeader(
                 title: ConversationPresentation.headerTitle(
                     contributionCount: selectedContributionCount
                 ),
-                action: store.showExportList
+                action: store.showConversationCatalog
             )
             Divider()
             UnavailableContentView(
@@ -55,21 +55,21 @@ struct ConversationView: View {
     }
 
     private var selectedContributionCount: Int {
-        if let selected = store.selectedExport {
+        if let selected = store.selectedConversation {
             return selected.record.contributions.count
         }
-        guard let selection = store.selectedExportID else { return 1 }
-        return store.exportedChats.first(where: { $0.id == selection })?.contributionCount ?? 1
+        guard let selection = store.selectedConversationID else { return 1 }
+        return store.conversationCatalog.first(where: { $0.id == selection })?.contributionCount ?? 1
     }
 
-    private func conversation(
-        _ exported: ArchivedConversation,
+    private func conversationContent(
+        _ conversation: ArchivedConversation,
         selection: ConversationArchiveID
     ) -> some View {
         VStack(spacing: 0) {
             ConversationHeaderView(
-                exported: exported,
-                sourceTitles: exported.record.contributions.compactMap { contribution in
+                conversation: conversation,
+                sourceTitles: conversation.record.contributions.compactMap { contribution in
                     store.session?.version(id: contribution.source.versionID)?.record.title
                 },
                 isSearching: $isSearching,
@@ -80,12 +80,12 @@ struct ConversationView: View {
                 navigateSearch: navigateSearch,
                 finishSearch: finishMessageSearch,
                 cancelSearch: cancelMessageSearch,
-                goBack: store.showExportList,
+                goBack: store.showConversationCatalog,
                 revealInFinder: store.revealSelectedChat
             )
             Divider()
             MessageListView(
-                exported: exported,
+                conversation: conversation,
                 searchText: appliedMessageSearchText,
                 initialMessageID: store.readingPosition(for: selection),
                 searchNavigationRequest: searchNavigationRequest,
@@ -98,7 +98,7 @@ struct ConversationView: View {
                     store.saveReadingPosition(messageID, for: selection)
                 }
             )
-            .id(exported.contentRevisionID)
+            .id(conversation.contentRevisionID)
         }
         .task(id: messageSearchText) {
             let query = messageSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -111,7 +111,7 @@ struct ConversationView: View {
             guard !Task.isCancelled else { return }
             appliedMessageSearchText = query
         }
-        .onChange(of: store.selectedExportID) { _ in
+        .onChange(of: store.selectedConversationID) { _ in
             messageSearchText = ""
             appliedMessageSearchText = ""
             selectedSearchResultNumber = nil
@@ -167,7 +167,7 @@ struct MessageSearchExitRequest: Equatable {
     let behavior: MessageSearchExitBehavior
 }
 
-private struct ExportBackHeader: View {
+private struct ConversationBackHeader: View {
     let title: String
     let action: () -> Void
 
@@ -189,7 +189,7 @@ private struct ExportBackHeader: View {
 }
 
 private struct ConversationHeaderView: View {
-    let exported: ArchivedConversation
+    let conversation: ArchivedConversation
     let sourceTitles: [String]
     @Binding var isSearching: Bool
     @Binding var searchText: String
@@ -214,14 +214,14 @@ private struct ConversationHeaderView: View {
                 .help("Volver al catálogo de conversaciones")
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(exported.document.chat.name)
+                    Text(conversation.document.chat.name)
                         .font(.title2.bold())
                     HStack(spacing: 5) {
                         Text(subtitle)
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
-                        if exported.record.contributions.count > 1 {
+                        if conversation.record.contributions.count > 1 {
                             Button {
                                 isShowingUnifiedViewHelp.toggle()
                             } label: {
@@ -387,12 +387,12 @@ private struct ConversationHeaderView: View {
     }
 
     private var subtitle: String {
-        let chat = exported.document.chat
-        let date = Self.dateFormatter.string(from: exported.record.updatedAt)
+        let chat = conversation.document.chat
+        let date = Self.dateFormatter.string(from: conversation.record.updatedAt)
         return ConversationPresentation.subtitle(
             chatType: chat.chatType,
             messageCount: chat.numberMessages,
-            contributionCount: exported.record.contributions.count,
+            contributionCount: conversation.record.contributions.count,
             date: date
         )
     }

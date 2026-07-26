@@ -3,7 +3,7 @@
 ## Estado y alcance
 
 Este documento contrasta el diseño inicial de
-[fusión de conversaciones exportadas](fusion-conversaciones-exportadas.md) con la
+[fusión de conversaciones portables](fusion-conversaciones-portables.md) con la
 implementación de partida de Free My Chats 1.3.10 y SwiftWABackupAPI 4.5.0. El
 resultado de la parte de API está publicado en SwiftWABackupAPI 5.0.0 y la rama
 de integración corresponde a Free My Chats 1.4.0.
@@ -70,7 +70,7 @@ Cuando varias copias locales contienen el mismo chat:
 
 1. La conversación se identifica por tipo y JID normalizado, con algunos alias
    LID a JID telefónico.
-2. Cada exportación local queda en `Exports` y se registra mediante un
+2. Cada copia guardada local queda en `StoredChats` y se registra mediante un
    `VersionChatID`.
 3. Los mensajes se ordenan y deduplican mediante una huella exacta.
 4. Se reasignan `id`, `chatId` y `replyTo`.
@@ -107,14 +107,14 @@ cambiar de propietario:
 ### Reutilizable después de generalizar
 
 - `ConversationArchiveRecord`: debe registrar aportaciones importadas además de
-  exportaciones locales.
-- `ResolvedContribution`: debe poder abrir una fuente de `Exports` o de
+  copias guardadas locales.
+- `ResolvedContribution`: debe poder abrir una fuente de `StoredChats` o de
   `Imports`.
 - `buildDocument`: debe recibir el resultado de un alineador que ya haya
   normalizado perspectiva y autores.
 - Los contadores de aportaciones y mensajes exclusivos deben incluir ambos tipos
   de fuente.
-- El flujo de retirada debe distinguir entre borrar una exportación local y
+- El flujo de retirada debe distinguir entre borrar una copia guardada local y
   retirar una importación.
 - La preservación de la posición de lectura debe usar un mapa entre el mensaje
   anterior y el nuevo resultado, no confiar solo en el `Int` materializado.
@@ -132,7 +132,7 @@ cambiar de propietario:
 
 La propuesta inicial colocaba `Base` e `Imports` dentro de cada carpeta de chat.
 Después de la implementación de las Vistas unificadas ya no es necesario hacer esa
-reestructuración. `Exports` ya conserva las bases locales y `MergedChats` ya es el
+reestructuración. `StoredChats` ya conserva las bases locales y `MergedChats` ya es el
 resultado reconstruible.
 
 Se recomienda añadir un tercer almacén de fuentes:
@@ -141,7 +141,7 @@ Se recomienda añadir un tercer almacén de fuentes:
 Mi biblioteca Free My Chats/
 ├── library.json
 ├── Sources/
-├── Exports/                         # Aportaciones de copias locales
+├── StoredChats/                         # Aportaciones de copias locales
 ├── Imports/                         # Aportaciones recibidas
 │   └── <conversationId>/
 │       └── <importId>/
@@ -158,11 +158,11 @@ Mi biblioteca Free My Chats/
 Reglas de materialización:
 
 - Una aportación local y ninguna importación se abre directamente desde
-  `Exports`, como ahora.
+  `StoredChats`, como ahora.
 - Varias aportaciones locales se materializan en `MergedChats`, como ahora.
 - Cualquier conversación con al menos una importación se materializa en
   `MergedChats`, aunque solo quede esa importación.
-- `Imports` y `Exports` son fuentes; `MergedChats` se puede borrar y reconstruir.
+- `Imports` y `StoredChats` son fuentes; `MergedChats` se puede borrar y reconstruir.
 - Retirar una importación borra únicamente su carpeta después de haber instalado
   correctamente el resultado reconstruido.
 - Si se borra la última aportación local pero quedan importaciones, la conversación
@@ -306,9 +306,9 @@ El manifiesto v1 incluye:
 - `contentDigest` lógico del paquete.
 
 `chat.json` portable es un contrato separado de
-`ExportedChatDocument` v1. De esa manera el formato interno vigente continúa
-leyéndose sin una migración masiva y el documento portable puede representar
-roles de autor relativos a la fuente e IDs de archivo explícitamente.
+`StoredChatDocument` v2. El formato interno se migrará manualmente, mientras que
+el documento portable puede representar roles de autor relativos a la fuente e
+IDs de archivo explícitamente.
 
 La creación incluye la conversación visible materializada, pero no el historial
 interno de sus fuentes. Si una conversación ya incorpora datos recibidos, estos se
@@ -445,7 +445,7 @@ Resultado: diagnóstico y materialización deterministas en staging.
 - `Imports` y schema nuevo de la biblioteca.
 - Generalización de aportaciones resueltas.
 - Materialización atómica y rollback.
-- Retirada, reparación y actualización de una exportación local sin perder
+- Retirada, reparación y actualización de una copia guardada local sin perder
   importaciones.
 - Traducción de la posición de lectura.
 
@@ -476,7 +476,7 @@ Entregable: operaciones completas mediante servicios y tests, aún sin pulir UI.
 - Diferencias pequeñas de timestamp no crean duplicados ni coincidencias falsas.
 - Importación idéntica repetida y paquete regenerado con el mismo contenido.
 - Respuesta cuyo original solo existe en la importación.
-- Nueva exportación local después de importar no elimina `Imports`.
+- Una nueva copia guardada local después de importar no elimina `Imports`.
 - Eliminar la última fuente local conserva una conversación respaldada por
   importaciones.
 - Retirar una importación mantiene mensajes y medios compartidos por otra fuente.

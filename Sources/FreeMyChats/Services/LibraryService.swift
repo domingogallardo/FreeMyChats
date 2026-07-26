@@ -8,9 +8,8 @@ enum LibraryServiceError: Error, LocalizedError {
     case unsupportedSchema(Int)
     case duplicateBackup
     case sourceAlreadyDeleted
-    case exportedChatNotFound
+    case storedChatNotFound
     case originalIPhoneBackupNotFound(URL)
-    case layoutMigrationConflict(URL)
 
     var errorDescription: String? {
         switch self {
@@ -24,12 +23,10 @@ enum LibraryServiceError: Error, LocalizedError {
             return "Esta copia de iPhone ya forma parte de la biblioteca."
         case .sourceAlreadyDeleted:
             return "La copia fuente ya había sido eliminada."
-        case .exportedChatNotFound:
+        case .storedChatNotFound:
             return "El chat guardado ya no está disponible."
         case .originalIPhoneBackupNotFound(let url):
             return "La copia original del iPhone ya no está en \(url.path)."
-        case .layoutMigrationConflict(let url):
-            return "No se ha podido reorganizar la biblioteca porque ya existe un archivo distinto en \(url.path)."
         }
     }
 }
@@ -47,7 +44,7 @@ enum LibraryService {
         }
 
         try fileManager.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: paths.storedChatsURL, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: paths.mergedChatsURL, withIntermediateDirectories: true)
         try write(LibraryManifest(), to: paths.manifestURL)
         return try open(paths: paths)
@@ -58,13 +55,11 @@ enum LibraryService {
         progress: WABackupProgressHandler? = nil
     ) throws -> LibrarySession {
         let paths = LibraryPaths.resolvingSelection(selectedURL)
-        try migrateLegacyLibraryIfNeeded(at: paths)
         return try open(paths: paths, progress: progress)
     }
 
     static func openMetadata(selectedURL: URL) throws -> LibrarySession {
         let paths = LibraryPaths.resolvingSelection(selectedURL)
-        try migrateLegacyLibraryIfNeeded(at: paths)
         return try open(paths: paths, loadSourceChats: false)
     }
 
@@ -109,9 +104,9 @@ enum LibraryService {
             let extracted = try iPhoneBackup.extractWhatsAppBackup(to: backupURL, progress: progress)
             let info = try extracted.getBackupInfo()
             var manifest = session.manifest
-            let exportDirectoryName = makeExportDirectoryName(
+            let storageDirectoryName = makeStorageDirectoryName(
                 for: info.source.iPhoneBackupCreationDate,
-                excluding: Set(manifest.versions.map(\.resolvedExportDirectoryName))
+                excluding: Set(manifest.versions.map(\.storageDirectoryName))
             )
             manifest.versions.append(
                 LibraryVersionRecord(
@@ -119,7 +114,7 @@ enum LibraryService {
                     sourceBackupIdentifier: info.source.iPhoneBackupIdentifier,
                     sourceBackupCreationDate: info.source.iPhoneBackupCreationDate,
                     importedAt: Date(),
-                    exportDirectoryName: exportDirectoryName
+                    storageDirectoryName: storageDirectoryName
                 )
             )
             manifest.versions.sort { $0.sourceBackupCreationDate > $1.sourceBackupCreationDate }
@@ -174,26 +169,26 @@ enum LibraryService {
         }
     }
 
-    static func deleteExportedChat(
+    static func deleteStoredChat(
         _ selection: VersionChatID,
         from session: LibrarySession
     ) throws -> LibrarySession {
         guard let version = session.version(id: selection.versionID) else {
-            throw LibraryServiceError.exportedChatNotFound
+            throw LibraryServiceError.storedChatNotFound
         }
 
         let fileManager = FileManager.default
-        let chatsURL = version.exportsURL.appendingPathComponent("Chats", isDirectory: true)
+        let chatsURL = version.storedChatsURL.appendingPathComponent("Chats", isDirectory: true)
         let chatURL = chatsURL.appendingPathComponent(
             String(selection.chatID),
             isDirectory: true
         )
         guard fileManager.fileExists(atPath: chatURL.path) else {
-            throw LibraryServiceError.exportedChatNotFound
+            throw LibraryServiceError.storedChatNotFound
         }
 
         let stagingURL = session.paths.rootURL.appendingPathComponent(
-            ".deleting-export-\(UUID().uuidString)",
+            ".deleting-stored-chat-\(UUID().uuidString)",
             isDirectory: true
         )
         try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
@@ -201,30 +196,20 @@ enum LibraryService {
         try fileManager.moveItem(at: chatURL, to: stagedChatURL)
 
         let removeVersion = !version.hasSourceBackup
-            && exportedChatIDs(at: version.exportsURL).isEmpty
+            && storedChatIDs(at: version.storedChatsURL).isEmpty
 
         if removeVersion {
             var manifestWasUpdated = false
             do {
                 let sourceURL = version.backupURL.deletingLastPathComponent()
-                let legacyExportsURL = version.exportsURL.deletingLastPathComponent()
-                    .appendingPathComponent(version.id, isDirectory: true)
                 let stagedSourceURL = stagingURL.appendingPathComponent("Source", isDirectory: true)
-                let stagedExportsURL = stagingURL.appendingPathComponent("Exports", isDirectory: true)
-                let stagedLegacyExportsURL = stagingURL.appendingPathComponent(
-                    "LegacyExports",
-                    isDirectory: true
-                )
+                let stagedStoredChatsURL = stagingURL.appendingPathComponent("StoredChats", isDirectory: true)
 
                 if fileManager.fileExists(atPath: sourceURL.path) {
                     try fileManager.moveItem(at: sourceURL, to: stagedSourceURL)
                 }
-                if fileManager.fileExists(atPath: version.exportsURL.path) {
-                    try fileManager.moveItem(at: version.exportsURL, to: stagedExportsURL)
-                }
-                if legacyExportsURL.standardizedFileURL != version.exportsURL.standardizedFileURL,
-                   fileManager.fileExists(atPath: legacyExportsURL.path) {
-                    try fileManager.moveItem(at: legacyExportsURL, to: stagedLegacyExportsURL)
+                if fileManager.fileExists(atPath: version.storedChatsURL.path) {
+                    try fileManager.moveItem(at: version.storedChatsURL, to: stagedStoredChatsURL)
                 }
 
                 var manifest = session.manifest
@@ -247,7 +232,7 @@ enum LibraryService {
         } else {
             do {
                 try removeDirectoryIfEffectivelyEmpty(chatsURL)
-                try removeDirectoryIfEffectivelyEmpty(version.exportsURL)
+                try removeDirectoryIfEffectivelyEmpty(version.storedChatsURL)
                 try fileManager.removeItem(at: stagingURL)
             } catch {
                 if fileManager.fileExists(atPath: stagedChatURL.path) {
@@ -265,43 +250,6 @@ enum LibraryService {
         return try open(paths: session.paths)
     }
 
-    static func exportCatalog(in session: LibrarySession) -> [SourceExportListItem] {
-        var items: [SourceExportListItem] = []
-        let fileManager = FileManager.default
-
-        for version in session.versions {
-            for chatID in exportedChatIDs(at: version.exportsURL) {
-                guard let exported = try? version.exportStore.openChat(chatId: chatID) else {
-                    continue
-                }
-
-                let chat = exported.document.chat
-                let photoURL = chat.photoFilename.map {
-                    exported.mediaDirectoryURL.appendingPathComponent($0)
-                }.flatMap {
-                    fileManager.fileExists(atPath: $0.path) ? $0 : nil
-                }
-                items.append(
-                    SourceExportListItem(
-                        id: VersionChatID(versionID: version.id, chatID: chatID),
-                        chat: chat,
-                        exportedAt: exported.document.exportedAt,
-                        versionTitle: version.record.title,
-                        directoryURL: exported.directoryURL,
-                        photoURL: photoURL
-                    )
-                )
-            }
-        }
-
-        return items.sorted { lhs, rhs in
-            if lhs.exportedAt != rhs.exportedAt {
-                return lhs.exportedAt > rhs.exportedAt
-            }
-            return lhs.chat.name.localizedStandardCompare(rhs.chat.name) == .orderedAscending
-        }
-    }
-
     private static func open(
         paths: LibraryPaths,
         progress: WABackupProgressHandler? = nil,
@@ -311,19 +259,17 @@ enum LibraryService {
             throw LibraryServiceError.invalidLibrary(paths.rootURL)
         }
 
-        var manifest = try readManifest(at: paths.manifestURL)
+        let manifest = try readManifest(at: paths.manifestURL)
         guard manifest.schemaVersion == LibraryManifest.currentSchemaVersion else {
             throw LibraryServiceError.unsupportedSchema(manifest.schemaVersion)
         }
 
         try FileManager.default.createDirectory(at: paths.sourcesURL, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.storedChatsURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
             at: paths.mergedChatsURL,
             withIntermediateDirectories: true
         )
-        manifest = try migrateUserFacingLayout(paths: paths, manifest: manifest)
-
         let versions = try manifest.versions.map { record in
             try openVersion(
                 record,
@@ -342,9 +288,9 @@ enum LibraryService {
         loadSourceChats: Bool
     ) throws -> LibraryVersionSession {
         let backupURL = paths.backupURL(for: record.id)
-        let exportsURL = paths.exportURL(for: record)
+        let storedChatsURL = paths.storedChatURL(for: record)
         let profilePhotosURL = paths.profilePhotosURL(for: record.id)
-        let exportedChatIDs = exportedChatIDs(at: exportsURL)
+        let storedChatIDs = storedChatIDs(at: storedChatsURL)
 
         let metadataURL = backupURL
             .appendingPathComponent(".wa-backup", isDirectory: true)
@@ -353,7 +299,7 @@ enum LibraryService {
         if FileManager.default.fileExists(atPath: metadataURL.path) {
             let backup = ExtractedWhatsAppBackup(url: backupURL)
             _ = try backup.getBackupInfo()
-            let reader = try backup.openReader(exportRootDirectory: exportsURL)
+            let reader = try backup.openReader(storageRootDirectory: storedChatsURL)
             try FileManager.default.createDirectory(
                 at: profilePhotosURL,
                 withIntermediateDirectories: true
@@ -367,7 +313,7 @@ enum LibraryService {
             return LibraryVersionSession(
                 record: record,
                 backupURL: backupURL,
-                exportsURL: exportsURL,
+                storedChatsURL: storedChatsURL,
                 backup: backup,
                 reader: reader,
                 chats: chats,
@@ -375,14 +321,14 @@ enum LibraryService {
             )
         }
 
-        let exportStore = ChatExportStore(rootDirectory: exportsURL)
-        let chats = exportedChatIDs.compactMap {
-            try? exportStore.openChat(chatId: $0).document.chat
+        let storedChatStore = StoredChatStore(rootDirectory: storedChatsURL)
+        let chats = storedChatIDs.compactMap {
+            try? storedChatStore.openChat(chatId: $0).document.chat
         }
         return LibraryVersionSession(
             record: record,
             backupURL: backupURL,
-            exportsURL: exportsURL,
+            storedChatsURL: storedChatsURL,
             backup: nil,
             reader: nil,
             chats: chats,
@@ -390,8 +336,8 @@ enum LibraryService {
         )
     }
 
-    private static func exportedChatIDs(at exportsURL: URL) -> [Int] {
-        let chatsURL = exportsURL.appendingPathComponent("Chats", isDirectory: true)
+    private static func storedChatIDs(at storedChatsURL: URL) -> [Int] {
+        let chatsURL = storedChatsURL.appendingPathComponent("Chats", isDirectory: true)
         guard let directory = opendir(chatsURL.path) else { return [] }
         defer { closedir(directory) }
 
@@ -425,19 +371,9 @@ enum LibraryService {
             try? fileManager.moveItem(at: stagedSourceURL, to: sourceURL)
         }
 
-        let stagedExportsURL = stagingURL.appendingPathComponent("Exports", isDirectory: true)
-        if fileManager.fileExists(atPath: stagedExportsURL.path) {
-            try? fileManager.moveItem(at: stagedExportsURL, to: version.exportsURL)
-        }
-
-        let stagedLegacyExportsURL = stagingURL.appendingPathComponent(
-            "LegacyExports",
-            isDirectory: true
-        )
-        let legacyExportsURL = version.exportsURL.deletingLastPathComponent()
-            .appendingPathComponent(version.id, isDirectory: true)
-        if fileManager.fileExists(atPath: stagedLegacyExportsURL.path) {
-            try? fileManager.moveItem(at: stagedLegacyExportsURL, to: legacyExportsURL)
+        let stagedStoredChatsURL = stagingURL.appendingPathComponent("StoredChats", isDirectory: true)
+        if fileManager.fileExists(atPath: stagedStoredChatsURL.path) {
+            try? fileManager.moveItem(at: stagedStoredChatsURL, to: version.storedChatsURL)
         }
 
         let stagedChatURL = stagingURL.appendingPathComponent("Chat", isDirectory: true)
@@ -451,184 +387,6 @@ enum LibraryService {
         try? fileManager.removeItem(at: stagingURL)
     }
 
-    private static func migrateLegacyLibraryIfNeeded(at paths: LibraryPaths) throws {
-        guard !FileManager.default.fileExists(atPath: paths.manifestURL.path) else { return }
-
-        let legacyBackupURL = paths.rootURL.appendingPathComponent("Backup", isDirectory: true)
-        let metadataURL = legacyBackupURL
-            .appendingPathComponent(".wa-backup", isDirectory: true)
-            .appendingPathComponent("backup-info.json")
-        guard FileManager.default.fileExists(atPath: metadataURL.path) else {
-            throw LibraryServiceError.invalidLibrary(paths.rootURL)
-        }
-
-        let info = try ExtractedWhatsAppBackup(url: legacyBackupURL).getBackupInfo()
-        let id = UUID().uuidString.lowercased()
-        let legacyExportsURL = paths.rootURL.appendingPathComponent("Exports", isDirectory: true)
-        let temporaryExportsURL = paths.rootURL.appendingPathComponent(
-            ".legacy-exports-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        let record = LibraryVersionRecord(
-            id: id,
-            sourceBackupIdentifier: info.source.iPhoneBackupIdentifier,
-            sourceBackupCreationDate: info.source.iPhoneBackupCreationDate,
-            importedAt: Date(),
-            exportDirectoryName: makeExportDirectoryName(
-                for: info.source.iPhoneBackupCreationDate,
-                excluding: []
-            )
-        )
-        let newBackupURL = paths.backupURL(for: id)
-        let newExportsURL = paths.exportURL(for: record)
-        let fileManager = FileManager.default
-        let hadLegacyExports = fileManager.fileExists(atPath: legacyExportsURL.path)
-
-        do {
-            if hadLegacyExports {
-                try fileManager.moveItem(at: legacyExportsURL, to: temporaryExportsURL)
-            }
-            try fileManager.createDirectory(
-                at: newBackupURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(at: paths.exportsURL, withIntermediateDirectories: true)
-            try fileManager.moveItem(at: legacyBackupURL, to: newBackupURL)
-            if hadLegacyExports {
-                try fileManager.moveItem(at: temporaryExportsURL, to: newExportsURL)
-            }
-
-            try write(LibraryManifest(versions: [record]), to: paths.manifestURL)
-        } catch {
-            try? fileManager.removeItem(at: paths.manifestURL)
-            if fileManager.fileExists(atPath: newBackupURL.path) {
-                try? fileManager.moveItem(at: newBackupURL, to: legacyBackupURL)
-            }
-            if hadLegacyExports, fileManager.fileExists(atPath: newExportsURL.path) {
-                try? fileManager.moveItem(at: newExportsURL, to: temporaryExportsURL)
-            }
-            if hadLegacyExports, fileManager.fileExists(atPath: temporaryExportsURL.path) {
-                try? fileManager.removeItem(at: legacyExportsURL)
-                try? fileManager.moveItem(at: temporaryExportsURL, to: legacyExportsURL)
-            }
-            throw error
-        }
-    }
-
-    private static func migrateUserFacingLayout(
-        paths: LibraryPaths,
-        manifest: LibraryManifest
-    ) throws -> LibraryManifest {
-        var usedNames = Set(
-            manifest.versions.compactMap(\.exportDirectoryName)
-        )
-        var changedManifest = false
-        var migratedVersions: [LibraryVersionRecord] = []
-        migratedVersions.reserveCapacity(manifest.versions.count)
-
-        for record in manifest.versions {
-            let migratedRecord: LibraryVersionRecord
-            if record.exportDirectoryName == nil {
-                let name = makeExportDirectoryName(
-                    for: record.sourceBackupCreationDate,
-                    excluding: usedNames
-                )
-                usedNames.insert(name)
-                migratedRecord = record.withExportDirectoryName(name)
-                changedManifest = true
-            } else {
-                migratedRecord = record
-            }
-
-            let legacyExportsURL = paths.legacyExportURL(for: record.id)
-            let readableExportsURL = paths.exportURL(for: migratedRecord)
-            var migratedExportContents = false
-            if legacyExportsURL.standardizedFileURL != readableExportsURL.standardizedFileURL,
-               FileManager.default.fileExists(atPath: legacyExportsURL.path) {
-                try mergeDirectory(at: legacyExportsURL, into: readableExportsURL)
-                migratedExportContents = true
-            }
-
-            migratedExportContents = try moveProfilePhotoCatalog(
-                from: readableExportsURL,
-                to: paths.profilePhotosURL(for: record.id)
-            ) || migratedExportContents
-            if migratedExportContents {
-                try removeDirectoryIfEffectivelyEmpty(readableExportsURL)
-            }
-            migratedVersions.append(migratedRecord)
-        }
-
-        guard changedManifest else { return manifest }
-        var migratedManifest = manifest
-        migratedManifest.versions = migratedVersions
-        try write(migratedManifest, to: paths.manifestURL)
-        return migratedManifest
-    }
-
-    private static func moveProfilePhotoCatalog(
-        from exportsURL: URL,
-        to catalogURL: URL
-    ) throws -> Bool {
-        let oldCatalogURL = exportsURL.appendingPathComponent(
-            "ChatProfilePhotos",
-            isDirectory: true
-        )
-        guard FileManager.default.fileExists(atPath: oldCatalogURL.path) else { return false }
-        try mergeDirectory(at: oldCatalogURL, into: catalogURL)
-        return true
-    }
-
-    private static func mergeDirectory(at sourceURL: URL, into destinationURL: URL) throws {
-        let fileManager = FileManager.default
-        var sourceIsDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: sourceURL.path, isDirectory: &sourceIsDirectory) else {
-            return
-        }
-        guard sourceIsDirectory.boolValue else {
-            throw LibraryServiceError.layoutMigrationConflict(sourceURL)
-        }
-
-        var destinationIsDirectory: ObjCBool = false
-        if !fileManager.fileExists(atPath: destinationURL.path, isDirectory: &destinationIsDirectory) {
-            try fileManager.createDirectory(
-                at: destinationURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try fileManager.moveItem(at: sourceURL, to: destinationURL)
-            return
-        }
-        guard destinationIsDirectory.boolValue else {
-            throw LibraryServiceError.layoutMigrationConflict(destinationURL)
-        }
-
-        for sourceItemURL in try fileManager.contentsOfDirectory(
-            at: sourceURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) {
-            let destinationItemURL = destinationURL.appendingPathComponent(
-                sourceItemURL.lastPathComponent,
-                isDirectory: false
-            )
-            var itemIsDirectory: ObjCBool = false
-            _ = fileManager.fileExists(atPath: sourceItemURL.path, isDirectory: &itemIsDirectory)
-            if itemIsDirectory.boolValue {
-                try mergeDirectory(at: sourceItemURL, into: destinationItemURL)
-            } else if fileManager.fileExists(atPath: destinationItemURL.path) {
-                let sourceData = try Data(contentsOf: sourceItemURL)
-                let destinationData = try Data(contentsOf: destinationItemURL)
-                guard sourceData == destinationData else {
-                    throw LibraryServiceError.layoutMigrationConflict(destinationItemURL)
-                }
-                try fileManager.removeItem(at: sourceItemURL)
-            } else {
-                try fileManager.moveItem(at: sourceItemURL, to: destinationItemURL)
-            }
-        }
-        try removeDirectoryIfEffectivelyEmpty(sourceURL)
-    }
-
     private static func removeDirectoryIfEffectivelyEmpty(_ directoryURL: URL) throws {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: directoryURL.path) else { return }
@@ -638,11 +396,11 @@ enum LibraryService {
         try fileManager.removeItem(at: directoryURL)
     }
 
-    private static func makeExportDirectoryName(
+    private static func makeStorageDirectoryName(
         for date: Date,
         excluding existingNames: Set<String>
     ) -> String {
-        let baseName = "Copia \(exportDirectoryDateFormatter.string(from: date))"
+        let baseName = "Copia \(storageDirectoryDateFormatter.string(from: date))"
         guard existingNames.contains(baseName) else { return baseName }
 
         var suffix = 2
@@ -652,7 +410,7 @@ enum LibraryService {
         return "\(baseName) (\(suffix))"
     }
 
-    private static let exportDirectoryDateFormatter: DateFormatter = {
+    private static let storageDirectoryDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current

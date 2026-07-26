@@ -125,7 +125,7 @@ enum ConversationArchiveService {
         )
     }
 
-    static func catalog(in session: LibrarySession) throws -> [ExportedChatListItem] {
+    static func catalog(in session: LibrarySession) throws -> [ConversationCatalogItem] {
         try catalog(records: loadAvailableRecords(in: session), in: session)
     }
 
@@ -229,7 +229,7 @@ enum ConversationArchiveService {
     }
 
     static func incorporate(
-        _ exported: ExportedChat,
+        _ stored: StoredChat,
         source: VersionChatID,
         context: ConversationIncorporationContext,
         in session: LibrarySession,
@@ -238,13 +238,13 @@ enum ConversationArchiveService {
         guard let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.missingSource(source)
         }
-        let identity = identity(for: exported.document.chat, in: version)
+        let identity = identity(for: stored.document.chat, in: version)
         var record: ConversationArchiveRecord
 
         if let existing = context.record {
             guard existing.matches(identity) else {
                 throw ConversationArchiveError.invalidArchive(
-                    exported.directoryURL,
+                    stored.directoryURL,
                     "La copia guardada ya no coincide con la conversación preparada."
                 )
             }
@@ -259,11 +259,11 @@ enum ConversationArchiveService {
             record.contributions[index] = ConversationContribution(
                 id: previous.id,
                 source: source,
-                exportedAt: exported.document.exportedAt
+                storedAt: stored.document.storedAt
             )
         } else {
             record.contributions.append(
-                ConversationContribution(source: source, exportedAt: exported.document.exportedAt)
+                ConversationContribution(source: source, storedAt: stored.document.storedAt)
             )
         }
         record.updatedAt = Date()
@@ -325,7 +325,7 @@ enum ConversationArchiveService {
             }
 
             let document = try decoder().decode(
-                ExportedChatDocument.self,
+                StoredChatDocument.self,
                 from: Data(contentsOf: documentURL)
             )
             let documentKey = ConversationIdentityKey(chat: document.chat)
@@ -351,7 +351,7 @@ enum ConversationArchiveService {
     }
 
     static func openRepairing(
-        item: ExportedChatListItem,
+        item: ConversationCatalogItem,
         in session: LibrarySession
     ) throws -> ArchivedConversation {
         guard item.contributionCount == 1 else {
@@ -416,7 +416,7 @@ enum ConversationArchiveService {
         }
 
         if record.contributions.count == 1 {
-            let updatedSession = try LibraryService.deleteExportedChat(source, from: session)
+            let updatedSession = try LibraryService.deleteStoredChat(source, from: session)
             return ConversationContributionRemoval(
                 session: updatedSession,
                 conversationID: record.id,
@@ -447,7 +447,7 @@ enum ConversationArchiveService {
 
         do {
             let rebuilt = try store(record: record, in: session, progress: progress)
-            let updatedSession = try LibraryService.deleteExportedChat(source, from: session)
+            let updatedSession = try LibraryService.deleteStoredChat(source, from: session)
             try? fileManager.removeItem(at: stagingURL)
             return ConversationContributionRemoval(
                 session: updatedSession,
@@ -478,7 +478,7 @@ enum ConversationArchiveService {
     private static func catalog(
         records: [ConversationArchiveRecord],
         in session: LibrarySession
-    ) throws -> [ExportedChatListItem] {
+    ) throws -> [ConversationCatalogItem] {
         try records.map { record in
             let locations = try storageLocations(for: record, in: session)
             let chat: ChatInfo
@@ -499,17 +499,17 @@ enum ConversationArchiveService {
             }.flatMap {
                 FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
             }
-            return ExportedChatListItem(
+            return ConversationCatalogItem(
                 id: record.id,
                 chat: chat,
-                exportedAt: record.updatedAt,
+                updatedAt: record.updatedAt,
                 contributionSources: record.contributions.map(\.source),
                 directoryURL: locations.directoryURL,
                 photoURL: photoURL
             )
         }.sorted { lhs, rhs in
-            if lhs.exportedAt != rhs.exportedAt {
-                return lhs.exportedAt > rhs.exportedAt
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
             }
             return lhs.chat.name.localizedStandardCompare(rhs.chat.name) == .orderedAscending
         }
@@ -589,17 +589,17 @@ enum ConversationArchiveService {
         paths: LibraryPaths
     ) throws -> [ConversationArchiveRecord] {
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: paths.exportsURL.path) else { return [] }
-        let exportDirectories = try fileManager.contentsOfDirectory(
-            at: paths.exportsURL,
+        guard fileManager.fileExists(atPath: paths.storedChatsURL.path) else { return [] }
+        let storageDirectories = try fileManager.contentsOfDirectory(
+            at: paths.storedChatsURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         )
         var records: [ConversationArchiveRecord] = []
-        for exportDirectory in exportDirectories {
-            guard (try? exportDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory)
+        for storageDirectory in storageDirectories {
+            guard (try? storageDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory)
                 == true else { continue }
-            let chatsURL = exportDirectory.appendingPathComponent("Chats", isDirectory: true)
+            let chatsURL = storageDirectory.appendingPathComponent("Chats", isDirectory: true)
             guard fileManager.fileExists(atPath: chatsURL.path) else { continue }
             let chatDirectories = try fileManager.contentsOfDirectory(
                 at: chatsURL,
@@ -644,20 +644,20 @@ enum ConversationArchiveService {
                 "La conversación individual no tiene una copia de origen válida."
             )
         }
-        let exported = try version.exportStore.openChat(chatId: source.chatID)
-        let documentKey = ConversationIdentityKey(chat: exported.document.chat)
+        let stored = try version.storedChatStore.openChat(chatId: source.chatID)
+        let documentKey = ConversationIdentityKey(chat: stored.document.chat)
         guard record.identityKeys.contains(documentKey) else {
             throw ConversationArchiveError.invalidArchive(
-                exported.directoryURL,
+                stored.directoryURL,
                 "La identidad del chat no coincide con su manifiesto."
             )
         }
         return ArchivedConversation(
             record: record,
-            document: exported.document,
-            directoryURL: exported.directoryURL,
-            documentURL: exported.directoryURL.appendingPathComponent(documentFilename),
-            mediaDirectoryURL: exported.mediaDirectoryURL
+            document: stored.document,
+            directoryURL: stored.directoryURL,
+            documentURL: stored.directoryURL.appendingPathComponent(documentFilename),
+            mediaDirectoryURL: stored.mediaDirectoryURL
         )
     }
 
@@ -725,24 +725,24 @@ enum ConversationArchiveService {
                 "La conversación individual no tiene una copia de origen válida."
             )
         }
-        let exported = try version.exportStore.openChat(chatId: source.chatID)
-        let documentKey = ConversationIdentityKey(chat: exported.document.chat)
+        let stored = try version.storedChatStore.openChat(chatId: source.chatID)
+        let documentKey = ConversationIdentityKey(chat: stored.document.chat)
         guard record.identityKeys.contains(documentKey) else {
             throw ConversationArchiveError.invalidArchive(
-                exported.directoryURL,
+                stored.directoryURL,
                 "La identidad del chat no coincide con su manifiesto."
             )
         }
 
         var installedRecord = record
-        let messageCount = exported.document.messages.count
+        let messageCount = stored.document.messages.count
         installedRecord.contributions[0] = installedRecord.contributions[0].withMessageCounts(
             total: messageCount,
             exclusive: messageCount
         )
-        installedRecord.summary = exported.document.chat
+        installedRecord.summary = stored.document.chat
         try encoder().encode(installedRecord).write(
-            to: exported.directoryURL.appendingPathComponent(recordFilename),
+            to: stored.directoryURL.appendingPathComponent(recordFilename),
             options: .atomic
         )
         return try openSourceConversation(record: installedRecord, in: session)
@@ -833,7 +833,7 @@ enum ConversationArchiveService {
             sources: sources,
             targetSourceID: ConversationSourceID(rawValue: target.contribution.id),
             perspectiveConstraints: [.samePerspective(sourceIDs: sourceIDs)],
-            targetChatID: resolved[0].exported.document.chat.id,
+            targetChatID: resolved[0].stored.document.chat.id,
             destinationDirectory: temporaryURL,
             progress: progress
         )
@@ -897,7 +897,7 @@ enum ConversationArchiveService {
             }
             return ResolvedContribution(
                 contribution: contribution,
-                exported: try version.exportStore.openChat(chatId: contribution.source.chatID)
+                stored: try version.storedChatStore.openChat(chatId: contribution.source.chatID)
             )
         }
     }
@@ -910,7 +910,7 @@ enum ConversationArchiveService {
         return try contributions.map { resolved in
             try ConversationSource(
                 id: ConversationSourceID(rawValue: resolved.contribution.id),
-                exportedChat: resolved.exported,
+                storedChat: resolved.stored,
                 conversationIdentityHint: identityHint
             )
         }
@@ -920,7 +920,7 @@ enum ConversationArchiveService {
         in contributions: [ResolvedContribution]
     ) throws -> ResolvedContribution {
         guard let target = contributions.max(by: {
-            $0.contribution.exportedAt < $1.contribution.exportedAt
+            $0.contribution.storedAt < $1.contribution.storedAt
         }) else {
             throw ConversationCompositionError.noSources
         }
@@ -958,7 +958,7 @@ enum ConversationArchiveService {
     }
 
     private static func validateMedia(
-        document: ExportedChatDocument,
+        document: StoredChatDocument,
         at mediaDirectoryURL: URL
     ) throws {
         var isDirectory: ObjCBool = false
@@ -996,7 +996,7 @@ enum ConversationArchiveService {
         _ source: VersionChatID,
         in version: LibraryVersionSession
     ) -> URL {
-        version.exportsURL
+        version.storedChatsURL
             .appendingPathComponent("Chats", isDirectory: true)
             .appendingPathComponent(String(source.chatID), isDirectory: true)
     }
@@ -1004,7 +1004,7 @@ enum ConversationArchiveService {
     private static func sourceSelections(in session: LibrarySession) -> [VersionChatID] {
         let fileManager = FileManager.default
         return session.versions.flatMap { version -> [VersionChatID] in
-            let chatsURL = version.exportsURL.appendingPathComponent("Chats", isDirectory: true)
+            let chatsURL = version.storedChatsURL.appendingPathComponent("Chats", isDirectory: true)
             guard let entries = try? fileManager.contentsOfDirectory(
                 at: chatsURL,
                 includingPropertiesForKeys: nil,
@@ -1038,5 +1038,5 @@ enum ConversationArchiveService {
 
 private struct ResolvedContribution {
     let contribution: ConversationContribution
-    let exported: ExportedChat
+    let stored: StoredChat
 }

@@ -12,30 +12,28 @@ final class FreeMyChatsStore: ObservableObject {
     private enum DefaultsKey {
         static let lastLibraryPath = "lastLibraryPath"
         static let backupSearchPath = "backupSearchPath"
-        static let obsoleteResumeBackupImportAfterPermission =
-            "resumeBackupImportAfterPermission"
     }
 
     @Published var backupSearchPath: String
     @Published private(set) var backupRows: [BackupInspectionRow] = []
     @Published private(set) var session: LibrarySession?
     @Published var selectedChatID: VersionChatID?
-    @Published private(set) var exportedChats: [ExportedChatListItem] = []
-    @Published private(set) var selectedExportID: ConversationArchiveID?
-    @Published private(set) var selectedExport: ArchivedConversation?
+    @Published private(set) var conversationCatalog: [ConversationCatalogItem] = []
+    @Published private(set) var selectedConversationID: ConversationArchiveID?
+    @Published private(set) var selectedConversation: ArchivedConversation?
     @Published private(set) var highlightedChatIDs: Set<VersionChatID> = []
-    @Published private(set) var isLoadingExportCatalog = false
-    @Published private(set) var isOpeningExport = false
-    @Published private(set) var exportPanelError: String?
-    @Published private(set) var exportStates: [VersionChatID: ChatExportDisplayState] = [:]
+    @Published private(set) var isLoadingConversationCatalog = false
+    @Published private(set) var isOpeningConversation = false
+    @Published private(set) var conversationPanelError: String?
+    @Published private(set) var storedChatStates: [VersionChatID: StoredChatDisplayState] = [:]
     @Published private(set) var chatDetails: [VersionChatID: ChatDetailsState] = [:]
     @Published var chatFilter: ChatListFilter = .all
     @Published var chatSortOrder: ChatListSortOrder = .recent
     @Published private(set) var operation: AppOperation?
     @Published private(set) var errorMessage: String?
     @Published private(set) var informationMessage: String?
-    @Published private(set) var unifiedViewExportPreview: UnifiedViewExportPreview?
-    @Published private(set) var exportDeletionPreview: ExportDeletionPreview?
+    @Published private(set) var unifiedViewAdditionPreview: UnifiedViewAdditionPreview?
+    @Published private(set) var storedCopyDeletionPreview: StoredCopyDeletionPreview?
     @Published private(set) var discoveryIssue: BackupDiscoveryIssue?
     @Published private(set) var importedBackupCleanupPrompt: ImportedIPhoneBackupCleanupPrompt?
     @Published var isShowingBackupImporter = false
@@ -49,16 +47,13 @@ final class FreeMyChatsStore: ObservableObject {
         qos: .userInitiated
     )
     private var hasStarted = false
-    private var exportCatalogRequestID: UUID?
-    private var openExportRequestID: UUID?
+    private var conversationCatalogRequestID: UUID?
+    private var openConversationRequestID: UUID?
     private let readingPositionStore = ChatReadingPositionStore()
 
     init() {
         backupSearchPath = UserDefaults.standard.string(forKey: DefaultsKey.backupSearchPath)
             ?? Self.defaultBackupPath
-        UserDefaults.standard.removeObject(
-            forKey: DefaultsKey.obsoleteResumeBackupImportAfterPermission
-        )
     }
 
     var versions: [LibraryVersionSession] {
@@ -81,8 +76,8 @@ final class FreeMyChatsStore: ObservableObject {
         return session?.chat(for: selectedChatID)
     }
 
-    var exportingChatID: VersionChatID? {
-        guard case .exportingChat(let selection) = operation?.kind else { return nil }
+    var storingChatID: VersionChatID? {
+        guard case .storingChat(let selection) = operation?.kind else { return nil }
         return selection
     }
 
@@ -160,21 +155,21 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func closeLibrary() {
-        unifiedViewExportPreview = nil
-        exportDeletionPreview = nil
+        unifiedViewAdditionPreview = nil
+        storedCopyDeletionPreview = nil
         session = nil
-        exportStates = [:]
+        storedChatStates = [:]
         chatDetails = [:]
         selectedChatID = nil
-        exportedChats = []
-        selectedExportID = nil
-        selectedExport = nil
+        conversationCatalog = []
+        selectedConversationID = nil
+        selectedConversation = nil
         highlightedChatIDs = []
-        isLoadingExportCatalog = false
-        isOpeningExport = false
-        exportPanelError = nil
-        exportCatalogRequestID = nil
-        openExportRequestID = nil
+        isLoadingConversationCatalog = false
+        isOpeningConversation = false
+        conversationPanelError = nil
+        conversationCatalogRequestID = nil
+        openConversationRequestID = nil
         discoveryIssue = nil
         importedBackupCleanupPrompt = nil
         isShowingBackupImporter = false
@@ -294,24 +289,23 @@ final class FreeMyChatsStore: ObservableObject {
         }
 
         // The filesystem is the source of truth. Re-check on every selection so a
-        // removed or moved export cannot leave a stale in-memory "exported" state.
+        // removed or moved stored chat cannot leave a stale in-memory state.
         resolveSelectionState(selection)
         loadChatDetails(selection)
     }
 
-    func exportChat(_ selection: VersionChatID) {
-        guard exportStates[selection] == .notExported
-                || isUpdateAvailable(exportStates[selection]) else { return }
-        // A previous read from older app versions may have left a Media-only
-        // directory. Explicit export replaces that incomplete directory safely.
-        performExport(selection, overwriteExisting: true)
+    func addChatToLibrary(_ selection: VersionChatID) {
+        guard storedChatStates[selection] == .notStored
+                || isUpdateAvailable(storedChatStates[selection]) else { return }
+        // Storing replaces an existing incomplete directory safely.
+        storeChat(selection, overwriteExisting: true)
     }
 
-    func prepareUnifiedViewExport(_ selection: VersionChatID) {
+    func prepareUnifiedViewAddition(_ selection: VersionChatID) {
         guard let session,
               let version = session.version(id: selection.versionID),
               let chat = version.chats.first(where: { $0.id == selection.chatID }),
-              isUpdateAvailable(exportStates[selection]) else {
+              isUpdateAvailable(storedChatStates[selection]) else {
             return
         }
         do {
@@ -322,7 +316,7 @@ final class FreeMyChatsStore: ObservableObject {
                     "No se ha encontrado la conversación guardada que debía actualizarse."
                 )
             }
-            unifiedViewExportPreview = UnifiedViewExportPreview(
+            unifiedViewAdditionPreview = UnifiedViewAdditionPreview(
                 id: UUID(),
                 selection: selection,
                 chatName: chat.name,
@@ -334,28 +328,28 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
-    func commitUnifiedViewExport(id: UUID) {
-        guard let preview = unifiedViewExportPreview,
+    func commitUnifiedViewAddition(id: UUID) {
+        guard let preview = unifiedViewAdditionPreview,
               preview.id == id else { return }
-        unifiedViewExportPreview = nil
-        exportChat(preview.selection)
+        unifiedViewAdditionPreview = nil
+        addChatToLibrary(preview.selection)
     }
 
-    func dismissUnifiedViewExportPreview() {
-        unifiedViewExportPreview = nil
+    func dismissUnifiedViewAdditionPreview() {
+        unifiedViewAdditionPreview = nil
     }
 
-    func prepareExportDeletion(_ selection: VersionChatID) {
+    func prepareStoredCopyDeletion(_ selection: VersionChatID) {
         guard let session,
               let version = session.version(id: selection.versionID),
-              exportStates[selection]?.isPhysicallyExported == true else { return }
+              storedChatStates[selection]?.isPhysicallyStored == true else { return }
         let chatName = session.chat(for: selection)?.name ?? "chat"
         do {
             if let impact = try ConversationArchiveService.storedRemovalMessageImpact(
                 of: selection,
                 in: session
             ) {
-                exportDeletionPreview = ExportDeletionPreview(
+                storedCopyDeletionPreview = StoredCopyDeletionPreview(
                     id: UUID(),
                     selection: selection,
                     chatName: chatName,
@@ -369,11 +363,10 @@ final class FreeMyChatsStore: ObservableObject {
             return
         }
 
-        // Los manifiestos creados por versiones antiguas no incluyen estos contadores.
-        // En ese caso se usa el cálculo anterior para poder confirmar este borrado
-        // con una cifra exacta.
+        // Si una operación incompleta no dejó estos contadores disponibles, se
+        // calculan de nuevo antes de confirmar el borrado.
         let operationID = beginOperation(
-            kind: .preparingExportDeletion(selection),
+            kind: .preparingStoredCopyDeletion(selection),
             title: "Calculando los mensajes de “\(chatName)”…",
             detail: "Comprobando cuáles están también en otras copias guardadas."
         )
@@ -397,7 +390,7 @@ final class FreeMyChatsStore: ObservableObject {
                 self.operation = nil
                 switch result {
                 case .success(let impact):
-                    self.exportDeletionPreview = ExportDeletionPreview(
+                    self.storedCopyDeletionPreview = StoredCopyDeletionPreview(
                         id: UUID(),
                         selection: selection,
                         chatName: chatName,
@@ -411,8 +404,8 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
-    func dismissExportDeletionPreview() {
-        exportDeletionPreview = nil
+    func dismissStoredCopyDeletionPreview() {
+        storedCopyDeletionPreview = nil
     }
 
     func contributionCount(containing selection: VersionChatID) -> Int? {
@@ -432,21 +425,21 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
-    func replaceExport(_ selection: VersionChatID) {
-        performExport(selection, overwriteExisting: true)
+    func refreshStoredChat(_ selection: VersionChatID) {
+        storeChat(selection, overwriteExisting: true)
     }
 
-    func openExport(_ selection: ConversationArchiveID) {
+    func openConversation(_ selection: ConversationArchiveID) {
         guard let session,
-              let item = exportedChats.first(where: { $0.id == selection }) else { return }
+              let item = conversationCatalog.first(where: { $0.id == selection }) else { return }
 
         let requestID = UUID()
         highlightedChatIDs = Set(item.contributionSources)
-        openExportRequestID = requestID
-        selectedExportID = selection
-        selectedExport = nil
-        isOpeningExport = true
-        exportPanelError = nil
+        openConversationRequestID = requestID
+        selectedConversationID = selection
+        selectedConversation = nil
+        isOpeningConversation = true
+        conversationPanelError = nil
 
         workQueue.async { [weak self] in
             let result = Result {
@@ -454,29 +447,29 @@ final class FreeMyChatsStore: ObservableObject {
             }
             DispatchQueue.main.async {
                 guard let self,
-                      self.openExportRequestID == requestID,
-                      self.selectedExportID == selection else { return }
-                self.isOpeningExport = false
+                      self.openConversationRequestID == requestID,
+                      self.selectedConversationID == selection else { return }
+                self.isOpeningConversation = false
                 switch result {
-                case .success(let exported):
-                    self.selectedExport = exported
+                case .success(let stored):
+                    self.selectedConversation = stored
                     self.highlightedChatIDs = Set(
-                        exported.record.contributions.map(\.source)
+                        stored.record.contributions.map(\.source)
                     )
                 case .failure(let error):
-                    self.exportPanelError = error.localizedDescription
+                    self.conversationPanelError = error.localizedDescription
                 }
             }
         }
     }
 
-    func showExportList() {
-        openExportRequestID = nil
-        selectedExportID = nil
-        selectedExport = nil
+    func showConversationCatalog() {
+        openConversationRequestID = nil
+        selectedConversationID = nil
+        selectedConversation = nil
         highlightedChatIDs = []
-        isOpeningExport = false
-        exportPanelError = nil
+        isOpeningConversation = false
+        conversationPanelError = nil
     }
 
     func revealLibrary() {
@@ -485,26 +478,26 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func revealSelectedChat() {
-        guard let selectedExport else { return }
-        WorkspaceService.reveal(selectedExport.directoryURL)
+        guard let selectedConversation else { return }
+        WorkspaceService.reveal(selectedConversation.directoryURL)
     }
 
-    func revealExport(_ selection: VersionChatID) {
+    func revealStoredChat(_ selection: VersionChatID) {
         guard let version = session?.version(id: selection.versionID) else { return }
-        let exportURL = version.exportsURL
+        let storedChatURL = version.storedChatsURL
             .appendingPathComponent("Chats", isDirectory: true)
             .appendingPathComponent(String(selection.chatID), isDirectory: true)
-        guard FileManager.default.fileExists(atPath: exportURL.path) else {
+        guard FileManager.default.fileExists(atPath: storedChatURL.path) else {
             errorMessage = "La carpeta de esta copia guardada ya no está disponible."
             return
         }
-        WorkspaceService.reveal(exportURL)
+        WorkspaceService.reveal(storedChatURL)
     }
 
-    func deleteExportedContribution(_ selection: VersionChatID) {
+    func deleteStoredContribution(_ selection: VersionChatID) {
         guard let session,
-              exportStates[selection]?.isPhysicallyExported == true else { return }
-        exportDeletionPreview = nil
+              storedChatStates[selection]?.isPhysicallyStored == true else { return }
+        storedCopyDeletionPreview = nil
         let chatName = session.chat(for: selection)?.name ?? "chat"
         guard let contributionCount = contributionCount(containing: selection) else { return }
         let operationDetail: String
@@ -517,7 +510,7 @@ final class FreeMyChatsStore: ObservableObject {
             operationDetail = "Retirando la conversación del catálogo."
         }
         let operationID = beginOperation(
-            kind: .deletingExportedContribution(selection),
+            kind: .deletingStoredContribution(selection),
             title: "Borrando la copia guardada de “\(chatName)”…",
             detail: operationDetail
         )
@@ -540,14 +533,14 @@ final class FreeMyChatsStore: ObservableObject {
                 self.operation = nil
                 switch result {
                 case .success(let removal):
-                    let previousExportID = self.selectedExportID
-                    let previousExport = self.selectedExport
+                    let previousConversationID = self.selectedConversationID
+                    let previousConversation = self.selectedConversation
                     self.install(removal.session, preservingSelection: true)
 
-                    if previousExportID == removal.conversationID {
+                    if previousConversationID == removal.conversationID {
                         if let conversation = removal.conversation {
-                            self.selectedExportID = conversation.record.id
-                            self.selectedExport = conversation
+                            self.selectedConversationID = conversation.record.id
+                            self.selectedConversation = conversation
                             self.highlightedChatIDs = Set(
                                 conversation.record.contributions.map(\.source)
                             )
@@ -557,11 +550,11 @@ final class FreeMyChatsStore: ObservableObject {
                                 in: session.paths.rootURL
                             )
                         }
-                    } else if let previousExportID, let previousExport {
-                        self.selectedExportID = previousExportID
-                        self.selectedExport = previousExport
+                    } else if let previousConversationID, let previousConversation {
+                        self.selectedConversationID = previousConversationID
+                        self.selectedConversation = previousConversation
                         self.highlightedChatIDs = Set(
-                            previousExport.record.contributions.map(\.source)
+                            previousConversation.record.contributions.map(\.source)
                         )
                     }
 
@@ -595,12 +588,12 @@ final class FreeMyChatsStore: ObservableObject {
             return catalogURL
         }
 
-        let exportedChatURL = version.exportsURL
+        let storedChatURL = version.storedChatsURL
             .appendingPathComponent("Chats", isDirectory: true)
             .appendingPathComponent(String(chat.id), isDirectory: true)
             .appendingPathComponent("Media", isDirectory: true)
             .appendingPathComponent(filename)
-        return FileManager.default.fileExists(atPath: exportedChatURL.path) ? exportedChatURL : nil
+        return FileManager.default.fileExists(atPath: storedChatURL.path) ? storedChatURL : nil
     }
 
     func dismissError() {
@@ -641,7 +634,7 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
-    private func performExport(_ selection: VersionChatID, overwriteExisting: Bool) {
+    private func storeChat(_ selection: VersionChatID, overwriteExisting: Bool) {
         guard let session,
               let version = session.version(id: selection.versionID),
               let reader = version.reader,
@@ -657,7 +650,7 @@ final class FreeMyChatsStore: ObservableObject {
         )
         let operationTitle: String
         let operationDetail: String
-        switch exportStates[selection] {
+        switch storedChatStates[selection] {
         case .updateAvailable:
             let count = try? ConversationArchiveService.existingContributionCount(
                 for: chat,
@@ -682,7 +675,7 @@ final class FreeMyChatsStore: ObservableObject {
             operationDetail = "Creando una conversación independiente con sus mensajes y archivos."
         }
         let operationID = beginOperation(
-            kind: .exportingChat(selection),
+            kind: .storingChat(selection),
             title: operationTitle,
             detail: operationDetail
         )
@@ -695,7 +688,7 @@ final class FreeMyChatsStore: ObservableObject {
                     session: session
                 )
                 do {
-                    let exported = try reader.exportChat(
+                    let stored = try reader.storeChat(
                         chatId: selection.chatID,
                         overwriteExisting: overwriteExisting
                     ) { progress in
@@ -706,7 +699,7 @@ final class FreeMyChatsStore: ObservableObject {
                         )
                     }
                     let update = try ConversationArchiveService.incorporate(
-                        exported,
+                        stored,
                         source: selection,
                         context: context,
                         in: session
@@ -722,7 +715,7 @@ final class FreeMyChatsStore: ObservableObject {
                         $0.source == selection
                     } ?? false
                     return (
-                        exported,
+                        stored,
                         update,
                         previousContributionCount,
                         sourceWasAlreadyIncluded
@@ -740,46 +733,46 @@ final class FreeMyChatsStore: ObservableObject {
                 self.operation = nil
                 switch result {
                 case .success(let (
-                    exported,
+                    stored,
                     update,
                     previousContributionCount,
                     sourceWasAlreadyIncluded
                 )):
-                    self.finishExport(
+                    self.finishStoringChat(
                         selection: selection,
                         chatName: chatName,
-                        exported: exported,
+                        stored: stored,
                         update: update,
                         previousContributionCount: previousContributionCount,
                         sourceWasAlreadyIncluded: sourceWasAlreadyIncluded,
                         reportUpdate: isUpdating
                     )
                 case .failure(let error):
-                    self.exportStates[selection] = .invalid(error.localizedDescription)
+                    self.storedChatStates[selection] = .invalid(error.localizedDescription)
                     self.errorMessage = error.localizedDescription
                 }
             }
         }
     }
 
-    private func finishExport(
+    private func finishStoringChat(
         selection: VersionChatID,
         chatName: String,
-        exported: ExportedChat,
+        stored: StoredChat,
         update: ConversationArchiveUpdate,
         previousContributionCount: Int,
         sourceWasAlreadyIncluded: Bool,
         reportUpdate: Bool
     ) {
-        exportStates[selection] = .exported(exported.document.exportedAt)
+        storedChatStates[selection] = .stored(stored.document.storedAt)
         chatDetails[selection] = .loaded(
-            firstMessageDate: exported.document.messages.first?.date
+            firstMessageDate: stored.document.messages.first?.date
         )
         if let session {
-            refreshExportCatalog(in: session)
+            refreshConversationCatalog(in: session)
         }
-        if selectedExportID == update.conversation.record.id {
-            selectedExport = update.conversation
+        if selectedConversationID == update.conversation.record.id {
+            selectedConversation = update.conversation
         }
         guard reportUpdate else { return }
 
@@ -807,25 +800,25 @@ final class FreeMyChatsStore: ObservableObject {
               let version = session.version(id: selection.versionID),
               let chat = version.chats.first(where: { $0.id == selection.chatID }) else { return }
         workQueue.async { [weak self] in
-            let displayState: ChatExportDisplayState
-            if !Self.hasExportDocument(selection, in: version) {
+            let displayState: StoredChatDisplayState
+            if !Self.hasStoredChatDocument(selection, in: version) {
                 displayState = ConversationArchiveService.hasArchive(
                     for: chat,
                     in: version,
                     paths: session.paths
-                ) ? .updateAvailable(Date()) : .notExported
+                ) ? .updateAvailable(Date()) : .notStored
             } else if let reader = version.reader {
-                displayState = ChatExportDisplayState(reader.exportState(for: chat))
-            } else if version.exportStore.containsChat(chatId: chat.id),
-                      let exported = try? version.exportStore.openChat(chatId: chat.id) {
-                displayState = .exported(exported.document.exportedAt)
+                displayState = StoredChatDisplayState(reader.storageState(for: chat))
+            } else if version.storedChatStore.containsChat(chatId: chat.id),
+                      let stored = try? version.storedChatStore.openChat(chatId: chat.id) {
+                displayState = .stored(stored.document.storedAt)
             } else {
-                displayState = .notExported
+                displayState = .notStored
             }
 
             DispatchQueue.main.async {
                 guard let self, self.session?.version(id: selection.versionID) === version else { return }
-                self.exportStates[selection] = displayState
+                self.storedChatStates[selection] = displayState
             }
         }
     }
@@ -842,26 +835,26 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     private func install(_ newSession: LibrarySession, preservingSelection: Bool) {
-        unifiedViewExportPreview = nil
-        exportDeletionPreview = nil
+        unifiedViewAdditionPreview = nil
+        storedCopyDeletionPreview = nil
         let previousSelection = preservingSelection ? selectedChatID : nil
         session = newSession
         selectedChatID = previousSelection.flatMap { newSession.chat(for: $0) == nil ? nil : $0 }
-        exportedChats = []
-        selectedExportID = nil
-        selectedExport = nil
+        conversationCatalog = []
+        selectedConversationID = nil
+        selectedConversation = nil
         highlightedChatIDs = []
-        isLoadingExportCatalog = false
-        isOpeningExport = false
-        exportPanelError = nil
-        openExportRequestID = nil
+        isLoadingConversationCatalog = false
+        isOpeningConversation = false
+        conversationPanelError = nil
+        openConversationRequestID = nil
         chatDetails = [:]
-        exportStates = Dictionary(uniqueKeysWithValues: newSession.versions.flatMap { version in
+        storedChatStates = Dictionary(uniqueKeysWithValues: newSession.versions.flatMap { version in
             version.chats.map { (VersionChatID(versionID: version.id, chatID: $0.id), .checking) }
         })
         UserDefaults.standard.set(newSession.paths.rootURL.path, forKey: DefaultsKey.lastLibraryPath)
-        refreshExportStates()
-        refreshExportCatalog(in: newSession)
+        refreshStoredChatStates()
+        refreshConversationCatalog(in: newSession)
         if let selectedChatID {
             selectChat(selectedChatID)
         }
@@ -879,12 +872,12 @@ final class FreeMyChatsStore: ObservableObject {
         workQueue.async { [weak self] in
             let result = Result {
                 if let backup = version.backup {
-                    // This reader intentionally has no export root. Asking for chat
+                    // This reader intentionally has no storage root. Asking for chat
                     // details must never create Media directories or copy files.
                     let reader = try backup.openReader()
                     return try reader.getChat(chatId: selection.chatID).messages.first?.date
                 }
-                return try version.exportStore
+                return try version.storedChatStore
                     .openChat(chatId: selection.chatID)
                     .document.messages.first?.date
             }
@@ -938,21 +931,21 @@ final class FreeMyChatsStore: ObservableObject {
             loadedSession.chat(for: $0) == nil ? nil : $0
         }
         chatDetails = [:]
-        exportStates = Dictionary(uniqueKeysWithValues: loadedSession.versions.flatMap { version in
+        storedChatStates = Dictionary(uniqueKeysWithValues: loadedSession.versions.flatMap { version in
             version.chats.map {
                 (VersionChatID(versionID: version.id, chatID: $0.id), .checking)
             }
         })
-        refreshExportStates()
+        refreshStoredChatStates()
         if let selectedChatID {
             selectChat(selectedChatID)
         }
     }
 
-    private func refreshExportStates() {
+    private func refreshStoredChatStates() {
         guard let session else { return }
         workQueue.async { [weak self] in
-            var states: [VersionChatID: ChatExportDisplayState] = [:]
+            var states: [VersionChatID: StoredChatDisplayState] = [:]
             let archiveKeys = (try? ConversationArchiveService.archiveKeys(
                 paths: session.paths
             )) ?? []
@@ -962,32 +955,32 @@ final class FreeMyChatsStore: ObservableObject {
                 )
                 for chat in version.chats {
                     let key = VersionChatID(versionID: version.id, chatID: chat.id)
-                    if !Self.hasExportDocument(key, in: version) {
+                    if !Self.hasStoredChatDocument(key, in: version) {
                         let identity = identityResolver.identity(for: chat)
                         states[key] = !archiveKeys.isDisjoint(with: identity.keys)
                             ? .updateAvailable(Date())
-                            : .notExported
+                            : .notStored
                     } else if let reader = version.reader {
-                        states[key] = ChatExportDisplayState(reader.exportState(for: chat))
-                    } else if let exported = try? version.exportStore.openChat(chatId: chat.id) {
-                        states[key] = .exported(exported.document.exportedAt)
+                        states[key] = StoredChatDisplayState(reader.storageState(for: chat))
+                    } else if let stored = try? version.storedChatStore.openChat(chatId: chat.id) {
+                        states[key] = .stored(stored.document.storedAt)
                     } else {
-                        states[key] = .notExported
+                        states[key] = .notStored
                     }
                 }
             }
             DispatchQueue.main.async {
                 guard let self, self.session === session else { return }
-                self.exportStates = states
+                self.storedChatStates = states
             }
         }
     }
 
-    private func refreshExportCatalog(in session: LibrarySession) {
+    private func refreshConversationCatalog(in session: LibrarySession) {
         let requestID = UUID()
-        exportCatalogRequestID = requestID
-        isLoadingExportCatalog = true
-        exportPanelError = nil
+        conversationCatalogRequestID = requestID
+        isLoadingConversationCatalog = true
+        conversationPanelError = nil
 
         workQueue.async { [weak self] in
             let result = Result { try ConversationArchiveService.catalog(in: session) }
@@ -995,31 +988,31 @@ final class FreeMyChatsStore: ObservableObject {
             DispatchQueue.main.async {
                 guard let self,
                       self.session === session,
-                      self.exportCatalogRequestID == requestID else { return }
-                self.isLoadingExportCatalog = false
+                      self.conversationCatalogRequestID == requestID else { return }
+                self.isLoadingConversationCatalog = false
                 switch result {
                 case .success(let items):
-                    self.exportedChats = items
-                    self.refreshExportStates()
+                    self.conversationCatalog = items
+                    self.refreshStoredChatStates()
                 case .failure(let error):
-                    self.exportPanelError = error.localizedDescription
+                    self.conversationPanelError = error.localizedDescription
                 }
             }
         }
     }
 
-    private nonisolated static func hasExportDocument(
+    private nonisolated static func hasStoredChatDocument(
         _ selection: VersionChatID,
         in version: LibraryVersionSession
     ) -> Bool {
-        let documentURL = version.exportsURL
+        let documentURL = version.storedChatsURL
             .appendingPathComponent("Chats", isDirectory: true)
             .appendingPathComponent(String(selection.chatID), isDirectory: true)
             .appendingPathComponent("chat.json")
         return FileManager.default.fileExists(atPath: documentURL.path)
     }
 
-    private func isUpdateAvailable(_ state: ChatExportDisplayState?) -> Bool {
+    private func isUpdateAvailable(_ state: StoredChatDisplayState?) -> Bool {
         if case .updateAvailable = state { return true }
         return false
     }
@@ -1074,8 +1067,8 @@ final class FreeMyChatsStore: ObservableObject {
         case .writingMetadata, .indexingFiles, .indexingPathAliases, .indexingMediaItems,
              .calculatingBackupInfo: return "Preparando la copia…"
         case .loadingChats: return "Leyendo las conversaciones…"
-        case .exportingChat, .loadingMessages, .processingMessages, .buildingContacts,
-             .exportingMedia: return fallback
+        case .readingChat, .loadingMessages, .processingMessages, .buildingContacts,
+             .copyingChatMedia: return fallback
         case .validatingConversationSources, .hashingConversationMedia,
              .canonicalizingConversationMessages, .inferringConversationPerspectives,
              .aligningConversationMessages, .classifyingConversationComposition:

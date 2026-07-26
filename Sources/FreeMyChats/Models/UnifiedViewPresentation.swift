@@ -1,6 +1,6 @@
 import Foundation
 
-struct UnifiedViewExportPreview: Equatable, Identifiable {
+struct UnifiedViewAdditionPreview: Equatable, Identifiable {
     let id: UUID
     let selection: VersionChatID
     let chatName: String
@@ -8,7 +8,7 @@ struct UnifiedViewExportPreview: Equatable, Identifiable {
     let sourceMessageCount: Int
 }
 
-struct ExportDeletionPreview: Equatable, Identifiable {
+struct StoredCopyDeletionPreview: Equatable, Identifiable {
     let id: UUID
     let selection: VersionChatID
     let chatName: String
@@ -23,14 +23,14 @@ enum UnifiedViewPresentation {
         + "permanecen guardadas por separado y pueden borrarse individualmente. "
         + "Si un mensaje aparece en varias copias, se muestra una sola vez."
 
-    static func exportTitle(chatName: String, existingContributionCount: Int) -> String {
+    static func additionTitle(chatName: String, existingContributionCount: Int) -> String {
         if existingContributionCount == 1 {
             return "¿Crear una Vista unificada de “\(chatName)”?"
         }
         return "¿Actualizar la Vista unificada de “\(chatName)”?"
     }
 
-    static func exportMessage(
+    static func additionMessage(
         existingContributionCount: Int,
         sourceMessageCount: Int
     ) -> String {
@@ -51,7 +51,7 @@ enum UnifiedViewPresentation {
             + "mensajes de todas ellas. \(messageImpact)"
     }
 
-    static func exportButtonTitle(existingContributionCount: Int) -> String {
+    static func additionButtonTitle(existingContributionCount: Int) -> String {
         existingContributionCount == 1
             ? "Crear Vista unificada"
             : "Añadir y actualizar"

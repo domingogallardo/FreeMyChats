@@ -38,21 +38,21 @@ struct ChatSidebarView: View {
                                     isExpanded: store.selectedChatID == selection,
                                     isHighlighted: store.highlightedChatIDs.contains(selection),
                                     detailsState: store.chatDetails[selection],
-                                    exportState: store.exportStates[selection] ?? .checking,
-                                    isExporting: store.exportingChatID == selection,
-                                    canExport: version.hasSourceBackup,
+                                    storedChatState: store.storedChatStates[selection] ?? .checking,
+                                    isStoring: store.storingChatID == selection,
+                                    canAddToLibrary: version.hasSourceBackup,
                                     toggleExpansion: {
                                         store.selectedChatID = store.selectedChatID == selection
                                             ? nil
                                             : selection
                                     },
-                                    export: {
-                                        requestExport(selection)
+                                    addToLibrary: {
+                                        requestAddition(selection)
                                     },
-                                    replaceExport: { store.replaceExport(selection) },
-                                    revealExport: { store.revealExport(selection) },
-                                    deleteExport: {
-                                        store.prepareExportDeletion(selection)
+                                    refreshStoredChat: { store.refreshStoredChat(selection) },
+                                    revealStoredChat: { store.revealStoredChat(selection) },
+                                    deleteStoredChat: {
+                                        store.prepareStoredCopyDeletion(selection)
                                     }
                                 )
                                 .tag(selection)
@@ -66,7 +66,7 @@ struct ChatSidebarView: View {
                     } label: {
                         BackupVersionRow(
                             version: version,
-                            isExporting: store.exportingChatID?.versionID == version.id,
+                            isStoring: store.storingChatID?.versionID == version.id,
                             isLoading: store.isLoadingSourceChats && version.hasSourceBackup
                         ) {
                             versionPendingDeletion = version
@@ -119,34 +119,34 @@ struct ChatSidebarView: View {
             )
         }
         .confirmationDialog(
-            store.unifiedViewExportPreview.map {
-                UnifiedViewPresentation.exportTitle(
+            store.unifiedViewAdditionPreview.map {
+                UnifiedViewPresentation.additionTitle(
                     chatName: $0.chatName,
                     existingContributionCount: $0.existingContributionCount
                 )
             } ?? "¿Crear una Vista unificada?",
             isPresented: Binding(
-                get: { store.unifiedViewExportPreview != nil },
-                set: { if !$0 { store.dismissUnifiedViewExportPreview() } }
+                get: { store.unifiedViewAdditionPreview != nil },
+                set: { if !$0 { store.dismissUnifiedViewAdditionPreview() } }
             ),
             titleVisibility: .visible
         ) {
-            if let preview = store.unifiedViewExportPreview {
+            if let preview = store.unifiedViewAdditionPreview {
                 Button(
-                    UnifiedViewPresentation.exportButtonTitle(
+                    UnifiedViewPresentation.additionButtonTitle(
                         existingContributionCount: preview.existingContributionCount
                     )
                 ) {
-                    store.commitUnifiedViewExport(id: preview.id)
+                    store.commitUnifiedViewAddition(id: preview.id)
                 }
             }
             Button("Cancelar", role: .cancel) {
-                store.dismissUnifiedViewExportPreview()
+                store.dismissUnifiedViewAdditionPreview()
             }
         } message: {
-            if let preview = store.unifiedViewExportPreview {
+            if let preview = store.unifiedViewAdditionPreview {
                 Text(
-                    UnifiedViewPresentation.exportMessage(
+                    UnifiedViewPresentation.additionMessage(
                         existingContributionCount: preview.existingContributionCount,
                         sourceMessageCount: preview.sourceMessageCount
                     )
@@ -154,32 +154,32 @@ struct ChatSidebarView: View {
             }
         }
         .confirmationDialog(
-            store.exportDeletionPreview.map {
+            store.storedCopyDeletionPreview.map {
                 UnifiedViewPresentation.deletionTitle(
                     contributionCount: $0.impact.contributionCount
                 )
             } ?? "¿Borrar esta copia guardada?",
             isPresented: Binding(
-                get: { store.exportDeletionPreview != nil },
-                set: { if !$0 { store.dismissExportDeletionPreview() } }
+                get: { store.storedCopyDeletionPreview != nil },
+                set: { if !$0 { store.dismissStoredCopyDeletionPreview() } }
             ),
             titleVisibility: .visible
         ) {
-            if let preview = store.exportDeletionPreview {
+            if let preview = store.storedCopyDeletionPreview {
                 Button(
                     UnifiedViewPresentation.deletionButtonTitle(
                         contributionCount: preview.impact.contributionCount
                     ),
                     role: .destructive
                 ) {
-                    store.deleteExportedContribution(preview.selection)
+                    store.deleteStoredContribution(preview.selection)
                 }
             }
             Button("Cancelar", role: .cancel) {
-                store.dismissExportDeletionPreview()
+                store.dismissStoredCopyDeletionPreview()
             }
         } message: {
-            if let preview = store.exportDeletionPreview {
+            if let preview = store.storedCopyDeletionPreview {
                 Text(
                     UnifiedViewPresentation.deletionMessage(
                         chatName: preview.chatName,
@@ -191,13 +191,13 @@ struct ChatSidebarView: View {
         }
     }
 
-    private func requestExport(_ selection: VersionChatID) {
-        guard let state = store.exportStates[selection] else { return }
+    private func requestAddition(_ selection: VersionChatID) {
+        guard let state = store.storedChatStates[selection] else { return }
         guard case .updateAvailable = state else {
-            store.exportChat(selection)
+            store.addChatToLibrary(selection)
             return
         }
-        store.prepareUnifiedViewExport(selection)
+        store.prepareUnifiedViewAddition(selection)
     }
 
     private var sidebarHeader: some View {
@@ -313,13 +313,13 @@ struct ChatSidebarView: View {
 
 private struct BackupVersionRow: View {
     let version: LibraryVersionSession
-    let isExporting: Bool
+    let isStoring: Bool
     let isLoading: Bool
     let deleteSource: () -> Void
 
     var body: some View {
         HStack(spacing: 9) {
-            if isExporting {
+            if isStoring {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: 17)
@@ -376,14 +376,14 @@ private struct ChatSidebarRow: View {
     let isExpanded: Bool
     let isHighlighted: Bool
     let detailsState: ChatDetailsState?
-    let exportState: ChatExportDisplayState
-    let isExporting: Bool
-    let canExport: Bool
+    let storedChatState: StoredChatDisplayState
+    let isStoring: Bool
+    let canAddToLibrary: Bool
     let toggleExpansion: () -> Void
-    let export: () -> Void
-    let replaceExport: () -> Void
-    let revealExport: () -> Void
-    let deleteExport: () -> Void
+    let addToLibrary: () -> Void
+    let refreshStoredChat: () -> Void
+    let revealStoredChat: () -> Void
+    let deleteStoredChat: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -463,24 +463,24 @@ private struct ChatSidebarRow: View {
             .accessibilityLabel("Cerrar detalles del chat")
 
             HStack {
-                exportStatus
+                storedChatStatus
                 Spacer(minLength: 8)
             }
             .padding(.top, 3)
 
-            if exportState.isPhysicallyExported, !isExporting {
+            if storedChatState.isPhysicallyStored, !isStoring {
                 HStack(spacing: 6) {
                     actionButton(
                         "Abrir carpeta",
                         systemImage: "folder",
-                        action: revealExport
+                        action: revealStoredChat
                     )
                     .help("Abrir la copia guardada de este chat en Finder")
                     actionButton(
                         "Borrar",
                         systemImage: "trash",
                         tint: .red,
-                        action: deleteExport
+                        action: deleteStoredChat
                     )
                     .help("Borrar únicamente la copia guardada de este chat")
                 }
@@ -500,8 +500,8 @@ private struct ChatSidebarRow: View {
     }
 
     @ViewBuilder
-    private var exportStatus: some View {
-        if isExporting {
+    private var storedChatStatus: some View {
+        if isStoring {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
@@ -509,48 +509,48 @@ private struct ChatSidebarRow: View {
                     .foregroundStyle(.secondary)
             }
         } else {
-            exportStateView
+            storedChatStateView
         }
     }
 
     @ViewBuilder
-    private var exportStateView: some View {
-        switch exportState {
+    private var storedChatStateView: some View {
+        switch storedChatState {
         case .checking:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
                 Text("Comprobando la biblioteca…")
                     .foregroundStyle(.secondary)
             }
-        case .notExported:
-            if canExport {
-                actionButton("Añadir a la biblioteca", action: export)
+        case .notStored:
+            if canAddToLibrary {
+                actionButton("Añadir a la biblioteca", action: addToLibrary)
                 .help("Guardar este chat con sus mensajes y archivos en la biblioteca")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
             }
         case .updateAvailable:
-            if canExport {
+            if canAddToLibrary {
                 actionButton(
                     "Añadir a la biblioteca",
                     systemImage: "plus",
-                    action: export
+                    action: addToLibrary
                 )
                 .help("Guardar esta copia del chat y añadir sus mensajes a una Vista unificada")
             } else {
                 Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
-        case .exported:
+        case .stored:
             Label("En la biblioteca", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
         case .stale:
-            if canExport {
+            if canAddToLibrary {
                 actionButton(
                     "Actualizar en la biblioteca",
                     systemImage: "arrow.clockwise",
-                    action: replaceExport
+                    action: refreshStoredChat
                 )
                 .help("Actualizar la copia guardada y la conversación de la biblioteca")
             } else {
@@ -558,11 +558,11 @@ private struct ChatSidebarRow: View {
                     .foregroundStyle(.secondary)
             }
         case .invalid:
-            if canExport {
+            if canAddToLibrary {
                 actionButton(
                     "Reparar en la biblioteca",
                     systemImage: "arrow.clockwise",
-                    action: replaceExport
+                    action: refreshStoredChat
                 )
                 .help("Reemplazar la copia no válida y actualizar la conversación guardada")
             } else {

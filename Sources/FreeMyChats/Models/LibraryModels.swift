@@ -4,7 +4,7 @@ import Foundation
 struct LibraryPaths: Equatable {
     let rootURL: URL
     let sourcesURL: URL
-    let exportsURL: URL
+    let storedChatsURL: URL
     let mergedChatsURL: URL
     let manifestURL: URL
 
@@ -12,7 +12,7 @@ struct LibraryPaths: Equatable {
         let root = rootURL.standardizedFileURL
         self.rootURL = root
         self.sourcesURL = root.appendingPathComponent("Sources", isDirectory: true)
-        self.exportsURL = root.appendingPathComponent("Exports", isDirectory: true)
+        self.storedChatsURL = root.appendingPathComponent("StoredChats", isDirectory: true)
         self.mergedChatsURL = root.appendingPathComponent("MergedChats", isDirectory: true)
         self.manifestURL = root.appendingPathComponent("library.json")
     }
@@ -30,12 +30,8 @@ struct LibraryPaths: Equatable {
             .appendingPathComponent("ChatProfilePhotos", isDirectory: true)
     }
 
-    func exportURL(for record: LibraryVersionRecord) -> URL {
-        exportsURL.appendingPathComponent(record.resolvedExportDirectoryName, isDirectory: true)
-    }
-
-    func legacyExportURL(for versionID: String) -> URL {
-        exportsURL.appendingPathComponent(versionID, isDirectory: true)
+    func storedChatURL(for record: LibraryVersionRecord) -> URL {
+        storedChatsURL.appendingPathComponent(record.storageDirectoryName, isDirectory: true)
     }
 
     static func resolvingSelection(_ selectedURL: URL) -> LibraryPaths {
@@ -44,14 +40,6 @@ struct LibraryPaths: Equatable {
 
         for _ in 0..<4 {
             if fileManager.fileExists(atPath: candidate.appendingPathComponent("library.json").path) {
-                return LibraryPaths(rootURL: candidate)
-            }
-
-            let legacyMetadata = candidate
-                .appendingPathComponent("Backup", isDirectory: true)
-                .appendingPathComponent(".wa-backup", isDirectory: true)
-                .appendingPathComponent("backup-info.json")
-            if fileManager.fileExists(atPath: legacyMetadata.path) {
                 return LibraryPaths(rootURL: candidate)
             }
 
@@ -65,7 +53,7 @@ struct LibraryPaths: Equatable {
 }
 
 struct LibraryManifest: Codable, Equatable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
     var createdAt: Date
@@ -83,34 +71,20 @@ struct LibraryVersionRecord: Codable, Equatable, Identifiable {
     let sourceBackupIdentifier: String
     let sourceBackupCreationDate: Date
     let importedAt: Date
-    let exportDirectoryName: String?
+    let storageDirectoryName: String
 
     init(
         id: String,
         sourceBackupIdentifier: String,
         sourceBackupCreationDate: Date,
         importedAt: Date,
-        exportDirectoryName: String? = nil
+        storageDirectoryName: String
     ) {
         self.id = id
         self.sourceBackupIdentifier = sourceBackupIdentifier
         self.sourceBackupCreationDate = sourceBackupCreationDate
         self.importedAt = importedAt
-        self.exportDirectoryName = exportDirectoryName
-    }
-
-    var resolvedExportDirectoryName: String {
-        exportDirectoryName ?? id
-    }
-
-    func withExportDirectoryName(_ name: String) -> Self {
-        Self(
-            id: id,
-            sourceBackupIdentifier: sourceBackupIdentifier,
-            sourceBackupCreationDate: sourceBackupCreationDate,
-            importedAt: importedAt,
-            exportDirectoryName: name
-        )
+        self.storageDirectoryName = storageDirectoryName
     }
 
     var title: String {
@@ -159,20 +133,20 @@ struct ConversationIdentityKey: Codable, Hashable {
 struct ConversationContribution: Codable, Equatable, Identifiable {
     let id: String
     let source: VersionChatID
-    let exportedAt: Date
+    let storedAt: Date
     let messageCount: Int?
     let exclusiveMessageCount: Int?
 
     init(
         id: String = UUID().uuidString.lowercased(),
         source: VersionChatID,
-        exportedAt: Date,
+        storedAt: Date,
         messageCount: Int? = nil,
         exclusiveMessageCount: Int? = nil
     ) {
         self.id = id
         self.source = source
-        self.exportedAt = exportedAt
+        self.storedAt = storedAt
         self.messageCount = messageCount
         self.exclusiveMessageCount = exclusiveMessageCount
     }
@@ -181,7 +155,7 @@ struct ConversationContribution: Codable, Equatable, Identifiable {
         ConversationContribution(
             id: id,
             source: source,
-            exportedAt: exportedAt,
+            storedAt: storedAt,
             messageCount: total,
             exclusiveMessageCount: exclusive
         )
@@ -189,7 +163,7 @@ struct ConversationContribution: Codable, Equatable, Identifiable {
 }
 
 struct ConversationArchiveRecord: Codable, Identifiable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     let id: ConversationArchiveID
@@ -245,25 +219,16 @@ struct ArchivedConversation {
     // distinguish each freshly opened/rebuilt snapshot.
     let contentRevisionID = UUID()
     let record: ConversationArchiveRecord
-    let document: ExportedChatDocument
+    let document: StoredChatDocument
     let directoryURL: URL
     let documentURL: URL
     let mediaDirectoryURL: URL
 }
 
-struct SourceExportListItem {
-    let id: VersionChatID
-    let chat: ChatInfo
-    let exportedAt: Date
-    let versionTitle: String
-    let directoryURL: URL
-    let photoURL: URL?
-}
-
-struct ExportedChatListItem: Identifiable {
+struct ConversationCatalogItem: Identifiable {
     let id: ConversationArchiveID
     let chat: ChatInfo
-    let exportedAt: Date
+    let updatedAt: Date
     let contributionSources: [VersionChatID]
     let directoryURL: URL
     let photoURL: URL?
@@ -280,10 +245,10 @@ enum ChatDetailsState: Equatable {
 final class LibraryVersionSession: @unchecked Sendable, Identifiable {
     let record: LibraryVersionRecord
     let backupURL: URL
-    let exportsURL: URL
+    let storedChatsURL: URL
     let backup: ExtractedWhatsAppBackup?
     let reader: WhatsAppBackupReader?
-    let exportStore: ChatExportStore
+    let storedChatStore: StoredChatStore
     let chats: [ChatInfo]
     let backupByteCount: Int64
 
@@ -293,7 +258,7 @@ final class LibraryVersionSession: @unchecked Sendable, Identifiable {
     init(
         record: LibraryVersionRecord,
         backupURL: URL,
-        exportsURL: URL,
+        storedChatsURL: URL,
         backup: ExtractedWhatsAppBackup?,
         reader: WhatsAppBackupReader?,
         chats: [ChatInfo],
@@ -301,10 +266,10 @@ final class LibraryVersionSession: @unchecked Sendable, Identifiable {
     ) {
         self.record = record
         self.backupURL = backupURL
-        self.exportsURL = exportsURL
+        self.storedChatsURL = storedChatsURL
         self.backup = backup
         self.reader = reader
-        self.exportStore = ChatExportStore(rootDirectory: exportsURL)
+        self.storedChatStore = StoredChatStore(rootDirectory: storedChatsURL)
         self.chats = chats
         self.backupByteCount = backupByteCount
     }
@@ -374,31 +339,31 @@ enum ChatListSortOrder: String, CaseIterable, Identifiable {
     }
 }
 
-enum ChatExportDisplayState: Equatable {
+enum StoredChatDisplayState: Equatable {
     case checking
-    case notExported
+    case notStored
     case updateAvailable(Date)
-    case exported(Date)
+    case stored(Date)
     case stale(Date)
     case invalid(String)
 
-    init(_ state: ChatExportState) {
+    init(_ state: StoredChatState) {
         switch state {
-        case .notExported:
-            self = .notExported
-        case .exported(let info):
-            self = .exported(info.exportedAt)
+        case .notStored:
+            self = .notStored
+        case .stored(let info):
+            self = .stored(info.storedAt)
         case .stale(let info):
-            self = .stale(info.exportedAt)
+            self = .stale(info.storedAt)
         case .invalid(let reason):
             self = .invalid(reason)
         }
     }
 
-    var isPhysicallyExported: Bool {
+    var isPhysicallyStored: Bool {
         switch self {
-        case .exported, .stale, .invalid: return true
-        case .checking, .notExported, .updateAvailable: return false
+        case .stored, .stale, .invalid: return true
+        case .checking, .notStored, .updateAvailable: return false
         }
     }
 }
@@ -411,10 +376,10 @@ struct AppOperation: Equatable {
         case addingBackup
         case deletingBackup(String)
         case deletingOriginalIPhoneBackup
-        case deletingExportedContribution(VersionChatID)
-        case preparingExportDeletion(VersionChatID)
+        case deletingStoredContribution(VersionChatID)
+        case preparingStoredCopyDeletion(VersionChatID)
         case loadingChats
-        case exportingChat(VersionChatID)
+        case storingChat(VersionChatID)
     }
 
     let id: UUID

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct ExportedChatsListView: View {
+struct ConversationCatalogView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var searchText = ""
     @State private var isShowingUnifiedViewHelp = false
@@ -11,16 +11,16 @@ struct ExportedChatsListView: View {
             header
             Divider()
 
-            if store.isLoadingExportCatalog, store.exportedChats.isEmpty {
+            if store.isLoadingConversationCatalog, store.conversationCatalog.isEmpty {
                 ProgressView("Leyendo el catálogo de conversaciones…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = store.exportPanelError, store.exportedChats.isEmpty {
+            } else if let error = store.conversationPanelError, store.conversationCatalog.isEmpty {
                 UnavailableContentView(
                     "No se puede leer el catálogo de conversaciones",
                     systemImage: "exclamationmark.folder",
                     description: error
                 )
-            } else if store.exportedChats.isEmpty {
+            } else if store.conversationCatalog.isEmpty {
                 UnavailableContentView(
                     "Todavía no hay conversaciones en el catálogo",
                     systemImage: "tray",
@@ -37,9 +37,9 @@ struct ExportedChatsListView: View {
             } else {
                 List(filteredChats) { item in
                     Button {
-                        store.openExport(item.id)
+                        store.openConversation(item.id)
                     } label: {
-                        ExportedChatRow(item: item)
+                        ConversationCatalogRow(item: item)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -70,7 +70,7 @@ struct ExportedChatsListView: View {
                         UnifiedViewHelpView()
                     }
                 }
-                Text(exportCountDescription)
+                Text(conversationCountDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -105,7 +105,7 @@ struct ExportedChatsListView: View {
         .padding(.vertical, 13)
     }
 
-    private var exportCountDescription: String {
+    private var conversationCountDescription: String {
         let count = filteredChats.count
         if !normalizedSearchText.isEmpty {
             return count == 1 ? "1 resultado" : "\(count) resultados"
@@ -117,23 +117,23 @@ struct ExportedChatsListView: View {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var filteredChats: [ExportedChatListItem] {
+    private var filteredChats: [ConversationCatalogItem] {
         let query = normalizedSearchText
-        guard !query.isEmpty else { return store.exportedChats }
+        guard !query.isEmpty else { return store.conversationCatalog }
 
-        return store.exportedChats.filter { item in
+        return store.conversationCatalog.filter { item in
             item.chat.name.localizedCaseInsensitiveContains(query)
                 || item.chat.contactJid.localizedCaseInsensitiveContains(query)
         }
     }
 }
 
-private struct ExportedChatRow: View {
-    let item: ExportedChatListItem
+private struct ConversationCatalogRow: View {
+    let item: ConversationCatalogItem
 
     var body: some View {
         HStack(spacing: 11) {
-            ExportedChatAvatar(photoURL: item.photoURL, name: item.chat.name)
+            ConversationAvatar(photoURL: item.photoURL, name: item.chat.name)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.chat.name)
@@ -149,7 +149,7 @@ private struct ExportedChatRow: View {
             Spacer(minLength: 12)
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(Self.exportDateFormatter.string(from: item.exportedAt))
+                Text(Self.updatedDateFormatter.string(from: item.updatedAt))
                 Text("Actualizada")
             }
             .font(.caption)
@@ -179,7 +179,7 @@ private struct ExportedChatRow: View {
         .joined(separator: " · ")
     }
 
-    private static let exportDateFormatter: DateFormatter = {
+    private static let updatedDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
@@ -188,7 +188,7 @@ private struct ExportedChatRow: View {
     }()
 }
 
-private struct ExportedChatAvatar: View {
+private struct ConversationAvatar: View {
     let photoURL: URL?
     let name: String
 

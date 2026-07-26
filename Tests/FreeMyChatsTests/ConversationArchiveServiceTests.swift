@@ -5,15 +5,15 @@ import XCTest
 @testable import FreeMyChats
 
 final class ConversationArchiveServiceTests: XCTestCase {
-    func testCatalogOpensSingleConversationDirectlyFromItsExport() throws {
+    func testCatalogOpensSingleConversationDirectlyFromItsStoredChat() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "single",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 101,
@@ -27,14 +27,14 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let version = try XCTUnwrap(fixture.session.version(id: "single"))
-        let exported = try version.exportStore.openChat(chatId: 7)
+        let stored = try version.storedChatStore.openChat(chatId: 7)
         let context = try ConversationArchiveService.prepareIncorporation(
-            for: exported.document.chat,
+            for: stored.document.chat,
             in: version,
             session: fixture.session
         )
         let update = try ConversationArchiveService.incorporate(
-            exported,
+            stored,
             source: VersionChatID(versionID: "single", chatID: 7),
             context: context,
             in: fixture.session
@@ -53,8 +53,8 @@ final class ConversationArchiveServiceTests: XCTestCase {
             item.contributionSources,
             [VersionChatID(versionID: "single", chatID: 7)]
         )
-        XCTAssertEqual(item.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
-        XCTAssertEqual(opened.directoryURL.standardizedFileURL, exported.directoryURL.standardizedFileURL)
+        XCTAssertEqual(item.directoryURL.standardizedFileURL, stored.directoryURL.standardizedFileURL)
+        XCTAssertEqual(opened.directoryURL.standardizedFileURL, stored.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
         XCTAssertEqual(opened.record.contributions.first?.messageCount, 1)
         XCTAssertEqual(opened.record.contributions.first?.exclusiveMessageCount, 1)
@@ -67,23 +67,23 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testCatalogOpensCombinedConversationFromMergedChatsDirectory() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 8,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
                     ]
@@ -92,7 +92,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let catalog = try incorporateAllExports(in: fixture)
+        let catalog = try incorporateAllStoredChats(in: fixture)
         let item = try XCTUnwrap(catalog.first)
         let opened = try ConversationArchiveService.openRepairing(
             item: item,
@@ -124,23 +124,23 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testUnifiedViewCompositionReportsSwiftWABackupAPIProgress() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 8,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
                     ]
@@ -150,29 +150,29 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
-        let oldExport = try oldVersion.exportStore.openChat(chatId: 7)
+        let oldStoredChat = try oldVersion.storedChatStore.openChat(chatId: 7)
         let oldContext = try ConversationArchiveService.prepareIncorporation(
-            for: oldExport.document.chat,
+            for: oldStoredChat.document.chat,
             in: oldVersion,
             session: fixture.session
         )
         _ = try ConversationArchiveService.incorporate(
-            oldExport,
+            oldStoredChat,
             source: VersionChatID(versionID: "old", chatID: 7),
             context: oldContext,
             in: fixture.session
         )
 
         let newVersion = try XCTUnwrap(fixture.session.version(id: "new"))
-        let newExport = try newVersion.exportStore.openChat(chatId: 8)
+        let newStoredChat = try newVersion.storedChatStore.openChat(chatId: 8)
         let newContext = try ConversationArchiveService.prepareIncorporation(
-            for: newExport.document.chat,
+            for: newStoredChat.document.chat,
             in: newVersion,
             session: fixture.session
         )
         var phases: [WABackupProgress.Phase] = []
         _ = try ConversationArchiveService.incorporate(
-            newExport,
+            newStoredChat,
             source: VersionChatID(versionID: "new", chatID: 8),
             context: newContext,
             in: fixture.session
@@ -187,20 +187,20 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testStagesOppositeIndividualPerspectiveRelativeToLocalTarget() throws {
         let fixture = try makeLibrary(
-            exports: oppositeIndividualExports()
+            storedChats: oppositeIndividualStoredChats()
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
         let targetVersion = try XCTUnwrap(fixture.session.version(id: "local"))
         let sourceVersion = try XCTUnwrap(fixture.session.version(id: "received"))
-        let targetExport = try targetVersion.exportStore.openChat(chatId: 10)
-        let sourceExport = try sourceVersion.exportStore.openChat(chatId: 20)
+        let targetStoredChat = try targetVersion.storedChatStore.openChat(chatId: 10)
+        let sourceStoredChat = try sourceVersion.storedChatStore.openChat(chatId: 20)
         let target = try ConversationSource(
             id: ConversationSourceID(rawValue: "local"),
-            exportedChat: targetExport
+            storedChat: targetStoredChat
         )
         let source = try ConversationSource(
             id: ConversationSourceID(rawValue: "received"),
-            exportedChat: sourceExport
+            storedChat: sourceStoredChat
         )
         let destination = fixture.rootURL.appendingPathComponent("import-staging")
         var phases: [WABackupProgress.Phase] = []
@@ -230,13 +230,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
     }
 
     func testCreatesInspectsAndExtractsPortableConversationThroughAppBoundary() throws {
-        let fixture = try makeLibrary(exports: oppositeIndividualExports())
+        let fixture = try makeLibrary(storedChats: oppositeIndividualStoredChats())
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let receivedExport = try XCTUnwrap(fixture.session.version(id: "received"))
-            .exportStore.openChat(chatId: 20)
+        let receivedStoredChat = try XCTUnwrap(fixture.session.version(id: "received"))
+            .storedChatStore.openChat(chatId: 20)
         let received = try ConversationSource(
             id: ConversationSourceID(rawValue: "received"),
-            exportedChat: receivedExport
+            storedChat: receivedStoredChat
         )
         let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
         let extractionURL = fixture.rootURL.appendingPathComponent("received-portable")
@@ -270,20 +270,20 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: extracted.documentURL.path))
     }
 
-    func testPortableSourceUsesSameCrossPerspectiveCompositionPathAsLocalExport() throws {
-        let fixture = try makeLibrary(exports: oppositeIndividualExports())
+    func testPortableSourceUsesSameCrossPerspectiveCompositionPathAsLocalStoredChat() throws {
+        let fixture = try makeLibrary(storedChats: oppositeIndividualStoredChats())
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let localExport = try XCTUnwrap(fixture.session.version(id: "local"))
-            .exportStore.openChat(chatId: 10)
-        let receivedExport = try XCTUnwrap(fixture.session.version(id: "received"))
-            .exportStore.openChat(chatId: 20)
+        let localStoredChat = try XCTUnwrap(fixture.session.version(id: "local"))
+            .storedChatStore.openChat(chatId: 10)
+        let receivedStoredChat = try XCTUnwrap(fixture.session.version(id: "received"))
+            .storedChatStore.openChat(chatId: 20)
         let local = try ConversationSource(
             id: ConversationSourceID(rawValue: "local"),
-            exportedChat: localExport
+            storedChat: localStoredChat
         )
         let received = try ConversationSource(
             id: ConversationSourceID(rawValue: "received"),
-            exportedChat: receivedExport
+            storedChat: receivedStoredChat
         )
         let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
         _ = try ConversationArchiveService.createPortableConversationArchive(
@@ -327,20 +327,20 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testStagesOppositeGroupPerspectiveWithSeveralAuthors() throws {
         let fixture = try makeLibrary(
-            exports: oppositeGroupExports()
+            storedChats: oppositeGroupStoredChats()
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
         let targetVersion = try XCTUnwrap(fixture.session.version(id: "local-group"))
         let sourceVersion = try XCTUnwrap(fixture.session.version(id: "received-group"))
-        let targetExport = try targetVersion.exportStore.openChat(chatId: 30)
-        let sourceExport = try sourceVersion.exportStore.openChat(chatId: 40)
+        let targetStoredChat = try targetVersion.storedChatStore.openChat(chatId: 30)
+        let sourceStoredChat = try sourceVersion.storedChatStore.openChat(chatId: 40)
         let target = try ConversationSource(
             id: ConversationSourceID(rawValue: "local-group"),
-            exportedChat: targetExport
+            storedChat: targetStoredChat
         )
         let source = try ConversationSource(
             id: ConversationSourceID(rawValue: "received-group"),
-            exportedChat: sourceExport
+            storedChat: sourceStoredChat
         )
 
         let result = try ConversationArchiveService.stageCrossPerspectiveComposition(
@@ -359,23 +359,23 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testRejectedCrossPerspectiveStagingLeavesNoOutput() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "local",
                     chatID: 10,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Only shared", date: "2026-01-01T10:00:01Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "received",
                     chatID: 20,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 11, text: "Only shared", date: "2026-01-01T10:00:01Z")
                     ]
@@ -383,17 +383,17 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let targetExport = try XCTUnwrap(fixture.session.version(id: "local"))
-            .exportStore.openChat(chatId: 10)
-        let sourceExport = try XCTUnwrap(fixture.session.version(id: "received"))
-            .exportStore.openChat(chatId: 20)
+        let targetStoredChat = try XCTUnwrap(fixture.session.version(id: "local"))
+            .storedChatStore.openChat(chatId: 10)
+        let sourceStoredChat = try XCTUnwrap(fixture.session.version(id: "received"))
+            .storedChatStore.openChat(chatId: 20)
         let target = try ConversationSource(
             id: ConversationSourceID(rawValue: "local"),
-            exportedChat: targetExport
+            storedChat: targetStoredChat
         )
         let source = try ConversationSource(
             id: ConversationSourceID(rawValue: "received"),
-            exportedChat: sourceExport
+            storedChat: sourceStoredChat
         )
         let destination = fixture.rootURL.appendingPathComponent("rejected-staging")
 
@@ -445,26 +445,26 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
-    func testSuccessiveExportsFromSameOwnerBecomeOneConversation() throws {
+    func testSuccessiveStoredChatsFromSameOwnerBecomeOneConversation() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "january",
                     chatID: 7,
                     jid: "34600111222@s.whatsapp.net",
                     name: "Ana",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 101, text: "Mensaje antiguo 1", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 102, text: "Mensaje antiguo 2", date: "2026-01-02T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "july",
                     chatID: 42,
                     jid: "34600111222@s.whatsapp.net",
                     name: "Ana",
-                    exportedAt: "2026-07-10T12:00:00Z",
+                    storedAt: "2026-07-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Mensaje nuevo 1", date: "2026-07-01T10:00:00Z"),
                         MessageFixture(id: 2, text: "Mensaje nuevo 2", date: "2026-07-02T10:00:00Z")
@@ -474,7 +474,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let catalog = try incorporateAllExports(in: fixture)
+        let catalog = try incorporateAllStoredChats(in: fixture)
         let item = try XCTUnwrap(catalog.first)
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -494,24 +494,24 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testOverlappingMessagesAreNotDuplicatedDuringUpdate() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "first",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "second",
                     chatID: 99,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 80, text: "B", date: "2026-01-02T10:00:00Z"),
                         MessageFixture(id: 81, text: "C", date: "2026-02-02T10:00:00Z")
@@ -522,7 +522,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            incorporateAllExports(in: fixture).first
+            incorporateAllStoredChats(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -533,37 +533,37 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(archived.record.contributions.count, 2)
     }
 
-    func testStoredContributionCountsReflectCurrentThreeExportConfiguration() throws {
+    func testStoredContributionCountsReflectThreeStoredChats() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "a",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "b",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 10, text: "B", date: "2026-01-02T10:00:00Z"),
                         MessageFixture(id: 11, text: "C", date: "2026-02-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "c",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-03-10T12:00:00Z",
+                    storedAt: "2026-03-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 20, text: "C", date: "2026-02-01T10:00:00Z"),
                         MessageFixture(id: 21, text: "D", date: "2026-03-01T10:00:00Z")
@@ -573,7 +573,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let item = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let item = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
         let archived = try ConversationArchiveService.open(
             id: item.id,
             paths: fixture.session.paths
@@ -607,13 +607,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testAuthorLIDChangeDoesNotDuplicateMessages() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 1,
@@ -624,12 +624,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
                         )
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 7,
                     jid: "family@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 99,
@@ -652,7 +652,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            incorporateAllExports(in: fixture).first
+            incorporateAllStoredChats(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -668,24 +668,24 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testRemovingOlderContributionKeepsTheNewerCompleteConversation() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
@@ -695,7 +695,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "old", chatID: 7),
@@ -713,7 +713,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(catalog.count, 1)
         XCTAssertEqual(catalog.first?.contributionCount, 1)
         let remainingVersion = try XCTUnwrap(removal.session.version(id: "new"))
-        let remainingDirectory = remainingVersion.exportsURL
+        let remainingDirectory = remainingVersion.storedChatsURL
             .appendingPathComponent("Chats/7", isDirectory: true)
         XCTAssertEqual(conversation.directoryURL, remainingDirectory)
         XCTAssertTrue(
@@ -731,13 +731,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testRemovingContributionSucceedsWhenMaterializedArchiveIsDamaged() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 1,
@@ -748,12 +748,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
                         )
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 2,
@@ -769,7 +769,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            incorporateAllExports(in: fixture).first
+            incorporateAllStoredChats(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -801,24 +801,24 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testRemovingNewerContributionRestoresTheOlderConversation() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
@@ -828,7 +828,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        _ = try incorporateAllExports(in: fixture)
+        _ = try incorporateAllStoredChats(in: fixture)
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "new", chatID: 7),
@@ -844,33 +844,33 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testRemovingOneOfThreeContributionsKeepsACombinedConversation() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "first",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "second",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "third",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-03-10T12:00:00Z",
+                    storedAt: "2026-03-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 3, text: "C", date: "2026-03-01T10:00:00Z")
                     ]
@@ -878,7 +878,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
 
         let removal = try ConversationArchiveService.removeContribution(
             source: VersionChatID(versionID: "second", chatID: 7),
@@ -903,7 +903,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             let version = try XCTUnwrap(removal.session.version(id: versionID))
             XCTAssertFalse(
                 FileManager.default.fileExists(
-                    atPath: version.exportsURL
+                    atPath: version.storedChatsURL
                         .appendingPathComponent("Chats/7/archive.json").path
                 )
             )
@@ -916,13 +916,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testRemovingLastContributionRemovesTheConversation() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "only",
                     chatID: 7,
                     jid: "34600111222@s.whatsapp.net",
                     name: "Ana",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
                     ]
@@ -930,9 +930,9 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
         let onlyVersion = try XCTUnwrap(fixture.session.version(id: "only"))
-        let onlyDirectory = onlyVersion.exportsURL
+        let onlyDirectory = onlyVersion.storedChatsURL
             .appendingPathComponent("Chats/7", isDirectory: true)
         XCTAssertTrue(
             FileManager.default.fileExists(
@@ -965,15 +965,15 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
-    func testUpdatingSingleExportRestoresItsPreparedArchiveRecord() throws {
+    func testUpdatingSingleStoredChatRestoresItsPreparedArchiveRecord() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "only",
                     chatID: 7,
                     jid: "34600111222@s.whatsapp.net",
                     name: "Ana",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
                     ]
@@ -982,19 +982,19 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let originalItem = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let originalItem = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
         let version = try XCTUnwrap(fixture.session.version(id: "only"))
-        let exported = try version.exportStore.openChat(chatId: 7)
+        let stored = try version.storedChatStore.openChat(chatId: 7)
         let context = try ConversationArchiveService.prepareIncorporation(
-            for: exported.document.chat,
+            for: stored.document.chat,
             in: version,
             session: fixture.session
         )
-        let archiveURL = exported.directoryURL.appendingPathComponent("archive.json")
+        let archiveURL = stored.directoryURL.appendingPathComponent("archive.json")
         try FileManager.default.removeItem(at: archiveURL)
 
         let update = try ConversationArchiveService.incorporate(
-            exported,
+            stored,
             source: VersionChatID(versionID: "only", chatID: 7),
             context: context,
             in: fixture.session
@@ -1009,15 +1009,15 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
-    func testPreparedSingleRecordCanBeRestoredAfterAnExportFailure() throws {
+    func testPreparedSingleRecordCanBeRestoredAfterAStoredChatFailure() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "only",
                     chatID: 7,
                     jid: "34600111222@s.whatsapp.net",
                     name: "Ana",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
                     ]
@@ -1026,15 +1026,15 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
         let version = try XCTUnwrap(fixture.session.version(id: "only"))
-        let exported = try version.exportStore.openChat(chatId: 7)
+        let stored = try version.storedChatStore.openChat(chatId: 7)
         let context = try ConversationArchiveService.prepareIncorporation(
-            for: exported.document.chat,
+            for: stored.document.chat,
             in: version,
             session: fixture.session
         )
-        let archiveURL = exported.directoryURL.appendingPathComponent("archive.json")
+        let archiveURL = stored.directoryURL.appendingPathComponent("archive.json")
         try FileManager.default.removeItem(at: archiveURL)
 
         try ConversationArchiveService.restorePreparedRecord(
@@ -1054,23 +1054,23 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testIncorporatingASecondBackupReplacesTheMaterializedArchiveAtomically() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "first",
                     chatID: 10,
                     jid: "34600999888@s.whatsapp.net",
                     name: "Luis",
-                    exportedAt: "2026-03-10T12:00:00Z",
+                    storedAt: "2026-03-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Primero", date: "2026-03-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "second",
                     chatID: 90,
                     jid: "34600999888@s.whatsapp.net",
                     name: "Luis",
-                    exportedAt: "2026-04-10T12:00:00Z",
+                    storedAt: "2026-04-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "Segundo", date: "2026-04-01T10:00:00Z")
                     ]
@@ -1083,33 +1083,33 @@ final class ConversationArchiveServiceTests: XCTestCase {
         let secondSelection = VersionChatID(versionID: "second", chatID: 90)
         let firstVersion = try XCTUnwrap(fixture.session.version(id: "first"))
         let secondVersion = try XCTUnwrap(fixture.session.version(id: "second"))
-        let firstExport = try firstVersion.exportStore.openChat(chatId: 10)
+        let firstStoredChat = try firstVersion.storedChatStore.openChat(chatId: 10)
         let firstContext = try ConversationArchiveService.prepareIncorporation(
-            for: firstExport.document.chat,
+            for: firstStoredChat.document.chat,
             in: firstVersion,
             session: fixture.session
         )
         let first = try ConversationArchiveService.incorporate(
-            firstExport,
+            firstStoredChat,
             source: firstSelection,
             context: firstContext,
             in: fixture.session
         )
-        let secondExport = try secondVersion.exportStore.openChat(chatId: 90)
+        let secondStoredChat = try secondVersion.storedChatStore.openChat(chatId: 90)
         let secondContext = try ConversationArchiveService.prepareIncorporation(
-            for: secondExport.document.chat,
+            for: secondStoredChat.document.chat,
             in: secondVersion,
             session: fixture.session
         )
         let second = try ConversationArchiveService.incorporate(
-            secondExport,
+            secondStoredChat,
             source: secondSelection,
             context: secondContext,
             in: fixture.session
         )
 
         XCTAssertEqual(first.conversation.document.messages.map(\.message), ["Primero"])
-        XCTAssertEqual(first.conversation.directoryURL, firstExport.directoryURL)
+        XCTAssertEqual(first.conversation.directoryURL, firstStoredChat.directoryURL)
         XCTAssertEqual(second.conversation.record.id, first.conversation.record.id)
         XCTAssertEqual(second.addedMessageCount, 1)
         XCTAssertEqual(second.conversation.document.messages.map(\.message), ["Primero", "Segundo"])
@@ -1121,12 +1121,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: firstExport.directoryURL.appendingPathComponent("archive.json").path
+                atPath: firstStoredChat.directoryURL.appendingPathComponent("archive.json").path
             )
         )
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: secondExport.directoryURL.appendingPathComponent("archive.json").path
+                atPath: secondStoredChat.directoryURL.appendingPathComponent("archive.json").path
             )
         )
         XCTAssertFalse(
@@ -1137,23 +1137,23 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testUpdatingAContributionRebuildsTheExistingCombinedConversation() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 7,
                     jid: "group@g.us",
                     name: "Grupo",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
                     ]
@@ -1161,32 +1161,32 @@ final class ConversationArchiveServiceTests: XCTestCase {
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let original = try XCTUnwrap(incorporateAllExports(in: fixture).first)
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
         let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
-        let oldExport = try oldVersion.exportStore.openChat(chatId: 7)
+        let oldStoredChat = try oldVersion.storedChatStore.openChat(chatId: 7)
         let context = try ConversationArchiveService.prepareIncorporation(
-            for: oldExport.document.chat,
+            for: oldStoredChat.document.chat,
             in: oldVersion,
             session: fixture.session
         )
         try write(
-            ExportFixture(
+            StoredChatFixture(
                 versionID: "old",
                 chatID: 7,
                 jid: "group@g.us",
                 name: "Grupo",
-                exportedAt: "2026-03-10T12:00:00Z",
+                storedAt: "2026-03-10T12:00:00Z",
                 messages: [
                     MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
                     MessageFixture(id: 3, text: "C", date: "2026-03-01T10:00:00Z")
                 ]
             ),
-            to: oldVersion.exportsURL
+            to: oldVersion.storedChatsURL
         )
-        let updatedExport = try oldVersion.exportStore.openChat(chatId: 7)
+        let updatedStoredChat = try oldVersion.storedChatStore.openChat(chatId: 7)
 
         let update = try ConversationArchiveService.incorporate(
-            updatedExport,
+            updatedStoredChat,
             source: VersionChatID(versionID: "old", chatID: 7),
             context: context,
             in: fixture.session
@@ -1207,7 +1207,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             let version = try XCTUnwrap(fixture.session.version(id: versionID))
             XCTAssertFalse(
                 FileManager.default.fileExists(
-                    atPath: version.exportsURL
+                    atPath: version.storedChatsURL
                         .appendingPathComponent("Chats/7/archive.json").path
                 )
             )
@@ -1221,28 +1221,28 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testDifferentJIDsRemainSeparateEvenWhenNamesMatch() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "first",
                     chatID: 7,
                     jid: "first@g.us",
                     name: "Familia",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: []
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "second",
                     chatID: 8,
                     jid: "second@g.us",
                     name: "Familia",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: []
                 )
             ]
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let catalog = try incorporateAllExports(in: fixture)
+        let catalog = try incorporateAllStoredChats(in: fixture)
 
         XCTAssertEqual(catalog.count, 2)
         XCTAssertEqual(Set(catalog.map { $0.chat.contactJid }), ["first@g.us", "second@g.us"])
@@ -1250,13 +1250,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testMediaWithSameFilenameAndDifferentContentsRemainDistinct() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 3,
                     jid: "media@g.us",
                     name: "Media",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 1,
@@ -1267,12 +1267,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
                         )
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 4,
                     jid: "media@g.us",
                     name: "Media",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 1,
@@ -1288,7 +1288,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            incorporateAllExports(in: fixture).first
+            incorporateAllStoredChats(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -1303,7 +1303,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
                 == Data("old-photo".utf8)
         })
         let oldSourceURL = try XCTUnwrap(fixture.session.version(id: "old"))
-            .exportsURL
+            .storedChatsURL
             .appendingPathComponent("Chats/3/Media/photo.jpg")
         let sourceFileNumber = try FileManager.default.attributesOfItem(
             atPath: oldSourceURL.path
@@ -1319,13 +1319,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
 
     func testOpenRepairingRebuildsMissingMediaFromContributions() throws {
         let fixture = try makeLibrary(
-            exports: [
-                ExportFixture(
+            storedChats: [
+                StoredChatFixture(
                     versionID: "old",
                     chatID: 3,
                     jid: "media@g.us",
                     name: "Media",
-                    exportedAt: "2026-01-10T12:00:00Z",
+                    storedAt: "2026-01-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 1,
@@ -1336,12 +1336,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
                         )
                     ]
                 ),
-                ExportFixture(
+                StoredChatFixture(
                     versionID: "new",
                     chatID: 4,
                     jid: "media@g.us",
                     name: "Media",
-                    exportedAt: "2026-02-10T12:00:00Z",
+                    storedAt: "2026-02-10T12:00:00Z",
                     messages: [
                         MessageFixture(
                             id: 80,
@@ -1357,7 +1357,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
         let item = try XCTUnwrap(
-            incorporateAllExports(in: fixture).first
+            incorporateAllStoredChats(in: fixture).first
         )
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -1381,18 +1381,18 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: missingURL.path))
     }
 
-    private func makeLibrary(exports: [ExportFixture]) throws -> LibraryFixture {
+    private func makeLibrary(storedChats: [StoredChatFixture]) throws -> LibraryFixture {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let initial = try LibraryService.create(at: rootURL)
         let formatter = ISO8601DateFormatter()
-        let records = try exports.enumerated().map { index, fixture in
+        let records = try storedChats.enumerated().map { index, fixture in
             LibraryVersionRecord(
                 id: fixture.versionID,
                 sourceBackupIdentifier: "iphone-owner",
-                sourceBackupCreationDate: try XCTUnwrap(formatter.date(from: fixture.exportedAt)),
+                sourceBackupCreationDate: try XCTUnwrap(formatter.date(from: fixture.storedAt)),
                 importedAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(index)),
-                exportDirectoryName: fixture.versionID
+                storageDirectoryName: fixture.versionID
             )
         }
         var manifest = initial.manifest
@@ -1401,9 +1401,9 @@ final class ConversationArchiveServiceTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: initial.paths.manifestURL, options: .atomic)
 
-        for fixture in exports {
+        for fixture in storedChats {
             let record = try XCTUnwrap(records.first { $0.id == fixture.versionID })
-            try write(fixture, to: initial.paths.exportURL(for: record))
+            try write(fixture, to: initial.paths.storedChatURL(for: record))
         }
         return LibraryFixture(
             rootURL: rootURL,
@@ -1411,26 +1411,26 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
-    private func oppositeIndividualExports() -> [ExportFixture] {
+    private func oppositeIndividualStoredChats() -> [StoredChatFixture] {
         [
-            ExportFixture(
+            StoredChatFixture(
                 versionID: "local",
                 chatID: 10,
                 jid: "34600000002@s.whatsapp.net",
                 name: "B",
-                exportedAt: "2026-01-10T12:00:00Z",
+                storedAt: "2026-01-10T12:00:00Z",
                 messages: [
                     MessageFixture(id: 1, text: "First shared individual", date: "2026-01-01T10:00:01Z", isFromMe: true),
                     MessageFixture(id: 2, text: "Second shared individual", date: "2026-01-01T10:00:02Z"),
                     MessageFixture(id: 3, text: "Third shared individual", date: "2026-01-01T10:00:03Z", isFromMe: true)
                 ]
             ),
-            ExportFixture(
+            StoredChatFixture(
                 versionID: "received",
                 chatID: 20,
                 jid: "34600000001@s.whatsapp.net",
                 name: "A",
-                exportedAt: "2026-02-10T12:00:00Z",
+                storedAt: "2026-02-10T12:00:00Z",
                 messages: [
                     MessageFixture(id: 11, text: "First shared individual", date: "2026-01-01T10:00:01Z"),
                     MessageFixture(id: 12, text: "Second shared individual", date: "2026-01-01T10:00:02Z", isFromMe: true),
@@ -1442,14 +1442,14 @@ final class ConversationArchiveServiceTests: XCTestCase {
         ]
     }
 
-    private func oppositeGroupExports() -> [ExportFixture] {
+    private func oppositeGroupStoredChats() -> [StoredChatFixture] {
         [
-            ExportFixture(
+            StoredChatFixture(
                 versionID: "local-group",
                 chatID: 30,
                 jid: "family@g.us",
                 name: "Familia",
-                exportedAt: "2026-01-10T12:00:00Z",
+                storedAt: "2026-01-10T12:00:00Z",
                 messages: [
                     MessageFixture(id: 1, text: "First shared group", date: "2026-01-01T10:00:01Z", isFromMe: true),
                     MessageFixture(
@@ -1462,12 +1462,12 @@ final class ConversationArchiveServiceTests: XCTestCase {
                     MessageFixture(id: 3, text: "Third shared group", date: "2026-01-01T10:00:03Z", isFromMe: true)
                 ]
             ),
-            ExportFixture(
+            StoredChatFixture(
                 versionID: "received-group",
                 chatID: 40,
                 jid: "family@g.us",
                 name: "Familia recibida",
-                exportedAt: "2026-02-10T12:00:00Z",
+                storedAt: "2026-02-10T12:00:00Z",
                 messages: [
                     MessageFixture(id: 11, text: "First shared group", date: "2026-01-01T10:00:01Z", authorJID: "34600000001@s.whatsapp.net", authorPhone: "34600000001"),
                     MessageFixture(id: 12, text: "Second shared group", date: "2026-01-01T10:00:02Z", isFromMe: true),
@@ -1480,20 +1480,20 @@ final class ConversationArchiveServiceTests: XCTestCase {
         ]
     }
 
-    private func incorporateAllExports(
+    private func incorporateAllStoredChats(
         in fixture: LibraryFixture
-    ) throws -> [ExportedChatListItem] {
+    ) throws -> [ConversationCatalogItem] {
         for version in fixture.session.versions {
             for chat in version.chats {
                 let source = VersionChatID(versionID: version.id, chatID: chat.id)
-                let exported = try version.exportStore.openChat(chatId: chat.id)
+                let stored = try version.storedChatStore.openChat(chatId: chat.id)
                 let context = try ConversationArchiveService.prepareIncorporation(
                     for: chat,
                     in: version,
                     session: fixture.session
                 )
                 _ = try ConversationArchiveService.incorporate(
-                    exported,
+                    stored,
                     source: source,
                     context: context,
                     in: fixture.session
@@ -1503,8 +1503,8 @@ final class ConversationArchiveServiceTests: XCTestCase {
         return try ConversationArchiveService.catalog(in: fixture.session)
     }
 
-    private func write(_ fixture: ExportFixture, to exportURL: URL) throws {
-        let chatDirectory = exportURL.appendingPathComponent(
+    private func write(_ fixture: StoredChatFixture, to storedChatURL: URL) throws {
+        let chatDirectory = storedChatURL.appendingPathComponent(
             "Chats/\(fixture.chatID)",
             isDirectory: true
         )
@@ -1513,7 +1513,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             withIntermediateDirectories: true
         )
         let chatType = fixture.jid.hasSuffix("@g.us") ? "group" : "individual"
-        let lastDate = fixture.messages.last?.date ?? fixture.exportedAt
+        let lastDate = fixture.messages.last?.date ?? fixture.storedAt
         let messages: [[String: Any]] = fixture.messages.map { message in
             var object: [String: Any] = [
                 "id": message.id,
@@ -1547,8 +1547,8 @@ final class ConversationArchiveServiceTests: XCTestCase {
             }
         }
         let document: [String: Any] = [
-            "schemaVersion": 1,
-            "exportedAt": fixture.exportedAt,
+            "schemaVersion": 2,
+            "storedAt": fixture.storedAt,
             "chat": [
                 "id": fixture.chatID,
                 "contactJid": fixture.jid,
@@ -1609,12 +1609,12 @@ private struct LibraryFixture {
     let session: LibrarySession
 }
 
-private struct ExportFixture {
+private struct StoredChatFixture {
     let versionID: String
     let chatID: Int
     let jid: String
     let name: String
-    let exportedAt: String
+    let storedAt: String
     let messages: [MessageFixture]
 }
 

@@ -43,12 +43,12 @@ su instalación definitiva en la biblioteca ni la interfaz de usuario.
 
 Este documento describe el contrato implementado por SwiftWABackupAPI 5.0.0 para
 componer varias
-exportaciones de una conversación y, sobre esa misma base, intercambiar
+copias guardadas de una conversación y, sobre esa misma base, intercambiar
 conversaciones mediante archivos `.fmcchat`.
 
 La implementación sirve a dos casos con un único motor:
 
-1. **Vista unificada actual:** varias exportaciones de copias locales, normalmente
+1. **Vista unificada actual:** varias copias guardadas de copias locales, normalmente
    desde la misma perspectiva, se deduplican y materializan como una conversación.
 2. **Importación entre personas:** una exportación creada desde otra perspectiva
    se alinea con la conversación local, se reorienta y se incorpora sin duplicar
@@ -61,7 +61,7 @@ integración; los checkouts de `.build` no son fuente editable.
 
 Documentos de contexto:
 
-- `FreeMyChats/docs/fusion-conversaciones-exportadas.md`
+- `FreeMyChats/docs/fusion-conversaciones-portables.md`
 - `FreeMyChats/docs/evaluacion-importacion-conversaciones.md`
 - `FreeMyChats/docs/conversaciones-materializadas.md`
 - `SwiftWABackupAPI/Docs/JSONContract.md`
@@ -98,7 +98,7 @@ perspectiva, se documenta por separado en
 
 SwiftWABackupAPI 5.0.0:
 
-- convertir `ExportedChatDocument` y `Media` en una fuente validada;
+- convertir `StoredChatDocument` y `Media` en una fuente validada;
 - analizar varias fuentes de la misma conversación;
 - inferir si dos fuentes usan la misma perspectiva o perspectivas distintas;
 - resolver autores a participantes canónicos cuando haya evidencia;
@@ -107,7 +107,7 @@ SwiftWABackupAPI 5.0.0:
 - clasificar coincidencias, mensajes exclusivos y relaciones de perspectiva
   resueltas, no resueltas o contradictorias;
 - calcular una decisión y razones de confianza;
-- materializar un único `ExportedChatDocument` desde la perspectiva de una fuente
+- materializar un único `StoredChatDocument` desde la perspectiva de una fuente
   target elegida;
 - reasignar IDs y respuestas;
 - copiar y deduplicar multimedia por contenido;
@@ -124,7 +124,7 @@ SwiftWABackupAPI 5.0.0:
 - Resolver manualmente conflictos mensaje a mensaje.
 - Concatenar conversaciones sin solapamiento demostrado.
 - Inferir teléfonos por sufijos, nombres de agenda o dígitos de un LID.
-- Hacer que SwiftWABackupAPI conozca `library.json`, `Exports`, `Imports` o
+- Hacer que SwiftWABackupAPI conozca `library.json`, `StoredChats`, `Imports` o
   `MergedChats`.
 - Mantener el proyecto Python legado.
 
@@ -133,7 +133,7 @@ SwiftWABackupAPI 5.0.0:
 La implementación se separa en cuatro capas:
 
 ```text
-ExportedChatDocument / directorio portable
+StoredChatDocument / directorio portable
                     │
                     ▼
         ConversationSourceValidator
@@ -160,7 +160,7 @@ PortableConversationArchiveCodec
 ```
 
 El codec portable no implementa un segundo alineador. Una vez abierto, un paquete
-produce el mismo tipo de `ConversationSource` que una exportación local.
+produce el mismo tipo de `ConversationSource` que una copia guardada local.
 
 ## 6. Superficie pública principal
 
@@ -217,11 +217,11 @@ engine con `.conservativeDefault`.
 El uso para la Vista unificada actual debe ser directo:
 
 ```swift
-let sources = localExports.map {
+let sources = localStoredChats.map {
     try ConversationSource(
         id: .init(rawValue: $0.contributionID),
-        document: $0.exported.document,
-        mediaDirectoryURL: $0.exported.mediaDirectoryURL,
+        document: $0.stored.document,
+        mediaDirectoryURL: $0.stored.mediaDirectoryURL,
         conversationIdentityHint: $0.conversationIdentity,
         perspectiveHint: nil,
         stableMessageIDs: $0.stableMessageIDs
@@ -238,7 +238,7 @@ let prepared = try engine.analyze(
 
 let result = try engine.materialize(
     prepared,
-    targetChatID: localExports[0].exported.document.chat.id,
+    targetChatID: localStoredChats[0].stored.document.chat.id,
     destinationDirectory: stagingURL
 )
 ```
@@ -272,7 +272,7 @@ public struct ConversationSourceID: RawRepresentable, Codable, Hashable, Sendabl
 }
 
 public enum ConversationSourceKind: String, Codable, Sendable {
-    case exportedDocument
+    case storedDocument
     case portableDocument
 }
 
@@ -285,7 +285,7 @@ public struct ConversationSource {
 
     public init(
         id: ConversationSourceID,
-        document: ExportedChatDocument,
+        document: StoredChatDocument,
         mediaDirectoryURL: URL,
         conversationIdentityHint: CanonicalParticipantIdentity? = nil,
         perspectiveHint: ConversationPerspectiveHint? = nil,
@@ -297,7 +297,7 @@ public struct ConversationSource {
 El contenido concreto de una fuente es deliberadamente opaco después de
 construirla:
 
-- el inicializador público anterior envuelve un `ExportedChatDocument` v1;
+- el inicializador público anterior envuelve un `StoredChatDocument` v2;
 - `PortableConversationDirectory.makeConversationSource(...)` adapta de forma
   controlada el documento portable al mismo tipo, conserva
   `PortableMessage.id` como ID estable y traduce `PortableMessageAuthor.role` a
@@ -311,13 +311,13 @@ Requisitos:
 - `id` lo asigna el cliente y es único dentro de la composición.
 - No contiene rutas relativas a la biblioteca ni conocimiento de una copia.
 - `sourceDate` representa la instantánea lógica para resolver metadatos mutables;
-  normalmente `document.exportedAt`.
+  normalmente `document.storedAt`.
 - `conversationIdentityHint` describe, solo en un chat individual, identidades
   equivalentes del interlocutor (`contactJid`, phoneJID, LID, teléfono) resueltas
   por el cliente; no describe al usuario de la fuente.
-- Existen inicializadores desde `ExportedChat` y desde documento más directorio.
+- Existen inicializadores desde `StoredChat` y desde documento más directorio.
 - El inicializador valida lo barato; `analyze` ejecuta la validación completa.
-- El mapa de IDs estables puede estar vacío en exportaciones antiguas; una fuente
+- El mapa de IDs estables puede estar vacío en copias guardadas anteriores; una fuente
   portable conserva los suyos desde `chat.json`.
 
 ### 7.2 Pista opcional de perspectiva
@@ -467,7 +467,7 @@ usuario de cada fuente.
 
 ### 10.1 Problema
 
-En exportaciones de la misma persona, un mensaje propio suele aparecer como:
+En copias guardadas de la misma persona, un mensaje propio suele aparecer como:
 
 ```text
 Fuente A: sourceUser
@@ -607,7 +607,7 @@ public enum ConversationEquivalenceStatus: String, Codable, Sendable {
 }
 ```
 
-El nombre visible, `chat.id`, las fechas de exportación y el nombre de archivo no
+El nombre visible, `chat.id`, las fechas de guardado y el nombre de archivo no
 participan.
 
 ## 12. Representación canónica de mensajes
@@ -978,7 +978,7 @@ separados salvo que un ID estable incompatible obligue a rechazar.
 - `replyToPreview`;
 - warning/error de extracción;
 - estado archivado;
-- fecha de exportación.
+- fecha de guardado.
 
 Estas diferencias no crean otro mensaje por sí solas.
 
@@ -1019,7 +1019,7 @@ Reglas:
 
 ```swift
 public struct ConversationMaterializationResult {
-    public let document: ExportedChatDocument
+    public let document: StoredChatDocument
     public let directoryURL: URL
     public let documentURL: URL
     public let mediaDirectoryURL: URL
@@ -1046,7 +1046,7 @@ La salida se orienta respecto a `targetSourceID`, no a una identidad global:
 
 - cronología ascendente;
 - empates resueltos por orden lógico de alineación y después criterio estable;
-- IDs enteros correlativos compatibles con `ExportedChatDocument`;
+- IDs enteros correlativos compatibles con `StoredChatDocument`;
 - mapa completo entero ↔ `ArchiveMessageID`;
 - estabilidad lógica entre reconstrucciones mediante IDs estables, no mediante el
   entero materializado.
@@ -1178,7 +1178,7 @@ public struct PortableConversationDescriptor: Codable, Hashable, Sendable {
     public let contactIdentity: CanonicalParticipantIdentity?
     public let displayName: String
     public let isArchived: Bool
-    public let exportedAt: Date
+    public let storedAt: Date
     public let photoPath: String?
 }
 ```
@@ -1187,7 +1187,7 @@ Invariantes de `PortableConversationDescriptor`:
 
 - grupo: `groupJID` obligatorio y `contactJID/contactIdentity` ausentes;
 - individual: `groupJID` ausente y al menos `contactJID` o `contactIdentity`;
-- `displayName`, `isArchived`, `exportedAt` y `photoPath` son presentación;
+- `displayName`, `isArchived`, `storedAt` y `photoPath` son presentación;
 - el descriptor representa la vista de la fuente y no pretende contener el par
   absoluto de participantes antes de inferir perspectivas.
 
@@ -1213,7 +1213,7 @@ Ejemplo abreviado de manifiesto sin propietario global:
     "groupJID": "1234567890-123456789@g.us",
     "displayName": "Familia",
     "isArchived": false,
-    "exportedAt": "2026-07-22T10:14:00.000Z"
+    "storedAt": "2026-07-22T10:14:00.000Z"
   },
   "messageCount": 1842,
   "firstMessageAt": "2017-02-03T08:00:00.000Z",
@@ -1415,7 +1415,7 @@ No requiere copia de iPhone ni `WhatsAppBackupReader` abierto.
 
 ### 22.2 Conversación ya materializada
 
-Free My Chats puede pasar un `ExportedChatDocument` de `MergedChats` y su `Media`.
+Free My Chats puede pasar un `StoredChatDocument` de `MergedChats` y su `Media`.
 El paquete representa esa conversación visible como una fuente única. No incluye
 las capas internas ni el historial de aportaciones.
 
@@ -1518,7 +1518,7 @@ Garantías:
 - `materialize` no modifica fuentes;
 - el codec crea temporales y mueve el archivo final al terminar;
 - la materialización escribe solo staging;
-- ninguna API borra exportaciones/importaciones del cliente;
+- ninguna API borra copias guardadas ni importaciones del cliente;
 - `.completed` se emite después de validar salida;
 - la transacción entre carpetas de Free My Chats queda fuera de la API.
 
@@ -1669,7 +1669,7 @@ Su contrato detallado está en
 
 - SwiftWABackupAPI contiene la composición N-aria que construye la Vista
   unificada de FreeMyChats.
-- Trabaja con `ExportedChatDocument` v1 y fuentes de la misma perspectiva,
+- Trabaja con `StoredChatDocument` v2 y fuentes de la misma perspectiva,
   declaradas mediante una restricción relacional explícita.
 - Incluye validación, canonización, deduplicación exacta, orden, atribución por
   fuente, impacto de retirada, reconstrucción de IDs/replies, contactos,
@@ -1747,7 +1747,7 @@ contrato ni es necesaria para la corrección.
 ### 29.1 Paridad con fusión local actual
 
 - Una única fuente produce conversación equivalente.
-- Dos exportaciones sucesivas de la misma perspectiva.
+- Dos copias guardadas sucesivas de la misma perspectiva.
 - Solapamiento sin duplicados.
 - Tres aportaciones y conteos exclusivos.
 - LID/JID de un participante cambian entre copias.
@@ -1757,7 +1757,7 @@ contrato ni es necesaria para la corrección.
 - Mismo medio con nombres distintos.
 - Reconstrucción sin una fuente.
 - Orden determinista en empates.
-- Resultado abrible por `ExportedChatDocument`.
+- Resultado abrible por `StoredChatDocument`.
 
 ### 29.2 Inferencia de perspectiva
 
@@ -1940,7 +1940,7 @@ La documentación establece expresamente:
 
 La versión 5.0.0 cumple:
 
-1. La misma API compone exportaciones locales e importadas.
+1. La misma API compone copias guardadas locales y fuentes importadas.
 2. Acepta N fuentes y una fuente target.
 3. Reproduce o mejora todos los casos de Vista unificada actuales.
 4. No requiere identidad global persistida del propietario.
@@ -1958,7 +1958,7 @@ La versión 5.0.0 cumple:
 16. Multimedia se deduplica por SHA-256.
 17. Plan y diagnóstico son persistibles y versionados; la reconstrucción vuelve a
     analizar las fuentes y valida sus digests antes de materializar.
-18. Crea `.fmcchat` desde exportación o materialización sin copia fuente.
+18. Crea `.fmcchat` desde una copia guardada o materialización sin copia fuente.
 19. El paquete no incluye `sourceOwner` obligatorio ni IDs SQLite.
 20. El codec resiste traversal, links, duplicados, corrupción y bombas.
 21. Entradas modificadas entre análisis/aplicación se rechazan.
@@ -1982,7 +1982,7 @@ El agente debe presentar evidencia y pedir decisión antes de:
 - aceptar nombre o proximidad temporal como identidad suficiente;
 - permitir forzar confianza media/baja;
 - usar `stanzaId` como identidad portable;
-- romper lectura de `ExportedChatDocument` v1;
+- cambiar `StoredChatDocument` v2 sin incrementar explícitamente su esquema;
 - sustituir ZIP por otro contenedor;
 - invocar herramientas ZIP del sistema desde la biblioteca;
 - añadir dependencia que cambie plataformas soportadas;

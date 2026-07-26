@@ -1,4 +1,4 @@
-# Fusión de conversaciones exportadas en FreeMyChats
+# Fusión de conversaciones portables en FreeMyChats
 
 ## Estado
 
@@ -26,15 +26,15 @@ Esta última sustituye las propuestas anteriores que exigían persistir una
 identidad global del propietario: la perspectiva se infiere durante el análisis o
 se aporta opcionalmente como parámetro.
 
-La unificación incremental que ya realiza la aplicación con varias exportaciones
+La unificación incremental que ya realiza la aplicación con varias copias guardadas
 locales se mantiene como un perfil específico del mismo motor. El funcionamiento de
-`Exports` y `MergedChats`, incluida su estrategia de mensajes y multimedia, se
+`StoredChats` y `MergedChats`, incluida su estrategia de mensajes y multimedia, se
 explica en [Conversaciones materializadas](conversaciones-materializadas.md).
 
 ## Objetivo
 
-Permitir que una persona incorpore a una conversación del catálogo de chats
-exportados de FreeMyChats los mensajes presentes en otra exportación de la misma
+Permitir que una persona incorpore a una conversación del catálogo de
+FreeMyChats los mensajes presentes en otra exportación portable de la misma
 conversación. Debe funcionar tanto con grupos como con conversaciones
 individuales, conservar la multimedia y permitir deshacer posteriormente cada
 importación.
@@ -48,13 +48,13 @@ copia de iPhone ni intenta reinsertar mensajes en WhatsApp.
 - No se importan los ZIP o TXT producidos por la función nativa de exportación de
   WhatsApp.
 - La correspondencia de mensajes se obtiene alineando el contenido compartido de
-  ambas exportaciones.
+  ambas fuentes.
 - La fusión no depende de `ZSTANZAID` ni de otros identificadores internos y no
   documentados de WhatsApp.
 - Una operación ambigua se detiene: la aplicación no elimina ni combina mensajes
   basándose en una conjetura de baja confianza.
 - Las aportaciones importadas se conservan como capas reversibles y sobreviven a
-  una nueva exportación desde la copia fuente.
+  una nueva copia guardada desde la copia fuente.
 
 ## Experiencia de usuario
 
@@ -65,7 +65,7 @@ En el menú de una conversación del catálogo aparecerá:
 > Crear archivo para compartir…
 
 Esta operación no vuelve a extraer la conversación desde la copia de iPhone. Abre
-la exportación existente, la valida y crea un paquete `.fmcchat` autocontenido.
+la copia guardada existente, la valida y crea un paquete `.fmcchat` autocontenido.
 Debe funcionar incluso cuando ya se haya eliminado la copia fuente.
 
 ### Añadir mensajes
@@ -166,7 +166,7 @@ public struct PortableConversationDescriptor: Codable, Hashable, Sendable {
     public let contactIdentity: CanonicalParticipantIdentity?
     public let displayName: String
     public let isArchived: Bool
-    public let exportedAt: Date
+    public let storedAt: Date
     public let photoPath: String?
 }
 ```
@@ -198,7 +198,7 @@ aliases o pistas operativas. La salida recalcula `isFromMe` respecto a
 
 ## Correspondencia de mensajes por alineación
 
-Cada exportación se trata como una secuencia cronológica. Si dos secuencias
+Cada fuente se trata como una secuencia cronológica. Si dos secuencias
 comparten una zona suficientemente amplia:
 
 ```text
@@ -326,7 +326,7 @@ La política resultante es:
 - Confianza media: `requiresReview`, sin materialización.
 - Confianza baja, secuencias disjuntas o identidad dudosa: rechazar.
 
-Cuando dos exportaciones no tengan un solapamiento suficiente no se puede demostrar
+Cuando dos fuentes no tengan un solapamiento suficiente no se puede demostrar
 que un mensaje no esté duplicado. La proximidad temporal por sí sola no basta.
 
 ## Respuestas
@@ -335,7 +335,7 @@ Cada documento mantiene sus propios `id` y `replyTo`. Durante la materializació
 construyen dos mapas:
 
 ```text
-id de la exportación local    → id combinado
+id de la copia guardada local → id combinado
 id de la exportación recibida → id combinado
 ```
 
@@ -360,7 +360,7 @@ documentos de origen.
 ## Campos mutables
 
 Reacciones, nombres resueltos, ediciones, eliminaciones y otros metadatos pueden
-diferir porque las exportaciones se hicieron en momentos distintos.
+diferir porque las fuentes se capturaron en momentos distintos.
 
 Para un mensaje alineado, la 5.0.0 aplica esta política:
 
@@ -387,7 +387,7 @@ public struct ArchiveMessageID: RawRepresentable, Codable, Hashable, Sendable {
 }
 ```
 
-Este identificador no resuelve la primera correspondencia entre dos exportaciones
+Este identificador no resuelve la primera correspondencia entre dos fuentes
 independientes, pero simplifica las importaciones posteriores, las posiciones de
 lectura, el historial de procedencia y las respuestas dentro de un paquete que ya
 haya sido materializado por una versión compatible.
@@ -414,7 +414,7 @@ Chats/<chatId>/
 `chat.json` y `Media` continúan siendo la vista que abre FreeMyChats. `Base` e
 `Imports` son las fuentes que permiten reconstruirla.
 
-Al reemplazar la exportación base desde una copia de iPhone, Free My Chats
+Al reemplazar la copia guardada base desde una copia de iPhone, Free My Chats
 preserva `Imports`, vuelve a analizar todas las fuentes, instala la nueva vista y
 ejecuta rollback si falla. SwiftWABackupAPI no conoce ni modifica `Imports`,
 `MergedChats`, `archive.json` o `library.json`.
@@ -449,7 +449,7 @@ let result = try engine.compose(
 ```
 
 La API incluye `ArchiveMessageID`, modelos portables separados de
-`ExportedChatDocument` v1, progreso, cancelación y errores estructurados. No
+`StoredChatDocument` v2, progreso, cancelación y errores estructurados. No
 incluye identidad del propietario ni operaciones para aplicar, listar o retirar
 importaciones: esas operaciones pertenecen a Free My Chats.
 
@@ -463,14 +463,14 @@ FreeMyChats no debe implementar un segundo motor de fusión manipulando JSON.
   y `removingImport` a `FreeMyChatsStore`.
 - Incorporar un servicio delgado para elegir destinos y archivos mediante paneles
   de macOS.
-- Refrescar el catálogo de chats exportados, la conversación abierta y la posición
+- Refrescar el catálogo de conversaciones, la conversación abierta y la posición
   de lectura tras materializar.
 - Persistir únicamente la aportación, el paquete validado y cualquier pista
   operativa necesaria; no persistir un propietario global.
 
 ### Interfaz
 
-- Añadir las acciones al menú del encabezado del chat exportado.
+- Añadir las acciones al menú del encabezado de la conversación guardada.
 - Mostrar el análisis en una hoja modal antes de aplicar cambios.
 - Exponer el historial en un inspector o una hoja secundaria, sin cargar cada
   burbuja con información de procedencia.
@@ -484,10 +484,11 @@ La primera versión puede traducir la posición existente mediante el mapa de
 mensajes alineados. A medio plazo conviene que `ChatReadingPositionStore` utilice
 `ArchiveMessageID` en lugar del `Int` local.
 
-## Compatibilidad
+## Formatos actuales
 
-- FreeMyChats sigue abriendo `ExportedChatDocument` v1.
-- El codec crea el contrato portable separado sin migrar el documento persistente.
+- FreeMyChats abre `StoredChatDocument` v2 para las copias guardadas locales.
+- No existen aliases ni migraciones automáticas para el documento v1.
+- El codec crea el contrato portable separado `.fmcchat` v1.
 - Un grupo requiere JID `@g.us`; un individual requiere una identidad canónica
   utilizable del interlocutor, derivada de `contactJid` y aliases opcionales.
 - El paquete no requiere identidad del propietario. Si falta la identidad del
@@ -527,10 +528,10 @@ más abajo siguen pendientes en Free My Chats.
 
 ### Correspondencia
 
-- Dos exportaciones idénticas con identificadores SQLite diferentes.
+- Dos fuentes idénticas con identificadores SQLite diferentes.
 - Solapamiento al principio, al final y en la zona intermedia.
 - Conversaciones con miles de `Sí`, emojis y mensajes repetidos.
-- Mensajes con pequeñas diferencias de fecha entre exportaciones.
+- Mensajes con pequeñas diferencias de fecha entre fuentes.
 - Regiones compartidas cortas o completamente disjuntas.
 - Orden inconsistente y conflictos deliberados.
 
@@ -538,7 +539,7 @@ más abajo siguen pendientes en Free My Chats.
 
 - Grupo con JID estable.
 - Conversación individual vista desde ambos propietarios.
-- Participante representado como JID telefónico en una exportación y LID en otra.
+- Participante representado como JID telefónico en una fuente y LID en otra.
 - Autor no resoluble y nombres de agenda distintos.
 
 ### Contenido
@@ -546,14 +547,14 @@ más abajo siguen pendientes en Free My Chats.
 - Texto, enlaces, ubicaciones, contactos, imágenes, vídeos, documentos y audios.
 - Mismo medio con nombres distintos.
 - Mismo nombre con medios diferentes.
-- Respuestas cuyo original está en ambas exportaciones, en una sola o ausente.
+- Respuestas cuyo original está en ambas fuentes, en una sola o ausente.
 - Reacciones y metadatos mutables diferentes.
 
 ### Persistencia
 
 - Aplicar, listar y retirar una importación.
 - Aplicar varias importaciones solapadas.
-- Volver a exportar la base sin perder importaciones.
+- Actualizar la copia guardada base sin perder importaciones.
 - Cancelar o provocar un fallo en cada fase y comprobar rollback.
 - Abrir bibliotecas antiguas sin migración destructiva.
 
@@ -597,7 +598,7 @@ deshacer.
 ### Fase 5: endurecimiento
 
 Calibrar umbrales, rendimiento, cancelación, paquetes maliciosos, migraciones y
-reexportación de la base.
+actualización de la copia guardada base.
 
 ## Criterios de aceptación
 
@@ -609,13 +610,13 @@ Cumplidos por SwiftWABackupAPI 5.0.0:
 - No duplica los mensajes compartidos ni la multimedia idéntica.
 - Normaliza correctamente `isFromMe` desde la perspectiva local.
 - Conserva y remapea respuestas dentro de los datos disponibles.
-- Las exportaciones existentes continúan siendo legibles.
+- Las copias guardadas con el formato actual continúan siendo legibles.
 
 Pendientes de la Fase 3 de Free My Chats:
 
 - Permite deshacer una importación.
-- Una reexportación de la base no elimina aportaciones importadas.
-- Cualquier fallo deja intacta la exportación anterior.
+- Una actualización de la copia guardada base no elimina aportaciones importadas.
+- Cualquier fallo deja intacta la copia guardada anterior.
 
 ## Riesgos y preguntas abiertas
 
@@ -629,7 +630,7 @@ Pendientes de la Fase 3 de Free My Chats:
   metadatos podría requerir un nuevo algoritmo versionado.
 - Qué estrategia física evita duplicar medios sin complicar la portabilidad y el
   rollback.
-- Cómo convertir exportaciones antiguas cuando la copia fuente ya no existe.
+- La migración de bibliotecas anteriores se realizará manualmente fuera de la app.
 
 El contrato v1 ya está fijado; cualquier ampliación debe conservar el versionado
 y el rechazo seguro.

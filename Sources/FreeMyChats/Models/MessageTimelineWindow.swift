@@ -8,7 +8,7 @@ struct MessageTimelineRow: Identifiable {
     var id: Int { message.id }
 }
 
-/// Keeps the SwiftUI timeline bounded while retaining the full decoded export
+/// Keeps the SwiftUI timeline bounded while retaining the full decoded conversation
 /// as its backing store.
 struct MessageTimelineWindow {
     private let allMessages: [MessageInfo]

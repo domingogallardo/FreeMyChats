@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftWABackupAPI
 
 struct MessageListView: View {
-    let exported: ArchivedConversation
+    let conversation: ArchivedConversation
     let searchText: String
     let initialMessageID: Int?
     let searchNavigationRequest: MessageSearchNavigationRequest?
@@ -30,7 +30,7 @@ struct MessageListView: View {
     @State private var pendingTimelineShift: TimelineShiftRequest?
 
     init(
-        exported: ArchivedConversation,
+        conversation: ArchivedConversation,
         searchText: String,
         initialMessageID: Int?,
         searchNavigationRequest: MessageSearchNavigationRequest?,
@@ -38,7 +38,7 @@ struct MessageListView: View {
         searchSelectionChanged: @escaping (Int?, Int) -> Void,
         saveReadingPosition: @escaping (Int) -> Void
     ) {
-        self.exported = exported
+        self.conversation = conversation
         self.searchText = searchText
         self.initialMessageID = initialMessageID
         self.searchNavigationRequest = searchNavigationRequest
@@ -46,10 +46,10 @@ struct MessageListView: View {
         self.searchSelectionChanged = searchSelectionChanged
         self.saveReadingPosition = saveReadingPosition
 
-        let filteredMessages = MessageSearch.filter(exported.document.messages, query: searchText)
+        let filteredMessages = MessageSearch.filter(conversation.document.messages, query: searchText)
         let initialSelectedIndex = searchText.isEmpty ? nil : MessageSearch.nearestMatchIndex(
             in: filteredMessages,
-            among: exported.document.messages,
+            among: conversation.document.messages,
             to: initialMessageID
         )
         let initialSearchNavigator = MessageSearchNavigator(
@@ -121,7 +121,7 @@ struct MessageListView: View {
                             }
                             MessageRowView(
                                 message: row.message,
-                                mediaDirectoryURL: exported.mediaDirectoryURL,
+                                mediaDirectoryURL: conversation.mediaDirectoryURL,
                                 isHighlighted: highlightedMessageID == row.id
                                     || searchNavigator.selectedMessageID == row.id,
                                 navigateToReply: { messageID in
@@ -224,7 +224,7 @@ struct MessageListView: View {
         replyReturnMessageID = nil
         visibleMessageIDs.removeAll()
 
-        let filteredMessages = MessageSearch.filter(exported.document.messages, query: query)
+        let filteredMessages = MessageSearch.filter(conversation.document.messages, query: query)
         let selectedSearchMessageID = searchNavigator.selectedMessageID
         let target: Int?
         if query.isEmpty {
@@ -253,7 +253,7 @@ struct MessageListView: View {
                 ?? initialMessageID
             let selectedIndex = MessageSearch.nearestMatchIndex(
                 in: filteredMessages,
-                among: exported.document.messages,
+                among: conversation.document.messages,
                 to: selectionAnchor
             )
             searchNavigator = MessageSearchNavigator(

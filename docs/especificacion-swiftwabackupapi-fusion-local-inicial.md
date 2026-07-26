@@ -21,7 +21,7 @@ Este documento define el primer incremento del
 
 SwiftWABackupAPI implementa las funciones que Free My Chats utiliza para
 construir una Vista unificada a
-partir de varias exportaciones locales de la misma conversación y de la misma
+partir de varias copias guardadas locales de la misma conversación y de la misma
 perspectiva.
 
 La implementación reemplaza la parte de composición que vivía en
@@ -56,7 +56,7 @@ Decisiones heredadas:
 - `ConversationCompositionPlan` expone estadísticas e impacto;
 - `ConversationMaterializationResult` devuelve documento, medios y mappings;
 - `ArchiveMessageID` proporciona identidad estable independiente de SQLite;
-- la API no conoce `Exports`, `Imports`, `MergedChats` ni `library.json`.
+- la API no conoce `StoredChats`, `Imports`, `MergedChats` ni `library.json`.
 
 La API 5.0.0 añade sobre esta misma base:
 
@@ -71,15 +71,15 @@ huella exacta y exige una restricción explícita de misma perspectiva.
 
 ## 3. Caso de uso exacto
 
-Free My Chats conserva exportaciones autocontenidas:
+Free My Chats conserva copias guardadas autocontenidas:
 
 ```text
-Exports/<version>/Chats/<chatId>/
+StoredChats/<version>/Chats/<chatId>/
 ├── chat.json
 └── Media/
 ```
 
-Dos o más exportaciones de distintas copias locales pueden representar el mismo
+Dos o más copias guardadas de distintas copias locales pueden representar el mismo
 chat y solaparse:
 
 ```text
@@ -88,7 +88,7 @@ Julio:     C D E F
 Vista: A B C D E F
 ```
 
-Free My Chats selecciona las contribuciones, las abre con `ChatExportStore` y las
+Free My Chats selecciona las contribuciones, las abre con `StoredChatStore` y las
 entrega a SwiftWABackupAPI como `ConversationSource`.
 
 Para este incremento, Free My Chats afirma mediante una restricción explícita que
@@ -97,7 +97,7 @@ identidad de propietario.
 
 ## 4. Alcance incluido
 
-- Una o más fuentes `ExportedChatDocument` v1.
+- Una o más fuentes `StoredChatDocument` v2.
 - Grupos e individuales.
 - N fuentes, no solo dos.
 - Misma perspectiva declarada mediante `ConversationPerspectiveConstraint`.
@@ -142,7 +142,7 @@ El perfil inicial acepta una composición si:
 1. hay al menos una fuente;
 2. todos los `ConversationSourceID` son únicos y no vacíos;
 3. `targetSourceID` existe;
-4. todas las fuentes son `ExportedChatDocument` v1;
+4. todas las fuentes son `StoredChatDocument` v2;
 5. el llamante aporta una restricción `.samePerspective` que incluye todas las
    fuentes;
 6. todas las fuentes pueden demostrarse como la misma conversación mediante las
@@ -183,7 +183,7 @@ public struct ConversationSource {
 
     public init(
         id: ConversationSourceID,
-        document: ExportedChatDocument,
+        document: StoredChatDocument,
         mediaDirectoryURL: URL,
         conversationIdentityHint: CanonicalParticipantIdentity? = nil,
         perspectiveHint: ConversationPerspectiveHint? = nil,
@@ -194,7 +194,7 @@ public struct ConversationSource {
 
 En este incremento:
 
-- `kind == .exportedDocument` siempre;
+- `kind == .storedDocument` siempre;
 - `perspectiveHint` no es necesario cuando se proporciona la restricción de misma
   perspectiva;
 - `conversationIdentityHint` se usa únicamente para resolver alias del
@@ -458,7 +458,7 @@ No contiene:
 - warning/error;
 - nombres visuales;
 - foto;
-- fecha de exportación;
+- fecha de copia guardada;
 - `stanzaId`.
 
 ### 12.2 Normalización
@@ -649,7 +649,7 @@ Recalcular:
 - `lastMessageDate`;
 - `mediaByteCount`.
 
-Free My Chats elige como target la exportación local más reciente para mantener
+Free My Chats elige como target la copia guardada local más reciente para mantener
 nombre/avatar actualizados y conserva el ID de chat materializado mediante el
 parámetro `targetChatID`.
 
@@ -717,7 +717,7 @@ avatar de chat ni fotos de contacto, manteniendo la semántica actual de
 
 ## 19. Escritura de `chat.json`
 
-- Usar `ExportedChatDocument` actual.
+- Usar `StoredChatDocument` actual.
 - `JSONEncoder.dateEncodingStrategy = .iso8601` mientras sea el contrato v1.
 - `.prettyPrinted` y `.sortedKeys` para salida estable.
 - Escribir de forma atómica dentro del staging.
@@ -734,7 +734,7 @@ restricciones de acceso público.
 
 ```swift
 public struct ConversationMaterializationResult {
-    public let document: ExportedChatDocument
+    public let document: StoredChatDocument
     public let directoryURL: URL
     public let documentURL: URL
     public let mediaDirectoryURL: URL
@@ -816,7 +816,7 @@ El engine debe aceptar una fuente para mantener una semántica completa:
 - target obligatorio es esa fuente;
 - no se requiere solapamiento.
 
-Free My Chats seguirá abriendo directamente una única exportación y no necesita
+Free My Chats seguirá abriendo directamente una única copia guardada y no necesita
 crear `MergedChats`; esta capacidad sirve para tests y futuras fuentes portables.
 
 ## 23. Determinismo
@@ -945,14 +945,14 @@ manipulado haga leer o escribir fuera de sus directorios.
 
 ### Free My Chats conserva
 
-- localizar contribuciones en `Exports`;
+- localizar contribuciones en `StoredChats`;
 - resolver alias LID del interlocutor y pasarlos como hint cuando sea necesario;
 - construir `ConversationSourceID` desde sus contribuciones;
 - declarar `.samePerspective`;
 - elegir target y `targetChatID`;
 - almacenar `ConversationArchiveRecord`;
 - escribir `archive.json`;
-- decidir cuándo usar directamente una exportación única;
+- decidir cuándo usar directamente una copia guardada única;
 - mover/reemplazar `MergedChats` de forma atómica;
 - rollback entre manifiestos y carpetas;
 - eliminar aportaciones;
@@ -982,8 +982,8 @@ Flujo implementado:
 let sources = resolvedContributions.map { resolved in
     try ConversationSource(
         id: ConversationSourceID(rawValue: resolved.contribution.id),
-        document: resolved.exported.document,
-        mediaDirectoryURL: resolved.exported.mediaDirectoryURL,
+        document: resolved.stored.document,
+        mediaDirectoryURL: resolved.stored.mediaDirectoryURL,
         conversationIdentityHint: resolved.identityHint,
         stableMessageIDs: resolved.stableMessageIDs
     )
@@ -1066,7 +1066,7 @@ escritura durante el análisis.
 - chat/contactos.
 - policy de metadatos.
 
-Resultado: `ExportedChatDocument` materializado y mappings públicos.
+Resultado: `StoredChatDocument` materializado y mappings públicos.
 
 ### Paso 4 — medios y staging — completado
 
@@ -1092,7 +1092,7 @@ fixtures completos y la biblioteca real.
 
 ### 32.1 Fuente e identidad
 
-- Fuente válida desde `ExportedChat`.
+- Fuente válida desde `StoredChat`.
 - ID vacío/duplicado.
 - Target ausente.
 - Restricción que no cubre todas las fuentes.
@@ -1209,9 +1209,9 @@ casos equivalentes a:
 
 - `testCatalogOpensCombinedConversationFromMergedChatsDirectory` en su parte de
   documento combinado;
-- `testSuccessiveExportsFromSameOwnerBecomeOneConversation`;
+- `testSuccessiveStoredChatsFromSameOwnerBecomeOneConversation`;
 - `testOverlappingMessagesAreNotDuplicatedDuringUpdate`;
-- `testStoredContributionCountsReflectCurrentThreeExportConfiguration`;
+- `testStoredContributionCountsReflectCurrentThreeStoredChatConfiguration`;
 - `testAuthorLIDChangeDoesNotDuplicateMessages`;
 - `testRemovingOlderContributionKeepsTheNewerCompleteConversation`;
 - `testRemovingNewerContributionRestoresTheOlderConversation`;
@@ -1243,7 +1243,7 @@ No copiar dependencias de `LibrarySession` ni rutas de biblioteca a la API.
 
 La versión 5.0.0 cumple:
 
-1. Existe `ConversationSource` público desde `ExportedChatDocument` v1.
+1. Existe `ConversationSource` público desde `StoredChatDocument` v2.
 2. `analyze` acepta N fuentes y exige target.
 3. La misma perspectiva se declara sin identidad global de propietario.
 4. Grupos/individuales distintos se rechazan por identidad, no por nombre.
@@ -1285,7 +1285,7 @@ El agente no debe decidir silenciosamente:
 - instalar directamente en `MergedChats`;
 - escribir manifiestos de Free My Chats;
 - añadir ZIP/dependencias portables en esta entrega;
-- romper `ExportedChatDocument` v1;
+- cambiar `StoredChatDocument` v2 sin incrementar explícitamente su esquema;
 - usar `stanzaId` en la huella.
 
 ## 37. Entrega realizada

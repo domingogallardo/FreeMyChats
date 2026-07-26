@@ -44,13 +44,13 @@ final class LibraryModelsTests: XCTestCase {
 
     func testUnifiedViewCreationCopyExplainsThatSavedCopiesRemainSeparate() {
         XCTAssertEqual(
-            UnifiedViewPresentation.exportTitle(
+            UnifiedViewPresentation.additionTitle(
                 chatName: "Familia",
                 existingContributionCount: 1
             ),
             "¿Crear una Vista unificada de “Familia”?"
         )
-        let message = UnifiedViewPresentation.exportMessage(
+        let message = UnifiedViewPresentation.additionMessage(
             existingContributionCount: 1,
             sourceMessageCount: 900
         )
@@ -60,20 +60,20 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
         XCTAssertTrue(message.contains("se han añadido realmente"))
         XCTAssertEqual(
-            UnifiedViewPresentation.exportButtonTitle(existingContributionCount: 1),
+            UnifiedViewPresentation.additionButtonTitle(existingContributionCount: 1),
             "Crear Vista unificada"
         )
     }
 
     func testUnifiedViewUpdateCopyExplainsThatEverySavedCopyRemainsSeparate() {
         XCTAssertEqual(
-            UnifiedViewPresentation.exportTitle(
+            UnifiedViewPresentation.additionTitle(
                 chatName: "Familia",
                 existingContributionCount: 2
             ),
             "¿Actualizar la Vista unificada de “Familia”?"
         )
-        let message = UnifiedViewPresentation.exportMessage(
+        let message = UnifiedViewPresentation.additionMessage(
             existingContributionCount: 2,
             sourceMessageCount: 900
         )
@@ -83,28 +83,9 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
         XCTAssertTrue(message.contains("se mostrarán una sola vez"))
         XCTAssertEqual(
-            UnifiedViewPresentation.exportButtonTitle(existingContributionCount: 2),
+            UnifiedViewPresentation.additionButtonTitle(existingContributionCount: 2),
             "Añadir y actualizar"
         )
-    }
-
-    func testContributionDecodesLegacyManifestWithoutStoredMessageCounts() throws {
-        let data = Data(
-            """
-            {
-              "id": "legacy-contribution",
-              "source": { "versionID": "old", "chatID": 7 },
-              "exportedAt": "2026-01-10T12:00:00Z"
-            }
-            """.utf8
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        let contribution = try decoder.decode(ConversationContribution.self, from: data)
-
-        XCTAssertNil(contribution.messageCount)
-        XCTAssertNil(contribution.exclusiveMessageCount)
     }
 
     func testDeletingOneOfTwoSavedCopiesExplainsThatUnifiedViewDisappears() {
@@ -187,13 +168,13 @@ final class LibraryModelsTests: XCTestCase {
         )
     }
 
-    func testLibraryPathsNamespaceSourcesAndExportsByVersion() {
+    func testLibraryPathsNamespaceSourcesAndStoredChatsByVersion() {
         let root = URL(fileURLWithPath: "/tmp/My Library", isDirectory: true)
         let paths = LibraryPaths(rootURL: root)
 
         XCTAssertEqual(paths.rootURL.path, "/tmp/My Library")
         XCTAssertEqual(paths.sourcesURL.path, "/tmp/My Library/Sources")
-        XCTAssertEqual(paths.exportsURL.path, "/tmp/My Library/Exports")
+        XCTAssertEqual(paths.storedChatsURL.path, "/tmp/My Library/StoredChats")
         XCTAssertEqual(paths.mergedChatsURL.path, "/tmp/My Library/MergedChats")
         XCTAssertEqual(paths.manifestURL.path, "/tmp/My Library/library.json")
         XCTAssertEqual(paths.backupURL(for: "july").path, "/tmp/My Library/Sources/july/Backup")
@@ -206,13 +187,12 @@ final class LibraryModelsTests: XCTestCase {
             sourceBackupIdentifier: "iphone-id",
             sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
             importedAt: Date(timeIntervalSince1970: 1_720_000_100),
-            exportDirectoryName: "Copia 2024-07-03 11.46"
+            storageDirectoryName: "Copia 2024-07-03 11.46"
         )
         XCTAssertEqual(
-            paths.exportURL(for: record).path,
-            "/tmp/My Library/Exports/Copia 2024-07-03 11.46"
+            paths.storedChatURL(for: record).path,
+            "/tmp/My Library/StoredChats/Copia 2024-07-03 11.46"
         )
-        XCTAssertEqual(paths.legacyExportURL(for: "july").path, "/tmp/My Library/Exports/july")
     }
 
     func testResolvingVersionBackupSelectionReturnsLibraryRoot() throws {
@@ -238,7 +218,7 @@ final class LibraryModelsTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.manifestURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.sourcesURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.exportsURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: session.paths.storedChatsURL.path))
         XCTAssertTrue(session.versions.isEmpty)
     }
 
@@ -262,12 +242,13 @@ final class LibraryModelsTests: XCTestCase {
             id: "july",
             sourceBackupIdentifier: "iphone-id",
             sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
-            importedAt: Date(timeIntervalSince1970: 1_720_000_100)
+            importedAt: Date(timeIntervalSince1970: 1_720_000_100),
+            storageDirectoryName: "Copia 2024-07-03 11.46"
         )
         let version = LibraryVersionSession(
             record: record,
             backupURL: paths.backupURL(for: record.id),
-            exportsURL: paths.exportURL(for: record),
+            storedChatsURL: paths.storedChatURL(for: record),
             backup: nil,
             reader: nil,
             chats: [],
@@ -284,7 +265,7 @@ final class LibraryModelsTests: XCTestCase {
         )
     }
 
-    func testLibraryOpensExportsAfterSourceBackupWasDeleted() throws {
+    func testLibraryOpensStoredChatsAfterSourceBackupWasDeleted() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -294,7 +275,8 @@ final class LibraryModelsTests: XCTestCase {
             id: "july",
             sourceBackupIdentifier: "iphone-id",
             sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
-            importedAt: Date(timeIntervalSince1970: 1_720_000_100)
+            importedAt: Date(timeIntervalSince1970: 1_720_000_100),
+            storageDirectoryName: "Copia 2024-07-03 11.46"
         )
         var manifest = session.manifest
         manifest.versions = [version]
@@ -303,8 +285,8 @@ final class LibraryModelsTests: XCTestCase {
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: session.paths.manifestURL, options: .atomic)
 
-        let legacyExportURL = session.paths.legacyExportURL(for: version.id)
-        let chatDirectory = legacyExportURL
+        let storedChatsURL = session.paths.storedChatURL(for: version)
+        let chatDirectory = storedChatsURL
             .appendingPathComponent("Chats/44", isDirectory: true)
         try FileManager.default.createDirectory(
             at: chatDirectory.appendingPathComponent("Media", isDirectory: true),
@@ -313,8 +295,8 @@ final class LibraryModelsTests: XCTestCase {
         try Data(
             """
             {
-              "schemaVersion": 1,
-              "exportedAt": "2026-07-12T12:00:00Z",
+              "schemaVersion": 2,
+              "storedAt": "2026-07-12T12:00:00Z",
               "chat": {
                 "id": 44,
                 "contactJid": "family@g.us",
@@ -329,11 +311,6 @@ final class LibraryModelsTests: XCTestCase {
             }
             """.utf8
         ).write(to: chatDirectory.appendingPathComponent("chat.json"))
-        var hiddenLegacyExportURL = chatDirectory
-        var hiddenLegacyValues = URLResourceValues()
-        hiddenLegacyValues.isHidden = true
-        try hiddenLegacyExportURL.setResourceValues(hiddenLegacyValues)
-
         let reopened = try LibraryService.open(selectedURL: root)
 
         XCTAssertEqual(reopened.versions.count, 1)
@@ -341,50 +318,17 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(reopened.versions.first?.backupByteCount, 0)
         XCTAssertEqual(reopened.versions.first?.chats.first?.name, "Familia")
         XCTAssertEqual(
-            reopened.versions.first?.exportsURL.lastPathComponent,
+            reopened.versions.first?.storedChatsURL.lastPathComponent,
             "Copia 2024-07-03 11.46"
         )
-        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyExportURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storedChatsURL.path))
         XCTAssertEqual(
-            try reopened.versions.first?.exportStore.openChat(chatId: 44).document.chat.id,
+            try reopened.versions.first?.storedChatStore.openChat(chatId: 44).document.chat.id,
             44
-        )
-
-        let reopenedVersion = try XCTUnwrap(reopened.versions.first)
-        let catalogOnlyVersion = LibraryVersionSession(
-            record: reopenedVersion.record,
-            backupURL: reopenedVersion.backupURL,
-            exportsURL: reopenedVersion.exportsURL,
-            backup: nil,
-            reader: nil,
-            chats: [],
-            backupByteCount: 0
-        )
-        let catalogOnlySession = LibrarySession(
-            paths: reopened.paths,
-            manifest: reopened.manifest,
-            versions: [catalogOnlyVersion]
-        )
-        var hiddenExportURL = reopenedVersion.exportsURL
-            .appendingPathComponent("Chats/44", isDirectory: true)
-        var hiddenValues = URLResourceValues()
-        hiddenValues.isHidden = true
-        try hiddenExportURL.setResourceValues(hiddenValues)
-        let invalidExportURL = reopenedVersion.exportsURL
-            .appendingPathComponent("Chats/45", isDirectory: true)
-        try FileManager.default.createDirectory(at: invalidExportURL, withIntermediateDirectories: true)
-        try Data("{}".utf8).write(to: invalidExportURL.appendingPathComponent("chat.json"))
-
-        let catalog = LibraryService.exportCatalog(in: catalogOnlySession)
-
-        XCTAssertEqual(catalog.map(\.id.chatID), [44])
-        XCTAssertEqual(catalog.first?.chat.name, "Familia")
-        XCTAssertFalse(
-            try hiddenExportURL.resourceValues(forKeys: [.isHiddenKey]).isHidden ?? true
         )
     }
 
-    func testDeletingLastExportOfDeletedSourceRemovesEveryVersionTrace() throws {
+    func testDeletingLastStoredChatOfDeletedSourceRemovesEveryVersionTrace() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -395,7 +339,7 @@ final class LibraryModelsTests: XCTestCase {
             sourceBackupIdentifier: "iphone-id",
             sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
             importedAt: Date(timeIntervalSince1970: 1_720_000_100),
-            exportDirectoryName: "Copia 2024-07-03 11.46"
+            storageDirectoryName: "Copia 2024-07-03 11.46"
         )
         var manifest = session.manifest
         manifest.versions = [version]
@@ -411,12 +355,12 @@ final class LibraryModelsTests: XCTestCase {
         )
         try Data("photo".utf8).write(to: sourceTraceURL)
 
-        let exportURL = session.paths.exportURL(for: version)
-        try writeExportedChat(id: 44, name: "Familia", to: exportURL)
-        try writeExportedChat(id: 45, name: "Amigos", to: exportURL)
+        let storedChatURL = session.paths.storedChatURL(for: version)
+        try writeStoredChat(id: 44, name: "Familia", to: storedChatURL)
+        try writeStoredChat(id: 45, name: "Amigos", to: storedChatURL)
 
         let reopened = try LibraryService.open(selectedURL: root)
-        let afterFirstDeletion = try LibraryService.deleteExportedChat(
+        let afterFirstDeletion = try LibraryService.deleteStoredChat(
             VersionChatID(versionID: version.id, chatID: 44),
             from: reopened
         )
@@ -426,19 +370,11 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourceTraceURL.path))
         XCTAssertFalse(
             FileManager.default.fileExists(
-                atPath: exportURL.appendingPathComponent("Chats/44").path
+                atPath: storedChatURL.appendingPathComponent("Chats/44").path
             )
         )
 
-        let legacyTraceURL = session.paths.legacyExportURL(for: version.id)
-            .appendingPathComponent("orphan.txt")
-        try FileManager.default.createDirectory(
-            at: legacyTraceURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try Data("legacy".utf8).write(to: legacyTraceURL)
-
-        let afterLastDeletion = try LibraryService.deleteExportedChat(
+        let afterLastDeletion = try LibraryService.deleteStoredChat(
             VersionChatID(versionID: version.id, chatID: 45),
             from: afterFirstDeletion
         )
@@ -450,59 +386,18 @@ final class LibraryModelsTests: XCTestCase {
                 atPath: session.paths.backupURL(for: version.id).deletingLastPathComponent().path
             )
         )
-        XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
-        XCTAssertFalse(
-            FileManager.default.fileExists(
-                atPath: session.paths.legacyExportURL(for: version.id).path
-            )
-        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storedChatURL.path))
         XCTAssertFalse(
             try FileManager.default.contentsOfDirectory(atPath: root.path)
-                .contains { $0.hasPrefix(".deleting-export-") }
+                .contains { $0.hasPrefix(".deleting-stored-chat-") }
         )
     }
 
-    func testOpeningLibraryMovesProfileCatalogOutOfExports() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let session = try LibraryService.create(at: root)
-        let version = LibraryVersionRecord(
-            id: "july",
-            sourceBackupIdentifier: "iphone-id",
-            sourceBackupCreationDate: Date(timeIntervalSince1970: 1_720_000_000),
-            importedAt: Date(timeIntervalSince1970: 1_720_000_100)
-        )
-        var manifest = session.manifest
-        manifest.versions = [version]
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(manifest).write(to: session.paths.manifestURL, options: .atomic)
-
-        let legacyPhotoURL = session.paths.legacyExportURL(for: version.id)
-            .appendingPathComponent("ChatProfilePhotos", isDirectory: true)
-            .appendingPathComponent("chat_44.jpg")
-        try FileManager.default.createDirectory(
-            at: legacyPhotoURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try Data("photo".utf8).write(to: legacyPhotoURL)
-
-        let reopened = try LibraryService.open(selectedURL: root)
-        let migratedPhotoURL = reopened.paths.profilePhotosURL(for: version.id)
-            .appendingPathComponent("chat_44.jpg")
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: migratedPhotoURL.path))
-        XCTAssertEqual(try Data(contentsOf: migratedPhotoURL), Data("photo".utf8))
-        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: reopened.paths.exportsURL.path).isEmpty)
-    }
-
-    func testExportDisplayStatePreservesUnavailableAndInvalidStates() {
-        XCTAssertEqual(ChatExportDisplayState(.notExported), .notExported)
-        XCTAssertEqual(ChatExportDisplayState(.invalid(reason: "broken")), .invalid("broken"))
-        XCTAssertFalse(ChatExportDisplayState.notExported.isPhysicallyExported)
-        XCTAssertTrue(ChatExportDisplayState.invalid("broken").isPhysicallyExported)
+    func testStoredChatDisplayStatePreservesUnavailableAndInvalidStates() {
+        XCTAssertEqual(StoredChatDisplayState(.notStored), .notStored)
+        XCTAssertEqual(StoredChatDisplayState(.invalid(reason: "broken")), .invalid("broken"))
+        XCTAssertFalse(StoredChatDisplayState.notStored.isPhysicallyStored)
+        XCTAssertTrue(StoredChatDisplayState.invalid("broken").isPhysicallyStored)
     }
 
     func testChatListCanSortLargestMediaSizeFirst() throws {
@@ -838,8 +733,8 @@ final class LibraryModelsTests: XCTestCase {
         return try decoder.decode(MessageInfo.self, from: data)
     }
 
-    private func writeExportedChat(id: Int, name: String, to exportURL: URL) throws {
-        let chatDirectory = exportURL.appendingPathComponent(
+    private func writeStoredChat(id: Int, name: String, to storedChatURL: URL) throws {
+        let chatDirectory = storedChatURL.appendingPathComponent(
             "Chats/\(id)",
             isDirectory: true
         )
@@ -850,8 +745,8 @@ final class LibraryModelsTests: XCTestCase {
         try Data(
             """
             {
-              "schemaVersion": 1,
-              "exportedAt": "2026-07-12T12:00:00Z",
+              "schemaVersion": 2,
+              "storedAt": "2026-07-12T12:00:00Z",
               "chat": {
                 "id": \(id),
                 "contactJid": "chat-\(id)@g.us",
