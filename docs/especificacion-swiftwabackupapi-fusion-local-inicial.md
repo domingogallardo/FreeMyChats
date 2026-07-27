@@ -8,7 +8,7 @@ la Vista unificada local y conserva la instalación, los manifiestos y el
 rollback de su biblioteca.
 
 El documento se mantiene como especificación de la semántica exacta del perfil
-`currentUnifiedView`. Las ampliaciones que aquí figuraban como futuras
+`currentUnifiedView`. Las ampliaciones posteriores de esta especificación
 —diagnóstico y materialización entre perspectivas y `.fmcchat` v1— también están
 implementadas en la API 5.0.0, pero pertenecen al perfil
 `conservativeCrossPerspective` y al codec portable; no modifican las reglas
@@ -313,7 +313,7 @@ utiliza para construir la Vista unificada local.
 - mapas de mensajes fuente a grupo lógico;
 - traducción provisional de respuestas;
 - IDs estables elegidos;
-- nombres materiales previstos.
+- nombres de salida calculados.
 
 El cliente solo accede al plan:
 
@@ -592,9 +592,9 @@ Además, el resultado devuelve:
 public let stableMessageIDsByMaterializedID: [Int: ArchiveMessageID]
 ```
 
-Free My Chats podrá persistir estos mapas en una fase posterior. Si no los
-persiste, la siguiente reconstrucción puede generar nuevos UUID; eso no afecta a
-la deduplicación inicial, pero sí limita la estabilidad de lectura futura.
+Free My Chats 2.0.0 no persiste estos mapas. Cada reconstrucción puede generar
+nuevos UUID; eso no afecta a la deduplicación inicial, pero impide traducir la
+posición de lectura mediante `ArchiveMessageID`.
 
 ## 16. Remapeo de respuestas
 
@@ -629,8 +629,9 @@ El contenido base procede del representante. Para mantener paridad:
 - reply: remapeado desde el representante;
 - medio: contenido del grupo materializado y nombre reescrito.
 
-No implementar todavía “la fuente más reciente gana” para cada metadato si cambia
-la salida vigente. El plan puede registrar diferencias para una política futura.
+El perfil conserva la política vigente y no aplica “la fuente más reciente gana”
+a cada metadato. El perfil entre perspectivas usa su propia política de
+representante y el plan registra las diferencias pertinentes.
 
 ### 17.2 Chat
 
@@ -803,7 +804,7 @@ public struct ConversationRemovalImpact: Codable, Equatable, Sendable {
 ```
 
 `removedMessageCount` equivale a los grupos exclusivos de esa fuente. Para obtener
-el resultado físico, Free My Chats volverá a analizar/materializar las fuentes
+el resultado físico, Free My Chats vuelve a analizar y materializar las fuentes
 restantes.
 
 ## 22. Una sola fuente
@@ -816,8 +817,9 @@ El engine debe aceptar una fuente para mantener una semántica completa:
 - target obligatorio es esa fuente;
 - no se requiere solapamiento.
 
-Free My Chats seguirá abriendo directamente una única copia guardada y no necesita
-crear `MergedChats`; esta capacidad sirve para tests y futuras fuentes portables.
+Free My Chats abre directamente una única copia guardada cuando no hay
+importaciones y no crea `MergedChats`. La capacidad de una sola fuente también se
+usa en pruebas y en el codec portable.
 
 ## 23. Determinismo
 
@@ -1096,7 +1098,7 @@ fixtures completos y la biblioteca real.
 - ID vacío/duplicado.
 - Target ausente.
 - Restricción que no cubre todas las fuentes.
-- Variante de restricción aún no soportada.
+- Variante de restricción rechazada por el perfil local.
 - Grupo mismo JID.
 - Grupo distinto/nombre igual.
 - Individual mismo phoneJID.

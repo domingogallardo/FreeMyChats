@@ -1,9 +1,10 @@
 # Especificación para SwiftWABackupAPI: motor general de fusión y conversaciones portables
 
-## Estado de implementación — 23 de julio de 2026
+## Estado de implementación — Free My Chats 2.0.0
 
-SwiftWABackupAPI 5.0.0 está publicada y contiene los incrementos local,
-diagnóstico, de materialización entre perspectivas y el contrato portable v1:
+SwiftWABackupAPI introdujo en la 5.0.0 los incrementos local, diagnóstico, de
+materialización entre perspectivas y el contrato portable v1. Free My Chats
+2.0.0 consume la API 6.0.0 y completa su integración:
 
 - Free My Chats construye su Vista unificada actual mediante
   `ConversationCompositionEngine` y conserva instalación/rollback.
@@ -13,8 +14,9 @@ diagnóstico, de materialización entre perspectivas y el contrato portable v1:
   `targetSourceID`, sin persistir una identidad global del propietario.
 - Se materializan IDs, replies, reacciones, contactos y multimedia en staging;
   una decisión ambigua o rechazada no escribe.
-- Existe una ruta interna de staging en Free My Chats, todavía sin interfaz ni
-  persistencia de aportaciones recibidas.
+- Free My Chats registra las aportaciones recibidas en `ImportedChats`, instala
+  la materialización con rollback y permite consultarlas o retirarlas desde la
+  interfaz.
 - SwiftWABackupAPI implementa los modelos v1 y
   `PortableConversationArchiveCodec`: creación, inspección, extracción y apertura
   validada de `.fmcchat`, con hashes, límites configurables, rechazo de rutas
@@ -28,16 +30,16 @@ diagnóstico, de materialización entre perspectivas y el contrato portable v1:
 - Las fichas y fotos de contacto solo se incluyen para participantes que la
   fuente demuestra que no son su usuario; los contactos no demostrables se
   omiten para no filtrar indirectamente la identidad del propietario.
-- La regresión pasa con 149 pruebas de API y 57 de aplicación; incluye fixtures
-  sintéticos para perspectivas iguales/opuestas, composición N-aria, mensajes
+- La regresión publicada de la API pasa 149 pruebas y la aplicación contiene 62
+  pruebas. Incluyen fixtures sintéticos para perspectivas iguales/opuestas,
+  composición N-aria, mensajes
   débiles, offsets, multimedia, replies, reacciones, seguridad ZIP, privacidad y
   rechazo seguro. Dos pruebas opcionales validan en solo lectura tanto la Vista
   unificada como un ciclo portable real sobre la biblioteca de referencia.
 
-El siguiente incremento activo en Free My Chats es la **Fase 3: integración
-persistente**.
-Todavía no están implementados el registro reversible de aportaciones portables,
-su instalación definitiva en la biblioteca ni la interfaz de usuario.
+La Fase 3 de integración persistente está incluida en Free My Chats 2.0.0:
+registro reversible de aportaciones portables, instalación definitiva en la
+biblioteca, reconstrucción al retirarlas e interfaz de usuario.
 
 ## 1. Destinatario y propósito
 
@@ -498,7 +500,7 @@ Para cada fuente adicional, generar candidatos contra el target mediante:
 - orden relativo.
 
 La dirección y autor se usan como evidencia, pero una etiqueta `.sourceUser` de
-una fuente no se compara todavía como identidad absoluta.
+una fuente no representa una identidad absoluta.
 
 Solo pasan a ancla las firmas fuertes únicas en ambas secuencias o los IDs
 estables compatibles, dentro de la tolerancia temporal. El engine obtiene la
@@ -1660,7 +1662,7 @@ El informe anonimizado expone:
 - comportamiento conservador ante mensajes repetitivos;
 - coberturas target y fuente.
 
-## 28. Plan de implementación
+## 28. Implementación por fases
 
 ### Incremento inicial — composición local y paridad con FreeMyChats — IMPLEMENTADO
 
@@ -1679,10 +1681,10 @@ Su contrato detallado está en
 - La paridad funcional y el determinismo se validan con fixtures sintéticos y la
   biblioteca real en modo de solo lectura.
 
-El perfil local no infiere perspectivas ni procesa `.fmcchat`; esas capacidades
-se añaden en los componentes posteriores sin introducir identidad global del
-propietario. La relación `samePerspective` es un dato de la operación, no una
-identidad persistida.
+El perfil local no infiere perspectivas ni procesa `.fmcchat`; el perfil
+conservador y el codec portable proporcionan esas capacidades sin introducir
+identidad global del propietario. La relación `samePerspective` es un dato de la
+operación, no una identidad persistida.
 
 ### Fase 0 de la evolución portable — núcleo diagnóstico — IMPLEMENTADA
 
@@ -1712,26 +1714,28 @@ identidad persistida.
 
 La implementación usa ZIPFoundation 0.9.20 encapsulada dentro del codec. El ZIP
 se inspecciona antes de extraer, solo admite los ficheros canónicos declarados y
-el directorio extraído vuelve a validarse. Free My Chats dispone ya de wrappers
-internos para crear, inspeccionar y extraer, pero todavía no registra el
-resultado como aportación de biblioteca.
+el directorio extraído vuelve a validarse. Free My Chats usa wrappers internos
+para crear, inspeccionar y extraer, y registra el resultado validado como
+aportación de biblioteca.
 
-### Fase 3 — integración persistente entre perspectivas — PENDIENTE
+### Fase 3 — integración persistente entre perspectivas — IMPLEMENTADA
 
-- Importación persistida como fuente portable.
-- Instalación/rollback dentro de la biblioteca.
-- Varias importaciones y reconstrucción.
-- Evidencia persistible.
-- Interfaz de selección, diagnóstico y confirmación.
+- Free My Chats persiste cada importación como fuente portable en
+  `ImportedChats`.
+- La instalación en `MergedChats` dispone de rollback.
+- Varias importaciones y la retirada reconstruyen desde las fuentes conservadas.
+- `ConversationArchiveRecord` registra procedencia, digests e impacto por
+  aportación.
+- La interfaz permite seleccionar, importar, listar, abrir en Finder y retirar.
 
 La orientación target, las pistas opcionales y el staging previo a instalación
-ya están implementados en la Fase 1.
+proceden de la Fase 1.
 
-La primera implementación de esta fase no requiere cambios en
-SwiftWABackupAPI 5.0.0. Free My Chats abre de nuevo cada fuente persistida,
-ejecuta `analyze` y materializa una preparación recién validada. Una futura API
-para reutilizar evidencia podría optimizar ese recálculo, pero no forma parte del
-contrato ni es necesaria para la corrección.
+Esta fase no añade operaciones de biblioteca a SwiftWABackupAPI. Free My Chats
+abre de nuevo cada fuente persistida,
+ejecuta `analyze` y materializa una preparación recién validada. El contrato
+actual no reutiliza evidencia entre ejecuciones y recalcula la composición para
+evitar mapeos obsoletos.
 
 ### Fase 4 — endurecimiento y release — IMPLEMENTADA
 

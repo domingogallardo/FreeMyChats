@@ -38,7 +38,8 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
   en el catálogo.
 - Antes de añadir una copia, la confirmación indica cuántos mensajes contiene
   y cuántos puede añadir como máximo; al terminar muestra la cifra incorporada realmente.
-  Antes de borrar, indica al instante cuántos mensajes exclusivos desaparecerán.
+  Antes de borrar, indica al instante cuántos mensajes exclusivos deja de aportar
+  esa copia.
 - Identificación por JID y tipo de chat, deduplicación de mensajes coincidentes y
   conservación de cada copia como aportación reconstruible.
 - Indicador de actividad mientras se añade un chat a la biblioteca.
@@ -171,7 +172,7 @@ Abre **Terminal** desde `Aplicaciones > Utilidades > Terminal`, copia este coman
 xcode-select --install
 ```
 
-macOS mostrará una ventana para instalar las herramientas de desarrollo. Si indica que ya están instaladas, continúa con el siguiente paso.
+macOS abre una ventana para instalar las herramientas de desarrollo. Si indica que ya están instaladas, continúa con el paso siguiente.
 
 ### 2. Descargar Free My Chats
 
@@ -179,7 +180,7 @@ En la página de la [versión más reciente](https://github.com/domingogallardo/
 
 ### 3. Abrir la carpeta desde Terminal
 
-Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tendrá un aspecto parecido a este:
+Escribe `cd` seguido de un espacio en Terminal. Arrastra la carpeta descomprimida desde Finder hasta la ventana de Terminal y pulsa Intro. El comando tiene un aspecto parecido a este:
 
 ```bash
 cd ~/Documents/FreeMyChats-1.3.8
@@ -195,19 +196,19 @@ Ejecuta:
 
 La primera compilación puede tardar unos minutos porque Swift Package Manager descarga SwiftWABackupAPI y sus dependencias. Al terminar, el script crea `dist/FreeMyChats.app` y abre la aplicación automáticamente.
 
-La primera vez, crea una biblioteca donde guardar los chats extraídos. Si la biblioteca está vacía, Free My Chats abrirá automáticamente la pantalla para localizar y analizar las copias del iPhone.
+La primera vez, crea una biblioteca donde guardar los chats extraídos. Si la biblioteca está vacía, Free My Chats abre automáticamente la pantalla para localizar y analizar las copias del iPhone.
 
 Puedes ejecutar esa copia directamente para comprobar que funciona o repetir el comando anterior cuando necesites volver a compilar.
 
 ### 5. Mover la aplicación a Aplicaciones
 
-Una vez compilada, abre la carpeta `dist` y arrastra `FreeMyChats.app` a la carpeta `Aplicaciones` del Mac. A partir de ese momento podrás abrirla normalmente desde Finder, Launchpad o Spotlight sin conservar la aplicación dentro de la carpeta del código fuente.
+Una vez compilada, abre la carpeta `dist` y arrastra `FreeMyChats.app` a la carpeta `Aplicaciones` del Mac. A partir de ese momento se abre normalmente desde Finder, Launchpad o Spotlight sin conservar la aplicación dentro de la carpeta del código fuente.
 
 Si vuelves a compilar una versión nueva, sustituye la copia de `Aplicaciones` por la nueva `dist/FreeMyChats.app`.
 
 ### 6. Conceder acceso a las copias del iPhone
 
-Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, añade o activa la copia de **Free My Chats** que has trasladado a `Aplicaciones` y reinicia la aplicación. Si la biblioteca está vacía, la comprobación continuará al arrancar; si ya contiene copias, pulsa `Añadir copia` para volver a intentarlo. Si sustituyes la aplicación después de recompilar, macOS puede pedir que retires la entrada anterior y vuelvas a añadir la copia nueva.
+Si macOS impide leer la copia, abre `Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco`, añade o activa la copia de **Free My Chats** que has trasladado a `Aplicaciones` y reinicia la aplicación. Si la biblioteca está vacía, la comprobación continúa al arrancar; si ya contiene copias, pulsa `Añadir copia` para volver a intentarlo. Si sustituyes la aplicación después de recompilar, macOS puede pedir que retires la entrada anterior y vuelvas a añadir la copia nueva.
 
 ### Alternativa para personas familiarizadas con Git
 

@@ -2,16 +2,17 @@
 
 ## Estado
 
-Este documento describe la implementación actual. SwiftWABackupAPI 6.0.0 y los
-wrappers internos de Free My Chats ya crean, validan, extraen y componen paquetes
-`.fmcchat` en staging. Todavía no están implementados su registro persistente en
-la biblioteca, la instalación reversible ni la interfaz.
+Este documento describe la implementación de Free My Chats 2.0.0 con
+SwiftWABackupAPI 6.0.0. La aplicación crea, valida, extrae e importa paquetes
+`.fmcchat`; registra cada aportación en `ImportedChats`, instala la Vista
+unificada con rollback y permite consultarla o retirarla desde la interfaz.
 
 ## Dos representaciones posibles
 
-La ubicación física depende del número de aportaciones.
+La ubicación física depende de los tipos y del número de aportaciones.
 
-Una conversación con una sola copia guardada se abre directamente desde ella:
+Una conversación con una sola copia guardada local y sin chats importados se
+abre directamente desde ella:
 
 ```text
 StoredChats/<copia>/Chats/<chatId>/
@@ -20,8 +21,8 @@ StoredChats/<copia>/Chats/<chatId>/
 └── Media/
 ```
 
-Una conversación con varias copias guardadas dispone además de una representación
-combinada:
+Una conversación con varias copias guardadas o con algún chat importado dispone
+de una representación combinada:
 
 ```text
 MergedChats/<conversationId>/
@@ -34,10 +35,14 @@ MergedChats/<conversationId>/
 copia de WhatsApp. Cuando es la única aportación, su misma carpeta es la
 representación que muestra el catálogo del panel derecho.
 
-`MergedChats` solo contiene representaciones materializadas de conversaciones
-con varias aportaciones. No contiene referencias para que la interfaz alterne
-entre distintos `chat.json`: guarda un nuevo `chat.json` completo y una carpeta
-`Media` directamente utilizable.
+`ImportedChats/<conversationId>/<importId>/` conserva el `manifest.json`,
+`chat.json` y `Media` extraídos y validados de cada paquete recibido. La
+aportación permanece separada para poder reconstruir la conversación o retirarla.
+
+`MergedChats` contiene representaciones materializadas de conversaciones con
+varias copias locales o con al menos un chat importado. No contiene referencias
+para que la interfaz alterne entre distintos `chat.json`: guarda un nuevo
+`chat.json` completo y una carpeta `Media` directamente utilizable.
 
 `archive.json` registra la identidad de la conversación, sus aportaciones y las
 fechas de creación y actualización. La identidad se obtiene a partir del tipo de
@@ -45,12 +50,12 @@ chat y de su JID normalizado, no del nombre visible.
 
 ## Construcción de la cronología
 
-Si solo existe una aportación, no se construye otra cronología: la vista utiliza
-directamente el documento guardado.
+Si solo existe una copia local y no hay chats importados, no se construye otra
+cronología: la vista utiliza directamente el documento guardado.
 
-Cuando existen varias aportaciones, Free My Chats construye un
-`ConversationSource` por aportación, declara que comparten perspectiva y delega
-en `ConversationCompositionEngine`:
+Cuando existen varias copias locales o algún chat importado, Free My Chats
+construye un `ConversationSource` por aportación y delega en
+`ConversationCompositionEngine`:
 
 1. Reúne todos sus mensajes.
 2. Calcula una huella SHA-256 para cada mensaje.
@@ -62,9 +67,11 @@ en `ConversationCompositionEngine`:
    identificadores.
 7. Materializa un staging autocontenido con `chat.json` y `Media`.
 
-Free My Chats elige como target la aportación más reciente, añade `archive.json`
-al staging y coordina su instalación o rollback en
-`MergedChats/<conversationId>`. La API no conoce la estructura de la biblioteca.
+Free My Chats elige como target la copia local más reciente. Las copias locales
+se declaran de la misma perspectiva; si existen importaciones, el motor usa el
+perfil conservador entre perspectivas. La aplicación añade `archive.json` al
+staging y coordina su instalación o rollback en `MergedChats/<conversationId>`.
+La API no conoce la estructura de la biblioteca.
 
 La huella de un mensaje incluye:
 
@@ -87,15 +94,15 @@ aportación más reciente.
 ## Lectura y reparación
 
 La vista de conversación recibe siempre un solo `chat.json` y una sola carpeta
-`Media`. Si existe una aportación, ambos pertenecen a la copia guardada; si existen
-varias, pertenecen a la representación combinada. La búsqueda, la paginación, la
-navegación de respuestas y la posición de lectura no necesitan conocer esa
+`Media`. Con una única copia local, ambos pertenecen a esa copia; con varias
+copias o alguna importación, pertenecen a la representación combinada. La
+búsqueda, la paginación y la navegación de respuestas no necesitan conocer esa
 diferencia.
 
 La representación combinada se construye primero en una carpeta temporal y se
 instala mediante movimientos atómicos. Si falta un archivo o el documento deja de
-ser válido, la aplicación puede reconstruirla a partir de las aportaciones
-conservadas en `StoredChats`.
+ser válido, la aplicación la reconstruye a partir de las aportaciones conservadas
+en `StoredChats` e `ImportedChats`.
 
 ## Ciclo de incorporación y eliminación
 
@@ -116,6 +123,15 @@ adicional en la interfaz:
 5. Si al eliminar una aportación queda una sola, desaparece la carpeta combinada
    y su `archive.json` pasa a la copia guardada restante.
 6. Si se elimina la última aportación, la conversación desaparece del catálogo.
+7. Al importar un `.fmcchat`, la aplicación exige una única conversación local
+   compatible, conserva el paquete validado en `ImportedChats` y materializa el
+   resultado en `MergedChats`.
+8. Al retirar un chat importado, reconstruye la conversación con las fuentes
+   restantes y elimina la carpeta de esa importación solo después de instalar el
+   resultado.
+9. La última copia local no se puede borrar mientras la conversación conserve
+   aportaciones importadas, porque la composición necesita una perspectiva local
+   target.
 
 Las promociones, reconstrucciones y degradaciones se preparan en carpetas
 temporales. Un fallo recuperable durante la operación restaura la representación
@@ -123,12 +139,12 @@ anterior para no dejar el catálogo a medio actualizar.
 
 ## Multimedia
 
-Una conversación individual utiliza directamente la carpeta `Media` de su
-copia guardada. En una conversación combinada, cada archivo multimedia referenciado
-por la cronología se materializa dentro de `MergedChats`. Cuando varias
-aportaciones contienen exactamente el mismo archivo, su SHA-256 permite
-almacenarlo una sola vez en esa carpeta. Los archivos distintos que tengan el
-mismo nombre reciben nombres separados y deterministas.
+Una conversación con una única copia local utiliza directamente su carpeta
+`Media`. En una conversación combinada, cada archivo multimedia referenciado por
+la cronología se materializa dentro de `MergedChats`. Cuando varias aportaciones
+contienen exactamente el mismo archivo, su SHA-256 permite almacenarlo una sola
+vez en esa carpeta. Los archivos distintos que tengan el mismo nombre reciben
+nombres separados y deterministas.
 
 La vista trata su carpeta `Media` como parte de la conversación materializada y no
 resuelve los adjuntos contra las carpetas de las aportaciones originales.
@@ -144,6 +160,6 @@ resuelve los adjuntos contra las carpetas de las aportaciones originales.
 - La multimedia de una conversación combinada está presente en `StoredChats` y en
   `MergedChats`; dentro de esta última, los archivos idénticos de varias
   aportaciones se materializan una sola vez.
-- La eliminación manual de `StoredChats` impide reconstruir la conversación, aunque
-  la materialización instalada todavía pudiera abrirse. Las aportaciones deben
-  eliminarse desde la aplicación.
+- La eliminación manual de `StoredChats` o `ImportedChats` impide reconstruir la
+  conversación, aunque la materialización instalada pueda seguir abriéndose. Las
+  aportaciones se eliminan desde la aplicación.

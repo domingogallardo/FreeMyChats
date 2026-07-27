@@ -5,8 +5,8 @@
 Este documento contrasta el diseño inicial de
 [fusión de conversaciones portables](fusion-conversaciones-portables.md) con la
 implementación de partida de Free My Chats 1.3.10 y SwiftWABackupAPI 4.5.0. El
-resultado de la parte de API está publicado en SwiftWABackupAPI 5.0.0 y la rama
-de integración corresponde a Free My Chats 2.0.0.
+resultado de la parte de API se publicó inicialmente en SwiftWABackupAPI 5.0.0;
+Free My Chats 2.0.0 integra la API 6.0.0 y completa el flujo de aplicación.
 
 La especificación posterior y vinculante para SwiftWABackupAPI está en
 [Motor general de fusión y conversaciones portables](especificacion-swiftwabackupapi-motor-fusion-portable.md).
@@ -86,9 +86,9 @@ cambiar de propietario:
   resto del contenido central; no hace alineación secuencial ni clasifica
   ambigüedades.
 
-## Reutilización propuesta
+## Reutilización aplicada
 
-### Reutilizable casi directamente
+### Reutilizado casi directamente
 
 - El catálogo y la apertura de una única conversación materializada.
 - `MergedChats/<conversationId>` como resultado derivado.
@@ -101,20 +101,20 @@ cambiar de propietario:
 - Buena parte de los fixtures de pruebas de solapamiento, multimedia, rollback y
   reparación.
 
-### Reutilizable después de generalizar
+### Reutilizado después de generalizar
 
-- `ConversationArchiveRecord`: debe registrar aportaciones importadas además de
+- `ConversationArchiveRecord` registra aportaciones importadas además de
   copias guardadas locales.
-- `ResolvedContribution`: debe poder abrir una fuente de `StoredChats` o de
+- La resolución de aportaciones abre fuentes de `StoredChats` y de
   `ImportedChats`.
-- `buildDocument`: debe recibir el resultado de un alineador que ya haya
-  normalizado perspectiva y autores.
-- Los contadores de aportaciones y mensajes exclusivos deben incluir ambos tipos
+- `ConversationCompositionEngine` entrega el documento con perspectiva y autores
+  normalizados.
+- Los contadores de aportaciones y mensajes exclusivos incluyen ambos tipos
   de fuente.
-- El flujo de retirada debe distinguir entre borrar una copia guardada local y
+- El flujo de retirada distingue entre borrar una copia guardada local y
   retirar una importación.
-- La preservación de la posición de lectura debe usar un mapa entre el mensaje
-  anterior y el nuevo resultado, no confiar solo en el `Int` materializado.
+- La posición de lectura sigue confiando en el `Int` materializado; no se
+  traduce con el mapa estable al reconstruir.
 
 ### No reutilizable como criterio de fusión entre propietarios
 
@@ -125,14 +125,14 @@ cambiar de propietario:
 - La elección implícita de un representante sin una política explícita para
   reacciones, ediciones, nombres y otros campos mutables.
 
-## Estructura física recomendada
+## Estructura física implementada
 
 La propuesta inicial colocaba `Base` e `Imports` dentro de cada carpeta de chat.
 Después de la implementación de las Vistas unificadas ya no es necesario hacer esa
 reestructuración. `StoredChats` ya conserva las bases locales y `MergedChats` ya es el
 resultado reconstruible.
 
-Se recomienda añadir un tercer almacén de fuentes:
+Free My Chats 2.0.0 añade un tercer almacén de fuentes:
 
 ```text
 Mi biblioteca Free My Chats/
@@ -158,7 +158,7 @@ Reglas de materialización:
   `StoredChats`, como ahora.
 - Varias aportaciones locales se materializan en `MergedChats`, como ahora.
 - Cualquier conversación con al menos una importación se materializa en
-  `MergedChats`, aunque solo quede esa importación.
+  `MergedChats`, aunque solo tenga una copia local.
 - `ImportedChats` y `StoredChats` son fuentes; `MergedChats` se puede borrar y
   reconstruir.
 - Retirar una importación borra únicamente su carpeta después de haber instalado
@@ -168,7 +168,7 @@ Reglas de materialización:
 
 Este diseño evita duplicar una `Base` y encaja con el sistema de reparación actual.
 
-## Cambios de modelo necesarios
+## Cambios de modelo realizados
 
 ### Perspectiva de cada fuente
 
@@ -191,40 +191,47 @@ Las bibliotecas actuales continúan siendo legibles sin migración de propietari
 
 ### Aportaciones importadas
 
-Es menos invasivo conservar las aportaciones locales actuales y añadir al
-manifiesto una colección separada:
+Free My Chats conserva las aportaciones locales y registra las importadas en una
+colección separada del manifiesto:
 
 ```swift
 struct ImportedConversationContribution: Codable, Identifiable {
-    let id: UUID
+    let id: String
     let importedAt: Date
+    let packageID: UUID
     let packageCreatedAt: Date
+    let producerName: String
+    let producerVersion: String
     let perspectiveHint: ConversationPerspectiveHint?
     let relativeDirectory: String
-    let packageDigest: String
-    let messageCount: Int
-    let exclusiveMessageCount: Int
+    let archiveSHA256: String
+    let contentDigest: String
+    let displayName: String
+    let messageCount: Int?
+    let exclusiveMessageCount: Int?
+    let exclusiveMediaByteCount: Int64?
 }
 ```
 
-El resumen del catálogo expondrá por separado `localContributionCount` e
-`importCount`; `contributionSources` seguirá conteniendo solo fuentes locales para
-que el resaltado del panel izquierdo continúe funcionando.
+El resumen del catálogo expone por separado `localContributionCount` e
+`importedContributionCount`; `contributionSources` contiene solo fuentes locales
+para que el resaltado del panel izquierdo continúe funcionando.
 
 ### Versionado
 
-Añadir importaciones cambia la semántica del manifiesto. Debe incrementarse el
-schema de `ConversationArchiveRecord` y, preferiblemente, el de la biblioteca o
-añadir una capacidad mínima requerida. Una versión antigua debe rechazar una
-biblioteca nueva antes que ignorar `ImportedChats` y reconstruir perdiendo datos.
+La versión 2.0.0 usa el schema 3 tanto en `LibraryManifest` como en
+`ConversationArchiveRecord`. Lee el schema 2 y lo actualiza al registrar la
+primera importación; los demás schemas se rechazan para evitar ignorar
+`ImportedChats` y reconstruir perdiendo datos.
 
 ### Identidad estable de mensaje
 
 La API devuelve `ArchiveMessageID`, el mapa estable por ID materializado y los
-mappings por fuente. Free My Chats todavía no persiste esos mappings para la
-posición de lectura; mientras tanto, las respuestas se remapean correctamente
-dentro de cada materialización, pero una reconstrucción posterior vuelve a
-analizar las fuentes.
+mappings por fuente. Free My Chats no persiste esos mappings: las respuestas se
+remapean correctamente dentro de cada materialización y cada reconstrucción
+vuelve a analizar las fuentes. La posición de lectura se conserva por identidad
+de conversación, pero el mensaje se guarda como un `Int` materializado y no se
+traduce mediante `ArchiveMessageID` al reconstruir.
 
 ## División de responsabilidades
 
@@ -259,13 +266,13 @@ La API materializa `chat.json` y `Media` en staging. Free My Chats añade
 `archive.json`, instala el directorio y ejecuta el rollback si falla la
 transacción de biblioteca.
 
-### Inventario probable de cambios
+### Integración realizada
 
 SwiftWABackupAPI 5.0.0 contiene los modelos portables, el codec seguro, las
 identidades canónicas, la inferencia de perspectivas, el alineador, la
 materialización target-relative y sus pruebas.
 
-En Free My Chats, el impacto principal será:
+Free My Chats 2.0.0 incorpora:
 
 - `LibraryModels.swift`: ruta `ImportedChats`, schema nuevo, aportación importada,
   contadores y nuevas clases de operación;
@@ -274,7 +281,8 @@ En Free My Chats, el impacto principal será:
 - `FreeMyChatsStore.swift`: estado de análisis, confirmación, progreso, aplicación,
   historial y refresco de selección;
 - `ConversationView.swift`: menú de acciones y acceso al historial;
-- vistas nuevas y pequeñas para la previsualización y la lista de importaciones;
+- ampliaciones de `ChatSidebarView` y `ConversationView` para exportar, importar,
+  listar y retirar;
 - pruebas de modelos, servicios y compatibilidad de biblioteca.
 
 SwiftWABackupAPI introdujo el motor portable en 5.0.0. Free My Chats 2.0.0 fija
@@ -303,10 +311,10 @@ El manifiesto v1 incluye:
 - tamaño, SHA-256 y ruta segura de `chat.json` y cada medio;
 - `contentDigest` lógico del paquete.
 
-`chat.json` portable es un contrato separado de
-`StoredChatDocument` v2. El formato interno se migrará manualmente, mientras que
-el documento portable puede representar roles de autor relativos a la fuente e
-IDs de archivo explícitamente.
+`chat.json` portable es un contrato separado de `StoredChatDocument` v2. La
+herramienta `Scripts/migrate-library-v1-to-v2.swift` realiza la migración manual
+del formato interno anterior; el documento portable representa roles de autor
+relativos a la fuente e IDs de archivo explícitos.
 
 La creación incluye la conversación visible materializada, pero no el historial
 interno de sus fuentes. Si una conversación ya incorpora datos recibidos, estos se
@@ -387,7 +395,7 @@ de `Chats importados` y en el menú de aplicación. Las operaciones largas muest
 su progreso y todos los errores de identidad o ambigüedad se presentan antes de
 instalar nada.
 
-## Plan de implementación recomendado
+## Implementación por fases
 
 ### Fase 0 — diagnóstico real, sin escrituras — IMPLEMENTADA
 
@@ -409,8 +417,8 @@ se modifica.
 - Creación, inspección, extracción y apertura segura de `.fmcchat`.
 - Fixtures de paquetes válidos y maliciosos.
 
-Resultado: la API y los wrappers internos de la app crean y validan paquetes sin
-incorporarlos todavía a la biblioteca.
+Resultado: la API y los wrappers de la aplicación crean y validan paquetes; las
+fases 3 y 4 completan su incorporación a la biblioteca y su interfaz.
 
 ### Fase 2 — alineación y política de contenido — IMPLEMENTADA
 
@@ -428,9 +436,8 @@ Resultado: diagnóstico y materialización deterministas en staging.
 - Materialización atómica y rollback.
 - Retirada, reparación y actualización de una copia guardada local sin perder
   importaciones.
-- Traducción de la posición de lectura.
 
-Entregable: operaciones completas mediante servicios y tests.
+Resultado: operaciones completas mediante servicios y tests.
 
 ### Fase 4 — experiencia macOS — IMPLEMENTADA
 
@@ -439,14 +446,14 @@ Entregable: operaciones completas mediante servicios y tests.
 - Lista de chats importados con fecha, Finder y retirada.
 - Mensajes de error accionables para ausencia, duplicado o ambigüedad.
 
-### Fase 5 — endurecimiento
+### Validación adicional
 
 - Pruebas de gran volumen, memoria y cancelación.
 - Paquetes hostiles y límites de descompresión.
 - Compatibilidad entre versiones y rechazo seguro por aplicaciones antiguas.
 - Calibración final de confianza con conversaciones reales variadas.
 
-## Pruebas críticas adicionales a las existentes
+## Cobertura crítica
 
 - El mismo mensaje cambia de `isFromMe` entre dos propietarios y se deduplica.
 - Los mensajes de ambos propietarios quedan orientados correctamente en la vista
@@ -478,8 +485,9 @@ Entregable: operaciones completas mediante servicios y tests.
    técnicas de participantes cuando la fuente demuestra que no son su usuario;
    `sourceUser` permanece relativo.
 
-## Siguiente paso concreto
+## Límite de validación actual
 
-Probar el flujo con bibliotecas reales de distintos propietarios y ampliar los
-fixtures cuando aparezcan casos de identidad o alineación no representados por
-la suite sintética.
+La suite cubre el flujo sintético y una biblioteca local de referencia. No
+constituye una calibración representativa entre propietarios: los casos de
+identidad o alineación ausentes de esos fixtures requieren validación adicional
+antes de modificar los umbrales conservadores.

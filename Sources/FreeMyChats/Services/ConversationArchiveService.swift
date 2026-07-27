@@ -279,7 +279,7 @@ enum ConversationArchiveService {
         }
     }
 
-    /// Builds a validated staging directory for a future imported contribution.
+    /// Builds a validated staging directory for a cross-perspective contribution.
     /// The caller still owns installation, replacement and rollback in the library.
     static func stageCrossPerspectiveComposition(
         sources: [ConversationSource],

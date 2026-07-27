@@ -2,8 +2,8 @@
 
 ## Estado
 
-Implementación completa del flujo acordado, sobre la parte de API publicada en
-SwiftWABackupAPI 5.0.0:
+Free My Chats 2.0.0 implementa el flujo completo sobre la API introducida en
+SwiftWABackupAPI 5.0.0 y consumida con su terminología definitiva en la 6.0.0:
 
 - implementados el diagnóstico y la materialización entre perspectivas;
 - implementada la creación de staging desde Free My Chats;
@@ -12,8 +12,8 @@ SwiftWABackupAPI 5.0.0:
   automática de una única conversación receptora, la persistencia reversible en
   `ImportedChats`, la instalación definitiva y la interfaz.
 
-Este documento sigue describiendo el flujo final esperado. La especificación
-vinculante y su estado detallado están en
+Este documento describe el flujo implementado. La especificación vinculante y
+su estado detallado están en
 [Motor general de fusión y conversaciones portables](especificacion-swiftwabackupapi-motor-fusion-portable.md).
 
 La evaluación de este diseño frente a la implementación actual de Vistas
@@ -31,13 +31,12 @@ locales se mantiene como un perfil específico del mismo motor. El funcionamient
 `StoredChats` y `MergedChats`, incluida su estrategia de mensajes y multimedia, se
 explica en [Conversaciones materializadas](conversaciones-materializadas.md).
 
-## Objetivo
+## Funcionalidad
 
-Permitir que una persona incorpore a una conversación del catálogo de
-FreeMyChats los mensajes presentes en otra exportación portable de la misma
-conversación. Debe funcionar tanto con grupos como con conversaciones
-individuales, conservar la multimedia y permitir deshacer posteriormente cada
-importación.
+Una persona puede incorporar a una conversación del catálogo de FreeMyChats los
+mensajes presentes en otra exportación portable de la misma conversación. El
+flujo funciona con grupos y conversaciones individuales, conserva la multimedia
+y permite deshacer cada importación.
 
 La fusión afecta únicamente a la biblioteca local de FreeMyChats. No modifica una
 copia de iPhone ni intenta reinsertar mensajes en WhatsApp.
@@ -66,8 +65,8 @@ En el menú del icono de carpeta del encabezado de una conversación aparece:
 
 Esta operación no vuelve a extraer la conversación desde la copia de iPhone.
 Abre la conversación materializada visible, que incluye todas sus copias locales
-y chats importados, la valida y crea un paquete `.fmcchat` autocontenido. Debe
-funcionar incluso cuando ya se haya eliminado una copia fuente.
+y chats importados, la valida y crea un paquete `.fmcchat` autocontenido. También
+funciona cuando ya se ha eliminado una copia fuente.
 
 ### Añadir mensajes
 
@@ -75,7 +74,7 @@ En la cabecera del grupo `Chats importados` aparece:
 
 > Importar chat…
 
-El flujo será:
+El flujo implementado:
 
 1. Seleccionar un archivo `.fmcchat`.
 2. Validar su formato e identidad de conversación.
@@ -85,7 +84,9 @@ El flujo será:
 5. Materializar la conversación combinada de forma atómica.
 6. Abrir la nueva Vista unificada.
 
-Un resumen posible sería:
+El resultado informa de la conversación y de los mensajes incorporados. El
+diagnóstico interno también calcula coincidencias, multimedia exclusiva y
+confianza; estos datos no se muestran íntegramente en la interfaz 2.0.0:
 
 ```text
 Misma conversación · Chat familiar
@@ -394,25 +395,28 @@ haya sido materializado por una versión compatible.
 
 ## Persistencia reversible
 
-La carpeta de un chat evolucionará a una composición por capas:
+Free My Chats 2.0.0 separa las fuentes locales, las importadas y la
+materialización:
 
 ```text
-Chats/<chatId>/
-├── chat.json                 # Vista combinada compatible
-├── Media/                    # Multimedia materializada
-├── Base/
-│   ├── chat.json
-│   └── Media/
-├── ImportedChats/
-│   └── <importId>/
-│       ├── manifest.json
-│       ├── chat.json
-│       └── Media/
-└── merge-manifest.json
+StoredChats/<copia>/Chats/<chatId>/
+├── chat.json
+└── Media/
+
+ImportedChats/<conversationId>/<importId>/
+├── manifest.json
+├── chat.json
+└── Media/
+
+MergedChats/<conversationId>/
+├── archive.json
+├── chat.json
+└── Media/
 ```
 
-`chat.json` y `Media` continúan siendo la vista que abre FreeMyChats. `Base` e
-`ImportedChats` son las fuentes que permiten reconstruirla.
+La aplicación abre directamente `StoredChats` solo cuando hay una copia local y
+ninguna importación. En los demás casos abre `MergedChats`; `StoredChats` e
+`ImportedChats` conservan las fuentes que permiten reconstruirla.
 
 Al reemplazar la copia guardada base desde una copia de iPhone, Free My Chats
 preserva `ImportedChats`, vuelve a analizar todas las fuentes, instala la nueva
@@ -420,8 +424,8 @@ vista y ejecuta rollback si falla. SwiftWABackupAPI no conoce ni modifica
 `ImportedChats`,
 `MergedChats`, `archive.json` o `library.json`.
 
-La semántica no dependerá de la estrategia física utilizada para materializar la
-multimedia.
+La semántica es independiente de la estrategia física utilizada para
+materializar la multimedia.
 
 ## Capacidades implementadas en SwiftWABackupAPI 5.0.0
 
@@ -480,9 +484,10 @@ FreeMyChats no debe implementar un segundo motor de fusión manipulando JSON.
 
 ### Posición de lectura
 
-La primera versión puede traducir la posición existente mediante el mapa de
-mensajes alineados. A medio plazo conviene que `ChatReadingPositionStore` utilice
-`ArchiveMessageID` en lugar del `Int` local.
+`ChatReadingPositionStore` conserva la posición bajo la identidad estable de la
+conversación, pero guarda el mensaje como `Int` materializado. La versión 2.0.0
+no persiste el mapa de `ArchiveMessageID` ni traduce la posición cuando una
+reconstrucción cambia los enteros.
 
 ## Formatos actuales
 
@@ -494,7 +499,9 @@ mensajes alineados. A medio plazo conviene que `ChatReadingPositionStore` utilic
 - El paquete no requiere identidad del propietario. Si falta la identidad del
   interlocutor, `createArchive` devuelve `invalidSource` y Free My Chats puede
   solicitar una pista de conversación explícita.
-- No se aplicará una migración destructiva al abrir una biblioteca.
+- La aplicación no aplica una migración destructiva al abrir una biblioteca. La
+  migración v1 a v2 se ejecuta manualmente con
+  `Scripts/migrate-library-v1-to-v2.swift`.
 
 ## Seguridad y atomicidad
 
@@ -595,10 +602,11 @@ registrado las aportaciones portables y coordinado instalación/rollback.
 Incluye exportar, importar sobre una coincidencia única, consultar procedencia y
 deshacer.
 
-### Fase 5: endurecimiento
+### Validación adicional
 
-Calibrar umbrales, rendimiento, cancelación, paquetes maliciosos, migraciones y
-actualización de la copia guardada base.
+Los umbrales conservadores necesitan más muestras de conversaciones reales. La
+API ya cubre cancelación, paquetes maliciosos y límites de extracción; la
+aplicación cubre migración manual y actualización de la copia guardada base.
 
 ## Criterios de aceptación
 
@@ -626,18 +634,19 @@ Cumplidos por la Fase 3 de Free My Chats:
 - Un autor exclusivo no orientable bloquea la composición conservadora.
 - No hay desambiguación contextual de mensajes débiles repetidos ni
   reconciliación difusa de ediciones.
-- La política de representante está fijada, pero una futura reconciliación de
-  metadatos podría requerir un nuevo algoritmo versionado.
-- Qué estrategia física evita duplicar medios sin complicar la portabilidad y el
-  rollback.
-- La migración de bibliotecas anteriores se realizará manualmente fuera de la app.
+- La política de representante está fijada y no reconcilia de forma difusa
+  ediciones ni metadatos divergentes.
+- `StoredChats`, `ImportedChats` y `MergedChats` priorizan reconstrucción y
+  rollback sobre evitar toda duplicación física de medios.
+- La migración de bibliotecas anteriores se realiza manualmente fuera de la
+  aplicación con `Scripts/migrate-library-v1-to-v2.swift`.
 
 El contrato v1 ya está fijado; cualquier ampliación debe conservar el versionado
 y el rechazo seguro.
 
-## Siguiente paso
+## Resultado en Free My Chats 2.0.0
 
-Implementar en Free My Chats el registro de una aportación extraída y validada,
-su reapertura mediante `openValidatedDirectory`, el nuevo análisis de todas las
-fuentes, la instalación atómica del staging materializado y la reconstrucción al
-retirar la importación.
+Free My Chats registra la aportación extraída y validada, la reabre mediante
+`openValidatedDirectory`, analiza de nuevo todas las fuentes, instala
+atómicamente el staging materializado y reconstruye la conversación al retirar
+la importación.
