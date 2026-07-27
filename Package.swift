@@ -16,7 +16,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/domingogallardo/SwiftWABackupAPI.git",
-            exact: "6.0.2"
+            exact: "6.0.3"
         )
     ],
     targets: [

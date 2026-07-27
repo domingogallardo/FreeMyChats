@@ -3,7 +3,7 @@
 ## Estado de implementación — SwiftWABackupAPI 5.0.0
 
 Este incremento está implementado, probado y publicado en SwiftWABackupAPI
-5.0.0. Free My Chats 2.1.3 usa ya `ConversationCompositionEngine` para construir
+5.0.0. Free My Chats 2.1.4 usa ya `ConversationCompositionEngine` para construir
 la Vista unificada local y conserva la instalación, los manifiestos y el
 rollback de su biblioteca.
 
@@ -592,7 +592,7 @@ Además, el resultado devuelve:
 public let stableMessageIDsByMaterializedID: [Int: ArchiveMessageID]
 ```
 
-Free My Chats 2.1.3 no persiste estos mapas. Cada reconstrucción puede generar
+Free My Chats 2.1.4 no persiste estos mapas. Cada reconstrucción puede generar
 nuevos UUID; eso no afecta a la deduplicación inicial, pero impide traducir la
 posición de lectura mediante `ArchiveMessageID`.
 
@@ -964,7 +964,7 @@ La API no acepta `LibrarySession`, `VersionChatID` ni tipos de Free My Chats.
 
 ## 29. Integración vigente en Free My Chats
 
-Free My Chats 2.1.3 utiliza la API con esta correspondencia:
+Free My Chats 2.1.4 utiliza la API con esta correspondencia:
 
 | Implementación anterior | Uso vigente |
 | --- | --- |
