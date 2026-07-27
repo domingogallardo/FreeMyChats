@@ -94,7 +94,8 @@ perspectiva, se documenta por separado en
    staging proporcionado por el cliente.
 9. Free My Chats conserva la responsabilidad de instalar, retirar, reconstruir y
    hacer rollback de sus carpetas de biblioteca.
-10. Un resultado ambiguo se explica y se rechaza; el MVP no permite forzarlo.
+10. Un resultado ambiguo se explica y se rechaza; la aplicación actual no permite
+    forzarlo.
 
 ## 3. Objetivos funcionales
 
@@ -118,7 +119,7 @@ SwiftWABackupAPI 5.0.0:
 - emitir progreso y admitir cancelación cooperativa;
 - ofrecer un diagnóstico CLI sin exponer contenido privado por defecto.
 
-## 4. No objetivos del MVP
+## 4. Funcionalidades fuera del alcance de la aplicación actual
 
 - Importar el ZIP/TXT nativo de WhatsApp.
 - Escribir en WhatsApp, `ChatStorage.sqlite` o una copia de iPhone.
@@ -850,7 +851,7 @@ public enum ConversationCompositionDisposition: String, Codable, Sendable {
 }
 ```
 
-Política del MVP:
+Política de la aplicación actual:
 
 - alta, conversación demostrada y perspectivas necesarias resueltas →
   `applicable`;

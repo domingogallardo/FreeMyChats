@@ -24,7 +24,7 @@ su codec seguro. Free My Chats implementa el ciclo completo
 crear–inspeccionar–extraer–componer–instalar, la persistencia reversible de las
 aportaciones importadas y su interfaz.
 
-El MVP contemplado aquí permite incorporar un archivo creado por Free My Chats a
+La aplicación actual permite incorporar un archivo creado por Free My Chats a
 una conversación que ya existe en la biblioteca receptora. No importa ZIP o TXT
 generados directamente por WhatsApp y no escribe en WhatsApp ni en una copia de
 iPhone.
