@@ -15,7 +15,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran guardados en la biblioteca.
 
-## Funciones del MVP
+## Funcionalidades detalladas
 
 - Descubrimiento e inspección de copias de iPhone en MobileSync o en otra carpeta.
 - Creación y reapertura de bibliotecas locales con múltiples versiones de una copia.
@@ -108,27 +108,6 @@ una sola vez.
 
 La descripción técnica completa está en
 [Conversaciones materializadas](docs/conversaciones-materializadas.md).
-
-## Migración manual de bibliotecas v1
-
-La migración del formato anterior se mantiene como una herramienta separada de
-la aplicación, porque solo es necesaria una vez. Cierra Free My Chats y ejecuta
-primero una simulación:
-
-```bash
-swift Scripts/migrate-library-v1-to-v2.swift "/ruta/a/Mi biblioteca"
-```
-
-Si la validación termina correctamente, aplica la migración:
-
-```bash
-swift Scripts/migrate-library-v1-to-v2.swift --apply "/ruta/a/Mi biblioteca"
-```
-
-La herramienta renombra `Exports` como `StoredChats`, actualiza `library.json`,
-los documentos `chat.json` y los registros `archive.json`, y conserva una copia
-de los JSON originales dentro de la biblioteca. Los archivos multimedia no se
-duplican ni se modifican.
 
 ## Descargar el código fuente
 
