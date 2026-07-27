@@ -1,10 +1,10 @@
 # Especificación para SwiftWABackupAPI: motor general de fusión y conversaciones portables
 
-## Estado de implementación — Free My Chats 2.0.0
+## Estado de implementación — Free My Chats 2.1.0
 
 SwiftWABackupAPI introdujo en la 5.0.0 los incrementos local, diagnóstico, de
 materialización entre perspectivas y el contrato portable v1. Free My Chats
-2.0.0 consume la API 6.0.0 y completa su integración:
+2.1.0 consume la API 6.0.0 y completa su integración:
 
 - Free My Chats construye su Vista unificada actual mediante
   `ConversationCompositionEngine` y conserva instalación/rollback.
@@ -30,7 +30,7 @@ materialización entre perspectivas y el contrato portable v1. Free My Chats
 - Las fichas y fotos de contacto solo se incluyen para participantes que la
   fuente demuestra que no son su usuario; los contactos no demostrables se
   omiten para no filtrar indirectamente la identidad del propietario.
-- La regresión publicada de la API pasa 149 pruebas y la aplicación contiene 62
+- La regresión publicada de la API pasa 149 pruebas y la aplicación contiene 64
   pruebas. Incluyen fixtures sintéticos para perspectivas iguales/opuestas,
   composición N-aria, mensajes
   débiles, offsets, multimedia, replies, reacciones, seguridad ZIP, privacidad y
@@ -58,7 +58,7 @@ La implementación sirve a dos casos con un único motor:
 
 La especificación nació sobre SwiftWABackupAPI 4.5.0 y Free My Chats 1.3.10. El
 motor resultante se publicó inicialmente en SwiftWABackupAPI 5.0.0. Free My Chats
-2.0.0 consume la versión exacta 6.0.0, que adopta la terminología definitiva de
+2.1.0 consume la versión exacta 6.0.0, que adopta la terminología definitiva de
 chats guardados; los checkouts de `.build` no son fuente editable.
 
 Documentos de contexto:
@@ -1203,7 +1203,7 @@ Ejemplo abreviado de manifiesto sin propietario global:
   "createdAt": "2026-07-22T10:15:30.000Z",
   "producer": {
     "name": "Free My Chats",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "implementation": {
     "name": "SwiftWABackupAPI",

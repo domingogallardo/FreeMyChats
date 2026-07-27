@@ -98,12 +98,12 @@ struct MessageRowView: View {
             }
 
             HStack(alignment: .lastTextBaseline, spacing: 8) {
-                if let reactions = message.reactions, !reactions.isEmpty {
-                    Text(reactions.map(\.emoji).joined(separator: " "))
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.regularMaterial, in: Capsule())
+                if !reactionGroups.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(reactionGroups) { group in
+                            MessageReactionButton(group: group)
+                        }
+                    }
                 }
                 Spacer(minLength: 8)
                 Text(Self.timeFormatter.string(from: message.date))
@@ -137,6 +137,10 @@ struct MessageRowView: View {
         message.mediaFilename.map { mediaDirectoryURL.appendingPathComponent($0) }
     }
 
+    private var reactionGroups: [MessageReactionGroup] {
+        MessageReactionGroup.grouped(message.reactions ?? [])
+    }
+
     private func replyAccessibilityLabel(replyTo: Int) -> String {
         guard let preview = message.replyToPreview, !preview.isEmpty else {
             return "Respuesta al mensaje \(replyTo)"
@@ -163,6 +167,65 @@ struct MessageRowView: View {
         formatter.timeStyle = .short
         return formatter
     }()
+}
+
+private struct MessageReactionButton: View {
+    let group: MessageReactionGroup
+
+    @State private var isShowingAuthors = false
+
+    var body: some View {
+        Button {
+            isShowingAuthors.toggle()
+        } label: {
+            HStack(spacing: 3) {
+                Text(group.emoji)
+                if group.authors.count > 1 {
+                    Text(group.authors.count.formatted())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .contentShape(Capsule())
+            .background(.regularMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Mostrar quién reaccionó con \(group.emoji)")
+        .accessibilityLabel("\(group.emoji), \(reactionCountLabel)")
+        .accessibilityHint("Muestra las personas que reaccionaron")
+        .popover(isPresented: $isShowingAuthors) {
+            reactionAuthorsPopover
+        }
+    }
+
+    private var reactionAuthorsPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(group.emoji) \(reactionCountLabel)")
+                .font(.headline)
+
+            Divider()
+
+            ForEach(group.authors) { author in
+                Label(
+                    author.displayName,
+                    systemImage: author.isCurrentUser
+                        ? "person.crop.circle.fill"
+                        : "person.crop.circle"
+                )
+            }
+        }
+        .textSelection(.enabled)
+        .padding(12)
+        .frame(minWidth: 220, alignment: .leading)
+    }
+
+    private var reactionCountLabel: String {
+        group.authors.count == 1
+            ? "1 reacción"
+            : "\(group.authors.count.formatted()) reacciones"
+    }
 }
 
 private struct MediaAttachmentView: View {
