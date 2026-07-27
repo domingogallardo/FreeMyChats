@@ -2,7 +2,7 @@
 
 ## Estado
 
-Free My Chats 2.1.0 implementa el flujo completo sobre la API introducida en
+Free My Chats 2.1.1 implementa el flujo completo sobre la API introducida en
 SwiftWABackupAPI 5.0.0 y consumida con su terminología definitiva en la 6.0.0:
 
 - implementados el diagnóstico y la materialización entre perspectivas;
@@ -86,7 +86,7 @@ El flujo implementado:
 
 El resultado informa de la conversación y de los mensajes incorporados. El
 diagnóstico interno también calcula coincidencias, multimedia exclusiva y
-confianza; estos datos no se muestran íntegramente en la interfaz 2.1.0:
+confianza; estos datos no se muestran íntegramente en la interfaz 2.1.1:
 
 ```text
 Misma conversación · Chat familiar
@@ -395,7 +395,7 @@ haya sido materializado por una versión compatible.
 
 ## Persistencia reversible
 
-Free My Chats 2.1.0 separa las fuentes locales, las importadas y la
+Free My Chats 2.1.1 separa las fuentes locales, las importadas y la
 materialización:
 
 ```text
@@ -485,7 +485,7 @@ FreeMyChats no debe implementar un segundo motor de fusión manipulando JSON.
 ### Posición de lectura
 
 `ChatReadingPositionStore` conserva la posición bajo la identidad estable de la
-conversación, pero guarda el mensaje como `Int` materializado. La versión 2.1.0
+conversación, pero guarda el mensaje como `Int` materializado. La versión 2.1.1
 no persiste el mapa de `ArchiveMessageID` ni traduce la posición cuando una
 reconstrucción cambia los enteros.
 

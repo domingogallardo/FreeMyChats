@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/domingogallardo/SwiftWABackupAPI.git",
       "state" : {
-        "revision" : "fbb8b9710d9c4880992c60371a03f52b0fd6a608",
-        "version" : "6.0.0"
+        "revision" : "0b504359f7c483d216e5cbcb864e905857d7f9b5",
+        "version" : "6.0.1"
       }
     },
     {

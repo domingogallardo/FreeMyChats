@@ -1,10 +1,10 @@
 # Especificación para SwiftWABackupAPI: motor general de fusión y conversaciones portables
 
-## Estado de implementación — Free My Chats 2.1.0
+## Estado de implementación — Free My Chats 2.1.1
 
 SwiftWABackupAPI introdujo en la 5.0.0 los incrementos local, diagnóstico, de
 materialización entre perspectivas y el contrato portable v1. Free My Chats
-2.1.0 consume la API 6.0.0 y completa su integración:
+2.1.1 consume la API 6.0.1 y completa su integración:
 
 - Free My Chats construye su Vista unificada actual mediante
   `ConversationCompositionEngine` y conserva instalación/rollback.
@@ -58,7 +58,7 @@ La implementación sirve a dos casos con un único motor:
 
 La especificación nació sobre SwiftWABackupAPI 4.5.0 y Free My Chats 1.3.10. El
 motor resultante se publicó inicialmente en SwiftWABackupAPI 5.0.0. Free My Chats
-2.1.0 consume la versión exacta 6.0.0, que adopta la terminología definitiva de
+2.1.1 consume la versión exacta 6.0.1, compatible con la terminología definitiva de
 chats guardados; los checkouts de `.build` no son fuente editable.
 
 Documentos de contexto:
@@ -1204,7 +1204,7 @@ Ejemplo abreviado de manifiesto sin propietario global:
   "createdAt": "2026-07-22T10:15:30.000Z",
   "producer": {
     "name": "Free My Chats",
-    "version": "2.1.0"
+    "version": "2.1.1"
   },
   "implementation": {
     "name": "SwiftWABackupAPI",
