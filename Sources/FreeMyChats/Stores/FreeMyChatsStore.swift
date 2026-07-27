@@ -537,7 +537,7 @@ final class FreeMyChatsStore: ObservableObject {
         )
         let producerVersion = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.1.2"
+        ) as? String ?? "2.1.3"
         workQueue.async { [weak self] in
             let result = Result {
                 try ConversationArchiveService.createPortableConversationArchive(

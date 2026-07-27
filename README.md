@@ -117,7 +117,7 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 Este proyecto integra [SwiftWABackupAPI 6.0.2](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/6.0.2), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
 
-Free My Chats 2.1.2 usa la API de composición para
+Free My Chats 2.1.3 usa la API de composición para
 construir las Vistas unificadas y el formato `.fmcchat` v1. La API crea,
 inspecciona, extrae, diagnostica, reorienta al target y materializa; Free My Chats
 registra cada aportación en `ImportedChats`, instala el resultado o hace rollback

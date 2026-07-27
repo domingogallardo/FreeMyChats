@@ -40,6 +40,27 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.domingogallardo.freemychats.portable-conversation</string>
+      <key>UTTypeDescription</key>
+      <string>Conversación portable de Free My Chats</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.zip-archive</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>fmcchat</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

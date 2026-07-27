@@ -4,9 +4,16 @@ import UniformTypeIdentifiers
 
 enum DirectoryPicker {
     private static let portableConversationType = UTType(
-        importedAs: "com.domingogallardo.freemychats.portable-conversation",
+        exportedAs: "com.domingogallardo.freemychats.portable-conversation",
         conformingTo: .zip
     )
+    private static var portableConversationOpenTypes: [UTType] {
+        guard let filenameType = UTType(filenameExtension: "fmcchat"),
+              filenameType != portableConversationType else {
+            return [portableConversationType]
+        }
+        return [portableConversationType, filenameType]
+    }
 
     @MainActor
     static func choose(startingAt currentPath: String) -> URL? {
@@ -56,7 +63,7 @@ enum DirectoryPicker {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [portableConversationType]
+        panel.allowedContentTypes = portableConversationOpenTypes
         panel.directoryURL = directoryURL
         return panel.runModal() == .OK ? panel.url : nil
     }
