@@ -330,14 +330,15 @@ nombre, referencias ausentes y hashes incorrectos.
 
 1. El usuario abre una conversación del catálogo y, en el menú del icono de
    carpeta de su encabezado, pulsa `Exportar conversación…`.
-2. La aplicación abre y valida la conversación materializada visible, que reúne
-   todas sus copias locales y chats importados.
+2. La aplicación reutiliza la conversación materializada ya abierta, que reúne
+   todas sus copias locales y chats importados; no vuelve a decodificarla.
 3. Se abre el panel de guardado con un nombre legible y extensión `.fmcchat`.
-4. En segundo plano se crea una carpeta temporal, se genera el documento portable,
-   se copian solo los medios referenciados y se calculan hashes y tamaños.
-5. Se valida el conjunto completo antes de comprimirlo.
-6. El paquete se escribe en un archivo temporal situado junto al destino y se
-   mueve al nombre definitivo al terminar.
+4. En segundo plano se genera `chat.json` mensaje a mensaje y se calculan hashes
+   y tamaños de los medios referenciados por bloques.
+5. Los medios se escriben directamente desde su ubicación validada al ZIP
+   temporal, sin duplicarlos primero en staging.
+6. El ZIP terminado se comprueba por estructura, tamaños y hashes y se mueve al
+   nombre definitivo únicamente si todo coincide.
 7. Se informa de mensajes, archivos y tamaño; se ofrecen `Mostrar en Finder` y
    `Aceptar`.
 

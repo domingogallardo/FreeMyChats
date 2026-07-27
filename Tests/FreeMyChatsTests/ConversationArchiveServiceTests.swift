@@ -232,18 +232,25 @@ final class ConversationArchiveServiceTests: XCTestCase {
     func testCreatesInspectsAndExtractsPortableConversationThroughAppBoundary() throws {
         let fixture = try makeLibrary(storedChats: oppositeIndividualStoredChats())
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        let receivedStoredChat = try XCTUnwrap(fixture.session.version(id: "received"))
-            .storedChatStore.openChat(chatId: 20)
-        let received = try ConversationSource(
-            id: ConversationSourceID(rawValue: "received"),
-            storedChat: receivedStoredChat
+        let receivedVersion = try XCTUnwrap(fixture.session.version(id: "received"))
+        let receivedStoredChat = try receivedVersion.storedChatStore.openChat(chatId: 20)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: receivedStoredChat.document.chat,
+            in: receivedVersion,
+            session: fixture.session
+        )
+        let update = try ConversationArchiveService.incorporate(
+            receivedStoredChat,
+            source: VersionChatID(versionID: "received", chatID: 20),
+            context: context,
+            in: fixture.session
         )
         let archiveURL = fixture.rootURL.appendingPathComponent("received.fmcchat")
         let extractionURL = fixture.rootURL.appendingPathComponent("received-portable")
         var creationPhases: [WABackupProgress.Phase] = []
 
         let created = try ConversationArchiveService.createPortableConversationArchive(
-            from: received,
+            from: update.conversation,
             producerVersion: "test",
             destinationURL: archiveURL,
             progress: { creationPhases.append($0.phase) }

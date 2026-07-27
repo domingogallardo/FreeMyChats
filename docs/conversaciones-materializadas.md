@@ -2,8 +2,8 @@
 
 ## Estado
 
-Este documento describe la implementación de Free My Chats 2.1.1 con
-SwiftWABackupAPI 6.0.1. La aplicación crea, valida, extrae e importa paquetes
+Este documento describe la implementación de Free My Chats 2.1.2 con
+SwiftWABackupAPI 6.0.2. La aplicación crea, valida, extrae e importa paquetes
 `.fmcchat`; registra cada aportación en `ImportedChats`, instala la Vista
 unificada con rollback y permite consultarla o retirarla desde la interfaz.
 

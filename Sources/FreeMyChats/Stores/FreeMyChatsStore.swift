@@ -537,12 +537,11 @@ final class FreeMyChatsStore: ObservableObject {
         )
         let producerVersion = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.1.1"
+        ) as? String ?? "2.1.2"
         workQueue.async { [weak self] in
             let result = Result {
                 try ConversationArchiveService.createPortableConversationArchive(
-                    for: conversationID,
-                    in: session,
+                    from: conversation,
                     producerVersion: producerVersion,
                     destinationURL: destinationURL
                 ) { progress in

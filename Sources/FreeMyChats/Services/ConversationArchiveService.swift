@@ -103,14 +103,12 @@ enum ConversationArchiveService {
     }
 
     static func createPortableConversationArchive(
-        for conversationID: ConversationArchiveID,
-        in session: LibrarySession,
+        from conversation: ArchivedConversation,
         producerVersion: String,
         destinationURL: URL,
         progress: WABackupProgressHandler? = nil,
         cancellation: WABackupCancellationHandler? = nil
     ) throws -> PortableConversationArchiveInfo {
-        let conversation = try openRepairing(id: conversationID, in: session)
         let source = try ConversationSource(
             id: ConversationSourceID(rawValue: "export-\(UUID().uuidString.lowercased())"),
             document: conversation.document,
@@ -119,6 +117,24 @@ enum ConversationArchiveService {
         )
         return try createPortableConversationArchive(
             from: source,
+            producerVersion: producerVersion,
+            destinationURL: destinationURL,
+            progress: progress,
+            cancellation: cancellation
+        )
+    }
+
+    static func createPortableConversationArchive(
+        for conversationID: ConversationArchiveID,
+        in session: LibrarySession,
+        producerVersion: String,
+        destinationURL: URL,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> PortableConversationArchiveInfo {
+        let conversation = try openRepairing(id: conversationID, in: session)
+        return try createPortableConversationArchive(
+            from: conversation,
             producerVersion: producerVersion,
             destinationURL: destinationURL,
             progress: progress,

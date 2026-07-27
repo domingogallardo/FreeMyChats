@@ -2,7 +2,7 @@
 
 ## Estado
 
-Free My Chats 2.1.1 implementa el flujo completo sobre la API introducida en
+Free My Chats 2.1.2 implementa el flujo completo sobre la API introducida en
 SwiftWABackupAPI 5.0.0 y consumida con su terminología definitiva en la 6.0.0:
 
 - implementados el diagnóstico y la materialización entre perspectivas;
@@ -86,7 +86,7 @@ El flujo implementado:
 
 El resultado informa de la conversación y de los mensajes incorporados. El
 diagnóstico interno también calcula coincidencias, multimedia exclusiva y
-confianza; estos datos no se muestran íntegramente en la interfaz 2.1.1:
+confianza; estos datos no se muestran íntegramente en la interfaz 2.1.2:
 
 ```text
 Misma conversación · Chat familiar
@@ -395,7 +395,7 @@ haya sido materializado por una versión compatible.
 
 ## Persistencia reversible
 
-Free My Chats 2.1.1 separa las fuentes locales, las importadas y la
+Free My Chats 2.1.2 separa las fuentes locales, las importadas y la
 materialización:
 
 ```text
@@ -485,7 +485,7 @@ FreeMyChats no debe implementar un segundo motor de fusión manipulando JSON.
 ### Posición de lectura
 
 `ChatReadingPositionStore` conserva la posición bajo la identidad estable de la
-conversación, pero guarda el mensaje como `Int` materializado. La versión 2.1.1
+conversación, pero guarda el mensaje como `Int` materializado. La versión 2.1.2
 no persiste el mapa de `ArchiveMessageID` ni traduce la posición cuando una
 reconstrucción cambia los enteros.
 
@@ -520,6 +520,14 @@ vista, con staging y rollback para conservar intacta la biblioteca ante un fallo
 ## Rendimiento
 
 - La API calcula hashes multimedia en streaming.
+- La exportación escribe `chat.json` mensaje a mensaje y no construye un
+  `Data` con el documento completo.
+- Los medios validados alimentan directamente el ZIP; no se duplican antes en
+  una carpeta temporal.
+- Free My Chats reutiliza la conversación ya abierta y evita una segunda lectura
+  y decodificación completa antes de llamar al codec.
+- La comprobación del ZIP recién creado recorre sus entradas por bloques; la
+  inspección de paquetes externos conserva la validación semántica completa.
 - Indexa firmas de mensajes en diccionarios.
 - Construye la cadena de anclas mediante una subsecuencia creciente.
 - Evita LCS cuadrático y no implementa comparación contextual exhaustiva.

@@ -1,10 +1,10 @@
 # Especificación para SwiftWABackupAPI: motor general de fusión y conversaciones portables
 
-## Estado de implementación — Free My Chats 2.1.1
+## Estado de implementación — Free My Chats 2.1.2
 
 SwiftWABackupAPI introdujo en la 5.0.0 los incrementos local, diagnóstico, de
 materialización entre perspectivas y el contrato portable v1. Free My Chats
-2.1.1 consume la API 6.0.1 y completa su integración:
+2.1.2 consume la API 6.0.2 y completa su integración:
 
 - Free My Chats construye su Vista unificada actual mediante
   `ConversationCompositionEngine` y conserva instalación/rollback.
@@ -30,8 +30,9 @@ materialización entre perspectivas y el contrato portable v1. Free My Chats
 - Las fichas y fotos de contacto solo se incluyen para participantes que la
   fuente demuestra que no son su usuario; los contactos no demostrables se
   omiten para no filtrar indirectamente la identidad del propietario.
-- La regresión publicada de la API pasa 149 pruebas y la aplicación contiene 64
-  pruebas. Incluyen fixtures sintéticos para perspectivas iguales/opuestas,
+- La regresión actual de la API ejecuta 158 pruebas (9 fixtures privados u
+  opt-in se omiten por defecto) y la aplicación contiene 64 pruebas. Incluyen
+  fixtures sintéticos para perspectivas iguales/opuestas,
   composición N-aria, mensajes
   débiles, offsets, multimedia, replies, reacciones, seguridad ZIP, privacidad y
   rechazo seguro. Dos pruebas opcionales validan en solo lectura tanto la Vista
@@ -58,7 +59,7 @@ La implementación sirve a dos casos con un único motor:
 
 La especificación nació sobre SwiftWABackupAPI 4.5.0 y Free My Chats 1.3.10. El
 motor resultante se publicó inicialmente en SwiftWABackupAPI 5.0.0. Free My Chats
-2.1.1 consume la versión exacta 6.0.1, compatible con la terminología definitiva de
+2.1.2 consume la versión exacta 6.0.2, compatible con la terminología definitiva de
 chats guardados; los checkouts de `.build` no son fuente editable.
 
 Documentos de contexto:
@@ -785,6 +786,12 @@ Objetivos:
 - diagnósticos agregados y conteos exactos sin muestras de contenido;
 - sin copia repetida de textos o blobs grandes en todas las capas.
 
+Para la creación portable, `O(totalMessages)` significa índices compactos de
+orden e IDs estables. No autoriza construir simultáneamente otro array completo
+de mensajes portables ni un único `Data` con todo `chat.json`. El JSON se escribe
+mensaje a mensaje y la memoria transitoria de serialización queda acotada por el
+mayor mensaje individual.
+
 ## 14. Plan de composición
 
 ### 14.1 Preparación opaca y resumen público
@@ -1204,7 +1211,7 @@ Ejemplo abreviado de manifiesto sin propietario global:
   "createdAt": "2026-07-22T10:15:30.000Z",
   "producer": {
     "name": "Free My Chats",
-    "version": "2.1.1"
+    "version": "2.1.2"
   },
   "implementation": {
     "name": "SwiftWABackupAPI",
@@ -1405,14 +1412,26 @@ validado un directorio arbitrario.
 
 1. Validar fuente.
 2. Convertir autoría a roles portables.
-3. Copiar solo medios referenciados.
-4. Calcular hashes en streaming y deduplicar por contenido.
-5. Escribir directorio canónico temporal.
-6. Validarlo con el mismo validador de importación.
-7. Crear ZIP temporal junto al destino.
-8. Cerrar y volver a inspeccionar el ZIP.
-9. Instalar/mover al destino únicamente al final.
-10. Limpiar temporales propios.
+3. Calcular hashes multimedia en streaming y deduplicar por contenido.
+4. Escribir `chat.json` incrementalmente, conservando orden, límites, privacidad,
+   IDs, replies y referencias.
+5. Crear el ZIP temporal junto al destino y alimentar las entradas multimedia
+   directamente desde las fuentes ya validadas, sin una segunda copia staging.
+6. Cerrar el ZIP y comprobar estructura, entradas, tamaños y hashes contra el
+   manifiesto construido.
+7. Instalar/mover al destino únicamente al final.
+8. Limpiar temporales propios.
+
+La ruta de creación valida cada descriptor, contacto y mensaje mientras lo
+genera; por ello no vuelve a decodificar su propio `chat.json`. La inspección e
+importación de un archivo externo mantienen la validación semántica completa e
+independiente, porque ese contenido no es de confianza. Si un medio cambia entre
+su hash inicial y la escritura del ZIP, la comprobación final falla y no se
+instala ningún resultado.
+
+Free My Chats debe reutilizar el `ArchivedConversation` ya abierto por el
+usuario. No vuelve a leer el `chat.json` de biblioteca solo para comenzar la
+exportación.
 
 No requiere copia de iPhone ni `WhatsAppBackupReader` abierto.
 
@@ -1971,8 +1990,9 @@ La versión 5.0.0 cumple:
 23. Salida y planes son deterministas para las mismas entradas/policy.
 24. La superficie pública, los perfiles y el contrato portable están documentados
     en README y en los documentos de SwiftWABackupAPI.
-25. `swift build` y 149 pruebas pasan, incluida la validación de solo lectura de la
-    biblioteca real; la compilación de distribución usa target macOS 13 Ventura.
+25. `swift build` y 158 pruebas pasan (9 fixtures privados u opt-in se omiten por
+    defecto), incluida la validación opcional de solo lectura de la biblioteca
+    real; la compilación de distribución usa target macOS 13 Ventura.
 26. El tag y release `5.0.0` están publicados y son consumibles por Free My Chats.
 
 ## 33. Decisiones que no deben tomarse silenciosamente
