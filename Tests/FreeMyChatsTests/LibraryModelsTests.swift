@@ -5,6 +5,25 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
+    func testConversationActionLabelsReflectUnifiedViewParticipation() {
+        XCTAssertEqual(
+            UnifiedViewPresentation.additionActionTitle(addsToExistingConversation: false),
+            "Añadir conversación"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.additionActionTitle(addsToExistingConversation: true),
+            "Añadir a la conversación"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionActionTitle(isPartOfUnifiedView: false),
+            "Eliminar conversación"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionActionTitle(isPartOfUnifiedView: true),
+            "Eliminar de la conversación"
+        )
+    }
+
     func testConversationPresentationOnlyCallsMultipleSavedCopiesUnified() {
         XCTAssertEqual(
             ConversationPresentation.cellTypeLabel(chatType: .individual),
@@ -91,7 +110,7 @@ final class LibraryModelsTests: XCTestCase {
     func testDeletingOneOfTwoSavedCopiesExplainsThatUnifiedViewDisappears() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 2),
-            "¿Borrar esta copia guardada y deshacer la Vista unificada?"
+            "¿Eliminar de la conversación y deshacer la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -114,7 +133,7 @@ final class LibraryModelsTests: XCTestCase {
     func testDeletingOneOfThreeSavedCopiesExplainsThatUnifiedViewIsRebuilt() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 3),
-            "¿Borrar esta copia guardada de la Vista unificada?"
+            "¿Eliminar de la conversación?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -132,7 +151,7 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(message.contains("no desaparecerá ninguno"))
         XCTAssertEqual(
             UnifiedViewPresentation.deletionButtonTitle(contributionCount: 3),
-            "Borrar y actualizar la vista"
+            "Eliminar de la conversación"
         )
     }
 

@@ -382,8 +382,11 @@ struct ImportedChatSidebarItem: Identifiable {
     let contribution: ImportedConversationContribution
     let conversationID: ConversationArchiveID
     let conversationName: String
+    let contributionCount: Int
 
     var id: String { contribution.id }
+
+    var isPartOfUnifiedView: Bool { contributionCount > 1 }
 }
 
 enum ChatDetailsState: Equatable {

@@ -348,6 +348,20 @@ enum ConversationArchiveService {
             .totalContributionCount
     }
 
+    static func existingContributionCounts(
+        for chats: [(selection: VersionChatID, chat: ChatInfo, version: LibraryVersionSession)],
+        in session: LibrarySession
+    ) throws -> [VersionChatID: Int] {
+        let records = try loadAvailableRecords(in: session)
+        return Dictionary(uniqueKeysWithValues: chats.compactMap { candidate in
+            let resolved = identity(for: candidate.chat, in: candidate.version)
+            guard let record = records.first(where: { $0.matches(resolved) }) else {
+                return nil
+            }
+            return (candidate.selection, record.totalContributionCount)
+        })
+    }
+
     static func contributionCount(
         containing source: VersionChatID,
         in session: LibrarySession

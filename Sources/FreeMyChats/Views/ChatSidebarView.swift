@@ -11,172 +11,16 @@ struct ChatSidebarView: View {
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
 
     var body: some View {
-        VStack(spacing: 0) {
-            sidebarHeader
-            List(selection: $store.selectedChatID) {
-                DisclosureGroup(isExpanded: $isImportedChatsExpanded) {
-                    if store.importedChats.isEmpty {
-                        Text("Todavía no hay chats importados")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 27)
-                            .padding(.vertical, 5)
-                    } else {
-                        ForEach(store.importedChats) { item in
-                            ImportedChatSidebarRow(
-                                item: item,
-                                isExpanded: expandedImportedChatID == item.id,
-                                isHighlighted: store.selectedConversationID == item.conversationID,
-                                detailsState: store.importedChatDetails[item.id],
-                                toggleExpansion: {
-                                    if expandedImportedChatID == item.id {
-                                        expandedImportedChatID = nil
-                                    } else {
-                                        expandedImportedChatID = item.id
-                                        store.loadImportedChatDetails(item)
-                                    }
-                                },
-                                reveal: { store.revealImportedChat(item) },
-                                remove: {
-                                    importedChatPendingDeletion = item
-                                }
-                            )
-                            .listRowBackground(
-                                Group {
-                                    if expandedImportedChatID == item.id {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(
-                                                Color(
-                                                    nsColor: .unemphasizedSelectedContentBackgroundColor
-                                                )
-                                            )
-                                            .padding(.horizontal, 2)
-                                    } else if store.selectedConversationID == item.conversationID {
-                                        Color.accentColor.opacity(0.14)
-                                    } else {
-                                        Color.clear
-                                    }
-                                }
-                            )
-                        }
-                    }
-                } label: {
-                    ImportedChatsGroupRow(
-                        count: store.importedChats.count,
-                        importChat: store.chooseAndImportChat
-                    )
-                }
-
-                ForEach(store.versions) { version in
-                    DisclosureGroup(isExpanded: expansionBinding(for: version.id)) {
-                        let chats = store.visibleChats(in: version)
-                        if store.isLoadingSourceChats, chats.isEmpty, version.hasSourceBackup {
-                            HStack(spacing: 7) {
-                                ProgressView().controlSize(.small)
-                                Text("Leyendo conversaciones…")
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 27)
-                            .padding(.vertical, 5)
-                        } else if chats.isEmpty {
-                            Text(emptyMessage(for: version))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.leading, 27)
-                                .padding(.vertical, 5)
-                        } else {
-                            ForEach(chats, id: \.id) { chat in
-                                let selection = VersionChatID(versionID: version.id, chatID: chat.id)
-                                ChatSidebarRow(
-                                    chat: chat,
-                                    photoURL: store.profilePhotoURL(for: chat, in: version),
-                                    isExpanded: store.selectedChatID == selection,
-                                    isHighlighted: store.highlightedChatIDs.contains(selection),
-                                    detailsState: store.chatDetails[selection],
-                                    storedChatState: store.storedChatStates[selection] ?? .checking,
-                                    isStoring: store.storingChatID == selection,
-                                    canAddToLibrary: version.hasSourceBackup,
-                                    toggleExpansion: {
-                                        store.selectedChatID = store.selectedChatID == selection
-                                            ? nil
-                                            : selection
-                                    },
-                                    addToLibrary: {
-                                        requestAddition(selection)
-                                    },
-                                    refreshStoredChat: { store.refreshStoredChat(selection) },
-                                    revealStoredChat: { store.revealStoredChat(selection) },
-                                    deleteStoredChat: {
-                                        store.prepareStoredCopyDeletion(selection)
-                                    }
-                                )
-                                .tag(selection)
-                                .listRowBackground(
-                                    store.highlightedChatIDs.contains(selection)
-                                        ? Color.accentColor.opacity(0.14)
-                                        : Color.clear
-                                )
-                            }
-                        }
-                    } label: {
-                        BackupVersionRow(
-                            version: version,
-                            isStoring: store.storingChatID?.versionID == version.id,
-                            isLoading: store.isLoadingSourceChats && version.hasSourceBackup
-                        ) {
-                            versionPendingDeletion = version
-                        }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .disabled(store.operation != nil)
-        }
-        .onChange(of: store.selectedChatID) { chatID in
-            store.selectChat(chatID)
-        }
-        .onChange(of: store.highlightedChatIDs) { chatIDs in
-            expandedVersionIDs.formUnion(chatIDs.map(\.versionID))
-        }
-        .onChange(of: store.selectedConversationID) { conversationID in
-            guard let conversationID,
-                  store.importedChats.contains(where: { $0.conversationID == conversationID }) else {
-                return
-            }
-            isImportedChatsExpanded = true
-        }
-        .onChange(of: isImportedChatsExpanded) { isExpanded in
-            if isExpanded {
-                expandedImportedChatID = nil
-            }
-        }
-        .onChange(of: store.versions.map(\.id)) { ids in
-            expandedVersionIDs.formIntersection(Set(ids))
-            if expandedVersionIDs.isEmpty, let first = ids.first {
-                expandedVersionIDs.insert(first)
-            }
-        }
-        .onAppear {
-            if let first = store.versions.first?.id {
-                expandedVersionIDs.insert(first)
-            }
-            expandedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
-        }
+        sidebarContent
         .confirmationDialog(
-            "¿Retirar este chat importado?",
+            importedChatDeletionConfirmationTitle,
             isPresented: Binding(
                 get: { importedChatPendingDeletion != nil },
                 set: { if !$0 { importedChatPendingDeletion = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Retirar chat importado", role: .destructive) {
-                if let item = importedChatPendingDeletion {
-                    store.removeImportedChat(item)
-                }
-                importedChatPendingDeletion = nil
-            }
+            Button(importedChatDeletionActionTitle, role: .destructive, action: confirmImportedChatDeletion)
             Button("Cancelar", role: .cancel) {
                 importedChatPendingDeletion = nil
             }
@@ -249,7 +93,7 @@ struct ChatSidebarView: View {
                 UnifiedViewPresentation.deletionTitle(
                     contributionCount: $0.impact.contributionCount
                 )
-            } ?? "¿Borrar esta copia guardada?",
+            } ?? "¿Eliminar conversación?",
             isPresented: Binding(
                 get: { store.storedCopyDeletionPreview != nil },
                 set: { if !$0 { store.dismissStoredCopyDeletionPreview() } }
@@ -282,6 +126,143 @@ struct ChatSidebarView: View {
         }
     }
 
+    private var sidebarContent: some View {
+        VStack(spacing: 0) {
+            sidebarHeader
+            sidebarList
+        }
+        .onChange(of: store.selectedChatID, perform: store.selectChat)
+        .onChange(of: store.highlightedChatIDs, perform: updateExpandedVersions)
+        .onChange(of: store.selectedConversationID, perform: updateImportedChatExpansion)
+        .onChange(of: isImportedChatsExpanded, perform: collapseImportedChatDetails)
+        .onChange(of: versionIDs, perform: updateExpandedVersionIDs)
+        .onAppear(perform: initializeExpandedVersions)
+    }
+
+    private var importedChatDeletionActionTitle: String {
+        UnifiedViewPresentation.deletionActionTitle(
+            isPartOfUnifiedView: importedChatPendingDeletion?.isPartOfUnifiedView == true
+        )
+    }
+
+    private var importedChatDeletionConfirmationTitle: String {
+        "¿\(importedChatDeletionActionTitle)?"
+    }
+
+    private func confirmImportedChatDeletion() {
+        if let item = importedChatPendingDeletion {
+            store.removeImportedChat(item)
+        }
+        importedChatPendingDeletion = nil
+    }
+
+    private var sidebarList: some View {
+        List(selection: $store.selectedChatID) {
+            importedChatsSection
+            backupVersionsSection
+        }
+        .listStyle(.sidebar)
+        .disabled(store.operation != nil)
+    }
+
+    private var versionIDs: [String] {
+        store.versions.map(\.id)
+    }
+
+    private func updateExpandedVersionIDs(_ ids: [String]) {
+        expandedVersionIDs.formIntersection(Set(ids))
+        if expandedVersionIDs.isEmpty, let first = ids.first {
+            expandedVersionIDs.insert(first)
+        }
+    }
+
+    private func updateExpandedVersions(_ chatIDs: Set<VersionChatID>) {
+        expandedVersionIDs.formUnion(chatIDs.map(\.versionID))
+    }
+
+    private func updateImportedChatExpansion(_ conversationID: ConversationArchiveID?) {
+        guard let conversationID,
+              store.importedChats.contains(where: { $0.conversationID == conversationID }) else {
+            return
+        }
+        isImportedChatsExpanded = true
+    }
+
+    private func collapseImportedChatDetails(_ isExpanded: Bool) {
+        if isExpanded {
+            expandedImportedChatID = nil
+        }
+    }
+
+    private func initializeExpandedVersions() {
+        if let first = store.versions.first?.id {
+            expandedVersionIDs.insert(first)
+        }
+        expandedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
+    }
+
+    private var importedChatsSection: some View {
+        DisclosureGroup(isExpanded: $isImportedChatsExpanded) {
+            if store.importedChats.isEmpty {
+                Text("Todavía no hay chats importados")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 27)
+                    .padding(.vertical, 5)
+            } else {
+                ForEach(store.importedChats) { item in
+                    importedChatSidebarRow(item)
+                }
+            }
+        } label: {
+            ImportedChatsGroupRow(
+                count: store.importedChats.count,
+                importChat: store.chooseAndImportChat
+            )
+        }
+    }
+
+    private var backupVersionsSection: some View {
+        ForEach(store.versions) { version in
+            DisclosureGroup(isExpanded: expansionBinding(for: version.id)) {
+                backupVersionChats(version)
+            } label: {
+                BackupVersionRow(
+                    version: version,
+                    isStoring: store.storingChatID?.versionID == version.id,
+                    isLoading: store.isLoadingSourceChats && version.hasSourceBackup
+                ) {
+                    versionPendingDeletion = version
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func backupVersionChats(_ version: LibraryVersionSession) -> some View {
+        let chats = store.visibleChats(in: version)
+        if store.isLoadingSourceChats, chats.isEmpty, version.hasSourceBackup {
+            HStack(spacing: 7) {
+                ProgressView().controlSize(.small)
+                Text("Leyendo conversaciones…")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 27)
+            .padding(.vertical, 5)
+        } else if chats.isEmpty {
+            Text(emptyMessage(for: version))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 27)
+                .padding(.vertical, 5)
+        } else {
+            ForEach(chats, id: \.id) { chat in
+                chatSidebarRow(chat, in: version)
+            }
+        }
+    }
+
     private func requestAddition(_ selection: VersionChatID) {
         guard let state = store.storedChatStates[selection] else { return }
         guard case .updateAvailable = state else {
@@ -289,6 +270,76 @@ struct ChatSidebarView: View {
             return
         }
         store.prepareUnifiedViewAddition(selection)
+    }
+
+    private func importedChatSidebarRow(_ item: ImportedChatSidebarItem) -> some View {
+        let isExpanded = expandedImportedChatID == item.id
+        let isHighlighted = store.selectedConversationID == item.conversationID
+        return ImportedChatSidebarRow(
+            item: item,
+            isExpanded: isExpanded,
+            isHighlighted: isHighlighted,
+            detailsState: store.importedChatDetails[item.id],
+            toggleExpansion: {
+                if isExpanded {
+                    expandedImportedChatID = nil
+                } else {
+                    expandedImportedChatID = item.id
+                    store.loadImportedChatDetails(item)
+                }
+            },
+            reveal: { store.revealImportedChat(item) },
+            remove: { importedChatPendingDeletion = item }
+        )
+        .listRowBackground(importedChatRowBackground(
+            isExpanded: isExpanded,
+            isHighlighted: isHighlighted
+        ))
+    }
+
+    @ViewBuilder
+    private func importedChatRowBackground(
+        isExpanded: Bool,
+        isHighlighted: Bool
+    ) -> some View {
+        if isExpanded {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
+                .padding(.horizontal, 2)
+        } else if isHighlighted {
+            Color.accentColor.opacity(0.14)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func chatSidebarRow(
+        _ chat: ChatInfo,
+        in version: LibraryVersionSession
+    ) -> some View {
+        let selection = VersionChatID(versionID: version.id, chatID: chat.id)
+        let isHighlighted = store.highlightedChatIDs.contains(selection)
+        return ChatSidebarRow(
+            chat: chat,
+            photoURL: store.profilePhotoURL(for: chat, in: version),
+            isExpanded: store.selectedChatID == selection,
+            isHighlighted: isHighlighted,
+            detailsState: store.chatDetails[selection],
+            storedChatState: store.storedChatStates[selection] ?? .checking,
+            isPartOfUnifiedView: store.isPartOfUnifiedView(selection),
+            additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
+            isStoring: store.storingChatID == selection,
+            canAddToLibrary: version.hasSourceBackup,
+            toggleExpansion: {
+                store.selectedChatID = store.selectedChatID == selection ? nil : selection
+            },
+            addToLibrary: { requestAddition(selection) },
+            refreshStoredChat: { store.refreshStoredChat(selection) },
+            revealStoredChat: { store.revealStoredChat(selection) },
+            deleteStoredChat: { store.prepareStoredCopyDeletion(selection) }
+        )
+        .tag(selection)
+        .listRowBackground(isHighlighted ? Color.accentColor.opacity(0.14) : Color.clear)
     }
 
     private var sidebarHeader: some View {
@@ -531,11 +582,22 @@ private struct ImportedChatSidebarRow: View {
             .help("Cerrar detalles del chat importado")
             .accessibilityLabel("Cerrar detalles del chat importado")
 
-            HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
                 actionButton("Abrir carpeta", systemImage: "folder", action: reveal)
                     .help("Abrir la carpeta del chat importado en Finder")
-                actionButton("Borrar", systemImage: "trash", tint: .red, action: remove)
-                    .help("Retirar este chat importado de la Vista unificada")
+                actionButton(
+                    UnifiedViewPresentation.deletionActionTitle(
+                        isPartOfUnifiedView: item.isPartOfUnifiedView
+                    ),
+                    systemImage: "trash",
+                    tint: .red,
+                    action: remove
+                )
+                .help(
+                    item.isPartOfUnifiedView
+                        ? "Eliminar este chat importado de la Vista unificada"
+                        : "Eliminar este chat importado de la conversación"
+                )
             }
         }
         .font(.caption)
@@ -679,6 +741,8 @@ private struct ChatSidebarRow: View {
     let isHighlighted: Bool
     let detailsState: ChatDetailsState?
     let storedChatState: StoredChatDisplayState
+    let isPartOfUnifiedView: Bool
+    let additionTargetsUnifiedView: Bool
     let isStoring: Bool
     let canAddToLibrary: Bool
     let toggleExpansion: () -> Void
@@ -771,7 +835,7 @@ private struct ChatSidebarRow: View {
             .padding(.top, 3)
 
             if storedChatState.isPhysicallyStored, !isStoring {
-                HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 6) {
                     actionButton(
                         "Abrir carpeta",
                         systemImage: "folder",
@@ -779,12 +843,18 @@ private struct ChatSidebarRow: View {
                     )
                     .help("Abrir la copia guardada de este chat en Finder")
                     actionButton(
-                        "Borrar",
+                        UnifiedViewPresentation.deletionActionTitle(
+                            isPartOfUnifiedView: isPartOfUnifiedView
+                        ),
                         systemImage: "trash",
                         tint: .red,
                         action: deleteStoredChat
                     )
-                    .help("Borrar únicamente la copia guardada de este chat")
+                    .help(
+                        isPartOfUnifiedView
+                            ? "Eliminar esta copia de la Vista unificada"
+                            : "Eliminar esta conversación guardada"
+                    )
                 }
             }
 
@@ -827,8 +897,13 @@ private struct ChatSidebarRow: View {
             }
         case .notStored:
             if canAddToLibrary {
-                actionButton("Añadir a la biblioteca", action: addToLibrary)
-                .help("Guardar este chat con sus mensajes y archivos en la biblioteca")
+                actionButton(
+                    UnifiedViewPresentation.additionActionTitle(
+                        addsToExistingConversation: false
+                    ),
+                    action: addToLibrary
+                )
+                .help("Guardar esta conversación con sus mensajes y archivos en la biblioteca")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
@@ -836,7 +911,9 @@ private struct ChatSidebarRow: View {
         case .updateAvailable:
             if canAddToLibrary {
                 actionButton(
-                    "Añadir a la biblioteca",
+                    UnifiedViewPresentation.additionActionTitle(
+                        addsToExistingConversation: additionTargetsUnifiedView
+                    ),
                     systemImage: "plus",
                     action: addToLibrary
                 )

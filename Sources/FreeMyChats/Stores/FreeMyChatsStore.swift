@@ -22,6 +22,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var selectedConversationID: ConversationArchiveID?
     @Published private(set) var selectedConversation: ArchivedConversation?
     @Published private(set) var highlightedChatIDs: Set<VersionChatID> = []
+    @Published private(set) var existingConversationContributionCounts: [VersionChatID: Int] = [:]
     @Published private(set) var isLoadingConversationCatalog = false
     @Published private(set) var isOpeningConversation = false
     @Published private(set) var conversationPanelError: String?
@@ -68,7 +69,8 @@ final class FreeMyChatsStore: ObservableObject {
                     ImportedChatSidebarItem(
                         contribution: $0,
                         conversationID: item.id,
-                        conversationName: item.chat.name
+                        conversationName: item.chat.name,
+                        contributionCount: item.contributionCount
                     )
                 }
             }
@@ -446,6 +448,16 @@ final class FreeMyChatsStore: ObservableObject {
             errorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    func isPartOfUnifiedView(_ selection: VersionChatID) -> Bool {
+        conversationCatalog.contains { item in
+            item.contributionCount > 1 && item.contributionSources.contains(selection)
+        }
+    }
+
+    func additionTargetsUnifiedView(_ selection: VersionChatID) -> Bool {
+        existingConversationContributionCounts[selection, default: 0] > 1
     }
 
     func refreshStoredChat(_ selection: VersionChatID) {
@@ -1069,6 +1081,7 @@ final class FreeMyChatsStore: ObservableObject {
         openConversationRequestID = nil
         chatDetails = [:]
         importedChatDetails = [:]
+        existingConversationContributionCounts = [:]
         storedChatStates = Dictionary(uniqueKeysWithValues: newSession.versions.flatMap { version in
             version.chats.map { (VersionChatID(versionID: version.id, chatID: $0.id), .checking) }
         })
@@ -1151,6 +1164,7 @@ final class FreeMyChatsStore: ObservableObject {
             loadedSession.chat(for: $0) == nil ? nil : $0
         }
         chatDetails = [:]
+        existingConversationContributionCounts = [:]
         storedChatStates = Dictionary(uniqueKeysWithValues: loadedSession.versions.flatMap { version in
             version.chats.map {
                 (VersionChatID(versionID: version.id, chatID: $0.id), .checking)
@@ -1166,20 +1180,24 @@ final class FreeMyChatsStore: ObservableObject {
         guard let session else { return }
         workQueue.async { [weak self] in
             var states: [VersionChatID: StoredChatDisplayState] = [:]
-            let archiveKeys = (try? ConversationArchiveService.archiveKeys(
-                paths: session.paths
-            )) ?? []
+            let chatCandidates = session.versions.flatMap { version in
+                version.chats.map {
+                    (
+                        selection: VersionChatID(versionID: version.id, chatID: $0.id),
+                        chat: $0,
+                        version: version
+                    )
+                }
+            }
+            let existingContributionCounts = (try? ConversationArchiveService
+                .existingContributionCounts(for: chatCandidates, in: session)) ?? [:]
             for version in session.versions {
-                let identityResolver = ConversationIdentityResolver(
-                    backupURL: version.hasSourceBackup ? version.backupURL : nil
-                )
                 for chat in version.chats {
                     let key = VersionChatID(versionID: version.id, chatID: chat.id)
                     if !Self.hasStoredChatDocument(key, in: version) {
-                        let identity = identityResolver.identity(for: chat)
-                        states[key] = !archiveKeys.isDisjoint(with: identity.keys)
-                            ? .updateAvailable(Date())
-                            : .notStored
+                        states[key] = existingContributionCounts[key] == nil
+                            ? .notStored
+                            : .updateAvailable(Date())
                     } else if let reader = version.reader {
                         states[key] = StoredChatDisplayState(reader.storageState(for: chat))
                     } else if let stored = try? version.storedChatStore.openChat(chatId: chat.id) {
@@ -1192,6 +1210,7 @@ final class FreeMyChatsStore: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, self.session === session else { return }
                 self.storedChatStates = states
+                self.existingConversationContributionCounts = existingContributionCounts
             }
         }
     }

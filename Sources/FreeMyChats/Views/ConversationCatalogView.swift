@@ -25,7 +25,7 @@ struct ConversationCatalogView: View {
                     "Todavía no hay conversaciones en el catálogo",
                     systemImage: "tray",
                     description:
-                        "Despliega un chat en el panel izquierdo y pulsa Añadir a la biblioteca. "
+                        "Despliega un chat en el panel izquierdo y pulsa Añadir conversación. "
                         + "Aparecerá aquí como una conversación guardada."
                 )
             } else if filteredChats.isEmpty {

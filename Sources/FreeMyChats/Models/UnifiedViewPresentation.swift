@@ -57,14 +57,22 @@ enum UnifiedViewPresentation {
             : "Añadir y actualizar"
     }
 
+    static func additionActionTitle(addsToExistingConversation: Bool) -> String {
+        addsToExistingConversation ? "Añadir a la conversación" : "Añadir conversación"
+    }
+
+    static func deletionActionTitle(isPartOfUnifiedView: Bool) -> String {
+        isPartOfUnifiedView ? "Eliminar de la conversación" : "Eliminar conversación"
+    }
+
     static func deletionTitle(contributionCount: Int) -> String {
         switch contributionCount {
         case 2:
-            return "¿Borrar esta copia guardada y deshacer la Vista unificada?"
+            return "¿Eliminar de la conversación y deshacer la Vista unificada?"
         case 3...:
-            return "¿Borrar esta copia guardada de la Vista unificada?"
+            return "¿Eliminar de la conversación?"
         default:
-            return "¿Borrar esta copia guardada?"
+            return "¿Eliminar conversación?"
         }
     }
 
@@ -95,7 +103,7 @@ enum UnifiedViewPresentation {
     }
 
     static func deletionButtonTitle(contributionCount: Int) -> String {
-        contributionCount > 2 ? "Borrar y actualizar la vista" : "Borrar copia"
+        deletionActionTitle(isPartOfUnifiedView: contributionCount > 1)
     }
 
     static func incorporationCompletionMessage(
