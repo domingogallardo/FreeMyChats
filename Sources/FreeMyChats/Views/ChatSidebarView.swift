@@ -6,6 +6,7 @@ struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
     @State private var isImportedChatsExpanded = true
+    @State private var expandedImportedChatID: String?
     @State private var versionPendingDeletion: LibraryVersionSession?
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
 
@@ -24,12 +25,37 @@ struct ChatSidebarView: View {
                         ForEach(store.importedChats) { item in
                             ImportedChatSidebarRow(
                                 item: item,
-                                reveal: { store.revealImportedChat(item) },
-                                openConversation: {
-                                    store.openConversation(item.conversationID)
+                                isExpanded: expandedImportedChatID == item.id,
+                                isHighlighted: store.selectedConversationID == item.conversationID,
+                                detailsState: store.importedChatDetails[item.id],
+                                toggleExpansion: {
+                                    if expandedImportedChatID == item.id {
+                                        expandedImportedChatID = nil
+                                    } else {
+                                        expandedImportedChatID = item.id
+                                        store.loadImportedChatDetails(item)
+                                    }
                                 },
+                                reveal: { store.revealImportedChat(item) },
                                 remove: {
                                     importedChatPendingDeletion = item
+                                }
+                            )
+                            .listRowBackground(
+                                Group {
+                                    if expandedImportedChatID == item.id {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(
+                                                Color(
+                                                    nsColor: .unemphasizedSelectedContentBackgroundColor
+                                                )
+                                            )
+                                            .padding(.horizontal, 2)
+                                    } else if store.selectedConversationID == item.conversationID {
+                                        Color.accentColor.opacity(0.14)
+                                    } else {
+                                        Color.clear
+                                    }
                                 }
                             )
                         }
@@ -112,6 +138,18 @@ struct ChatSidebarView: View {
         }
         .onChange(of: store.highlightedChatIDs) { chatIDs in
             expandedVersionIDs.formUnion(chatIDs.map(\.versionID))
+        }
+        .onChange(of: store.selectedConversationID) { conversationID in
+            guard let conversationID,
+                  store.importedChats.contains(where: { $0.conversationID == conversationID }) else {
+                return
+            }
+            isImportedChatsExpanded = true
+        }
+        .onChange(of: isImportedChatsExpanded) { isExpanded in
+            if isExpanded {
+                expandedImportedChatID = nil
+            }
         }
         .onChange(of: store.versions.map(\.id)) { ids in
             expandedVersionIDs.formIntersection(Set(ids))
@@ -408,13 +446,16 @@ private struct ImportedChatsGroupRow: View {
 
 private struct ImportedChatSidebarRow: View {
     let item: ImportedChatSidebarItem
+    let isExpanded: Bool
+    let isHighlighted: Bool
+    let detailsState: ImportedChatDetailsState?
+    let toggleExpansion: () -> Void
     let reveal: () -> Void
-    let openConversation: () -> Void
     let remove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Button(action: openConversation) {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: toggleExpansion) {
                 HStack(spacing: 10) {
                     ZStack {
                         Circle().fill(.quaternary)
@@ -428,10 +469,12 @@ private struct ImportedChatSidebarRow: View {
                             .fontWeight(.medium)
                             .lineLimit(1)
                         Text(
-                            "Importado el "
-                                + Self.dateFormatter.string(
-                                    from: item.contribution.importedAt
-                                )
+                            [
+                                "Chat importado",
+                                item.contribution.messageCount.map { "\($0.formatted()) mensajes" }
+                            ]
+                            .compactMap { $0 }
+                            .joined(separator: " · ")
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -443,37 +486,123 @@ private struct ImportedChatSidebarRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Abrir la Vista unificada de \(item.conversationName)")
+            .help(isExpanded ? "Cerrar detalles del chat importado" : "Mostrar detalles del chat importado")
 
-            HStack(spacing: 6) {
-                compactAction("Abrir", systemImage: "bubble.left", action: openConversation)
-                compactAction("Carpeta", systemImage: "folder", action: reveal)
-                compactAction("Retirar", systemImage: "trash", tint: .red, action: remove)
+            if isExpanded {
+                expandedDetails
+                    .padding(.leading, 48)
+                    .padding(.top, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .padding(.leading, 48)
         }
         .padding(.leading, 18)
-        .padding(.vertical, 5)
+        .padding(.vertical, isExpanded ? 7 : 3)
+        .overlay(alignment: .leading) {
+            if isHighlighted {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 3)
+                    .padding(.vertical, 4)
+            }
+        }
+        .animation(.easeInOut(duration: 0.16), value: isExpanded)
+        .animation(.easeInOut(duration: 0.16), value: isHighlighted)
     }
 
-    private func compactAction(
+    private var expandedDetails: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: toggleExpansion) {
+                VStack(alignment: .leading, spacing: 6) {
+                    detailLine(
+                        "Mensajes",
+                        value: item.contribution.messageCount?.formatted() ?? "No disponible"
+                    )
+                    detailLine(
+                        "Importado",
+                        value: Self.dateFormatter.string(from: item.contribution.importedAt)
+                    )
+                    detailLine("Primero", value: firstMessageDescription)
+                    detailLine("Último", value: lastMessageDescription)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Cerrar detalles del chat importado")
+            .accessibilityLabel("Cerrar detalles del chat importado")
+
+            HStack(spacing: 6) {
+                actionButton("Abrir carpeta", systemImage: "folder", action: reveal)
+                    .help("Abrir la carpeta del chat importado en Finder")
+                actionButton("Borrar", systemImage: "trash", tint: .red, action: remove)
+                    .help("Retirar este chat importado de la Vista unificada")
+            }
+        }
+        .font(.caption)
+    }
+
+    private func detailLine(_ label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .leading)
+            Text(value)
+                .lineLimit(1)
+        }
+    }
+
+    private var firstMessageDescription: String {
+        switch detailsState {
+        case .loading:
+            return "Calculando…"
+        case .loaded(let firstMessageDate, _):
+            return firstMessageDate.map(Self.dateFormatter.string) ?? "Sin mensajes"
+        case .failed:
+            return "No disponible"
+        case nil:
+            return "—"
+        }
+    }
+
+    private var lastMessageDescription: String {
+        switch detailsState {
+        case .loading:
+            return "Calculando…"
+        case .loaded(_, let lastMessageDate):
+            return lastMessageDate.map(Self.dateFormatter.string) ?? "Sin mensajes"
+        case .failed:
+            return "No disponible"
+        case nil:
+            return "—"
+        }
+    }
+
+    private func actionButton(
         _ title: String,
-        systemImage: String,
-        tint: Color = .accentColor,
+        systemImage: String? = nil,
+        tint: Color = Color.accentColor,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(.white.opacity(0.92), in: Capsule())
-                .overlay {
-                    Capsule().stroke(tint.opacity(0.22), lineWidth: 0.75)
+            HStack(spacing: 5) {
+                Text(title)
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption2.weight(.semibold))
                 }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.white.opacity(0.92), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(tint.opacity(0.22), lineWidth: 0.75)
+            }
         }
         .buttonStyle(.plain)
+        .contentShape(Capsule())
     }
 
     private static let dateFormatter: DateFormatter = {

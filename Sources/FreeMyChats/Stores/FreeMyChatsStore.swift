@@ -27,6 +27,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var conversationPanelError: String?
     @Published private(set) var storedChatStates: [VersionChatID: StoredChatDisplayState] = [:]
     @Published private(set) var chatDetails: [VersionChatID: ChatDetailsState] = [:]
+    @Published private(set) var importedChatDetails: [String: ImportedChatDetailsState] = [:]
     @Published var chatFilter: ChatListFilter = .all
     @Published var chatSortOrder: ChatListSortOrder = .recent
     @Published private(set) var operation: AppOperation?
@@ -181,6 +182,7 @@ final class FreeMyChatsStore: ObservableObject {
         session = nil
         storedChatStates = [:]
         chatDetails = [:]
+        importedChatDetails = [:]
         selectedChatID = nil
         conversationCatalog = []
         selectedConversationID = nil
@@ -637,6 +639,37 @@ final class FreeMyChatsStore: ObservableObject {
         WorkspaceService.reveal(url)
     }
 
+    func loadImportedChatDetails(_ item: ImportedChatSidebarItem) {
+        guard importedChatDetails[item.id] == nil,
+              let session else { return }
+
+        importedChatDetails[item.id] = .loading
+        workQueue.async { [weak self] in
+            let result = Result {
+                let directoryURL = session.paths.importedChatsURL
+                    .appendingPathComponent(item.contribution.relativeDirectory, isDirectory: true)
+                let directory = try PortableConversationArchiveCodec()
+                    .openValidatedDirectory(at: directoryURL)
+                return (
+                    firstMessageDate: directory.manifest.firstMessageAt,
+                    lastMessageDate: directory.manifest.lastMessageAt
+                )
+            }
+            DispatchQueue.main.async {
+                guard let self, self.session === session else { return }
+                switch result {
+                case .success(let dates):
+                    self.importedChatDetails[item.id] = .loaded(
+                        firstMessageDate: dates.firstMessageDate,
+                        lastMessageDate: dates.lastMessageDate
+                    )
+                case .failure(let error):
+                    self.importedChatDetails[item.id] = .failed(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func removeImportedChat(_ item: ImportedChatSidebarItem) {
         guard let session else { return }
         let operationTitle = "Retirando “\(item.conversationName)”…"
@@ -1035,6 +1068,7 @@ final class FreeMyChatsStore: ObservableObject {
         conversationPanelError = nil
         openConversationRequestID = nil
         chatDetails = [:]
+        importedChatDetails = [:]
         storedChatStates = Dictionary(uniqueKeysWithValues: newSession.versions.flatMap { version in
             version.chats.map { (VersionChatID(versionID: version.id, chatID: $0.id), .checking) }
         })

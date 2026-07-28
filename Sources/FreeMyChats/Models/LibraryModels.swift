@@ -392,6 +392,12 @@ enum ChatDetailsState: Equatable {
     case failed(String)
 }
 
+enum ImportedChatDetailsState: Equatable {
+    case loading
+    case loaded(firstMessageDate: Date?, lastMessageDate: Date?)
+    case failed(String)
+}
+
 final class LibraryVersionSession: @unchecked Sendable, Identifiable {
     let record: LibraryVersionRecord
     let backupURL: URL
