@@ -1204,6 +1204,214 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(archived.record.contributions.count, 2)
     }
 
+    func testDetachingOneOfTwoContributionsKeepsTheCopyExtractedOutsideTheCatalog() throws {
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "old",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
+                    ]
+                ),
+                StoredChatFixture(
+                    versionID: "new",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    storedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
+                        MessageFixture(id: 12, text: "C", date: "2026-02-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
+
+        let detachment = try ConversationArchiveService.detachContribution(
+            source: VersionChatID(versionID: "old", chatID: 7),
+            from: fixture.session
+        )
+        let catalog = try ConversationArchiveService.catalog(in: fixture.session)
+
+        XCTAssertEqual(detachment.conversation.record.id, original.id)
+        XCTAssertEqual(
+            detachment.conversation.record.contributions.map(\.source),
+            [VersionChatID(versionID: "new", chatID: 7)]
+        )
+        XCTAssertEqual(detachment.conversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertNotNil(fixture.session.version(id: "old"))
+        XCTAssertNotNil(fixture.session.version(id: "new"))
+        XCTAssertEqual(catalog.count, 1)
+        XCTAssertEqual(catalog.first?.contributionCount, 1)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: fixture.session.paths.mergedChatsURL
+                    .appendingPathComponent(original.id.rawValue, isDirectory: true).path
+            )
+        )
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: oldVersion.storedChatsURL
+                    .appendingPathComponent("Chats/7/chat.json").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: oldVersion.storedChatsURL
+                    .appendingPathComponent("Chats/7/archive.json").path
+            )
+        )
+        let newVersion = try XCTUnwrap(fixture.session.version(id: "new"))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: newVersion.storedChatsURL
+                    .appendingPathComponent("Chats/7/archive.json").path
+            )
+        )
+        XCTAssertEqual(
+            try ConversationArchiveService.incorporatedContributionSources(
+                in: fixture.session
+            ),
+            [VersionChatID(versionID: "new", chatID: 7)]
+        )
+    }
+
+    func testDetachedExtractedCopyCanBeAddedBackToTheUnifiedConversation() throws {
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "first",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
+                    ]
+                ),
+                StoredChatFixture(
+                    versionID: "second",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    storedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 2, text: "B", date: "2026-02-01T10:00:00Z")
+                    ]
+                ),
+                StoredChatFixture(
+                    versionID: "third",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    storedAt: "2026-03-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 3, text: "C", date: "2026-03-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let original = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
+
+        let detachment = try ConversationArchiveService.detachContribution(
+            source: VersionChatID(versionID: "second", chatID: 7),
+            from: fixture.session
+        )
+        let catalog = try ConversationArchiveService.catalog(in: fixture.session)
+
+        XCTAssertEqual(detachment.conversation.record.id, original.id)
+        XCTAssertEqual(
+            Set(detachment.conversation.record.contributions.map(\.source)),
+            Set([
+                VersionChatID(versionID: "first", chatID: 7),
+                VersionChatID(versionID: "third", chatID: 7)
+            ])
+        )
+        XCTAssertEqual(detachment.conversation.document.messages.map(\.message), ["A", "C"])
+        XCTAssertEqual(
+            catalog.map(\.contributionCount),
+            [2]
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixture.session.paths.mergedChatsURL
+                    .appendingPathComponent(original.id.rawValue, isDirectory: true).path
+            )
+        )
+        let detachedVersion = try XCTUnwrap(fixture.session.version(id: "second"))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: detachedVersion.storedChatsURL
+                    .appendingPathComponent("Chats/7/archive.json").path
+            )
+        )
+        let stored = try detachedVersion.storedChatStore.openChat(chatId: 7)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: stored.document.chat,
+            in: detachedVersion,
+            session: fixture.session
+        )
+        let update = try ConversationArchiveService.incorporate(
+            stored,
+            source: VersionChatID(versionID: "second", chatID: 7),
+            context: context,
+            in: fixture.session
+        )
+        let restoredCatalog = try ConversationArchiveService.catalog(in: fixture.session)
+
+        XCTAssertEqual(update.conversation.record.id, original.id)
+        XCTAssertEqual(update.conversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertEqual(update.conversation.record.contributions.count, 3)
+        XCTAssertEqual(restoredCatalog.count, 1)
+        XCTAssertEqual(restoredCatalog.first?.contributionCount, 3)
+        XCTAssertFalse(
+            try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
+                .contains { $0.hasPrefix(".detaching-contribution-") }
+        )
+    }
+
+    func testDetachingSingleConversationIsRejectedWithoutChangingIt() throws {
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "only",
+                    chatID: 7,
+                    jid: "34600111222@s.whatsapp.net",
+                    name: "Ana",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        _ = try incorporateAllStoredChats(in: fixture)
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.detachContribution(
+                source: VersionChatID(versionID: "only", chatID: 7),
+                from: fixture.session
+            )
+        ) { error in
+            guard case ConversationArchiveError.contributionIsNotUnified = error else {
+                return XCTFail("Error inesperado: \(error)")
+            }
+        }
+        XCTAssertEqual(try ConversationArchiveService.catalog(in: fixture.session).count, 1)
+        XCTAssertNotNil(fixture.session.version(id: "only"))
+    }
+
     func testRemovingOlderContributionKeepsTheNewerCompleteConversation() throws {
         let fixture = try makeLibrary(
             storedChats: [

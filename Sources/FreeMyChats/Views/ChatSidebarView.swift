@@ -13,14 +13,14 @@ struct ChatSidebarView: View {
     var body: some View {
         sidebarContent
         .confirmationDialog(
-            importedChatDeletionConfirmationTitle,
+            "¿Borrar este chat importado?",
             isPresented: Binding(
                 get: { importedChatPendingDeletion != nil },
                 set: { if !$0 { importedChatPendingDeletion = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button(importedChatDeletionActionTitle, role: .destructive, action: confirmImportedChatDeletion)
+            Button("Borrar", role: .destructive, action: confirmImportedChatDeletion)
             Button("Cancelar", role: .cancel) {
                 importedChatPendingDeletion = nil
             }
@@ -29,6 +29,37 @@ struct ChatSidebarView: View {
                 "La aportación importada se eliminará de ImportedChats y la Vista unificada "
                     + "se reconstruirá con las copias y chats restantes."
             )
+        }
+        .confirmationDialog(
+            store.storedCopyDetachmentPreview.map {
+                UnifiedViewPresentation.detachmentTitle(
+                    contributionCount: $0.impact.contributionCount
+                )
+            } ?? "¿Eliminar de la conversación?",
+            isPresented: Binding(
+                get: { store.storedCopyDetachmentPreview != nil },
+                set: { if !$0 { store.dismissStoredCopyDetachmentPreview() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let preview = store.storedCopyDetachmentPreview {
+                Button("Eliminar de la conversación") {
+                    store.detachStoredContribution(preview.selection)
+                }
+            }
+            Button("Cancelar", role: .cancel) {
+                store.dismissStoredCopyDetachmentPreview()
+            }
+        } message: {
+            if let preview = store.storedCopyDetachmentPreview {
+                Text(
+                    UnifiedViewPresentation.detachmentMessage(
+                        chatName: preview.chatName,
+                        versionTitle: preview.versionTitle,
+                        impact: preview.impact
+                    )
+                )
+            }
         }
         .confirmationDialog(
             "¿Eliminar esta copia fuente?",
@@ -93,7 +124,7 @@ struct ChatSidebarView: View {
                 UnifiedViewPresentation.deletionTitle(
                     contributionCount: $0.impact.contributionCount
                 )
-            } ?? "¿Eliminar conversación?",
+            } ?? "¿Borrar esta copia guardada?",
             isPresented: Binding(
                 get: { store.storedCopyDeletionPreview != nil },
                 set: { if !$0 { store.dismissStoredCopyDeletionPreview() } }
@@ -137,16 +168,6 @@ struct ChatSidebarView: View {
         .onChange(of: isImportedChatsExpanded, perform: collapseImportedChatDetails)
         .onChange(of: versionIDs, perform: updateExpandedVersionIDs)
         .onAppear(perform: initializeExpandedVersions)
-    }
-
-    private var importedChatDeletionActionTitle: String {
-        UnifiedViewPresentation.deletionActionTitle(
-            isPartOfUnifiedView: importedChatPendingDeletion?.isPartOfUnifiedView == true
-        )
-    }
-
-    private var importedChatDeletionConfirmationTitle: String {
-        "¿\(importedChatDeletionActionTitle)?"
     }
 
     private func confirmImportedChatDeletion() {
@@ -266,6 +287,10 @@ struct ChatSidebarView: View {
     private func requestAddition(_ selection: VersionChatID) {
         guard let state = store.storedChatStates[selection] else { return }
         guard case .updateAvailable = state else {
+            if state.isExtracted {
+                store.prepareUnifiedViewAddition(selection)
+                return
+            }
             store.addChatToLibrary(selection)
             return
         }
@@ -326,7 +351,8 @@ struct ChatSidebarView: View {
             isHighlighted: isHighlighted,
             detailsState: store.chatDetails[selection],
             storedChatState: store.storedChatStates[selection] ?? .checking,
-            isPartOfUnifiedView: store.isPartOfUnifiedView(selection),
+            contributedMessageCount: store.contributedMessageCount(for: selection),
+            canDetachFromUnifiedView: store.canDetachFromUnifiedView(selection),
             additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
             isStoring: store.storingChatID == selection,
             canAddToLibrary: version.hasSourceBackup,
@@ -336,6 +362,7 @@ struct ChatSidebarView: View {
             addToLibrary: { requestAddition(selection) },
             refreshStoredChat: { store.refreshStoredChat(selection) },
             revealStoredChat: { store.revealStoredChat(selection) },
+            detachStoredChat: { store.prepareStoredCopyDetachment(selection) },
             deleteStoredChat: { store.prepareStoredCopyDeletion(selection) }
         )
         .tag(selection)
@@ -574,6 +601,15 @@ private struct ImportedChatSidebarRow: View {
                     )
                     detailLine("Primero", value: firstMessageDescription)
                     detailLine("Último", value: lastMessageDescription)
+                    if let messageCount = item.contribution.exclusiveMessageCount {
+                        Text(
+                            UnifiedViewPresentation.contributionDescription(
+                                messageCount: messageCount
+                            )
+                        )
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -585,19 +621,8 @@ private struct ImportedChatSidebarRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 actionButton("Abrir carpeta", systemImage: "folder", action: reveal)
                     .help("Abrir la carpeta del chat importado en Finder")
-                actionButton(
-                    UnifiedViewPresentation.deletionActionTitle(
-                        isPartOfUnifiedView: item.isPartOfUnifiedView
-                    ),
-                    systemImage: "trash",
-                    tint: .red,
-                    action: remove
-                )
-                .help(
-                    item.isPartOfUnifiedView
-                        ? "Eliminar este chat importado de la Vista unificada"
-                        : "Eliminar este chat importado de la conversación"
-                )
+                actionButton("Borrar", systemImage: "trash", tint: .red, action: remove)
+                    .help("Borrar este chat importado y reconstruir su conversación")
             }
         }
         .font(.caption)
@@ -741,7 +766,8 @@ private struct ChatSidebarRow: View {
     let isHighlighted: Bool
     let detailsState: ChatDetailsState?
     let storedChatState: StoredChatDisplayState
-    let isPartOfUnifiedView: Bool
+    let contributedMessageCount: Int?
+    let canDetachFromUnifiedView: Bool
     let additionTargetsUnifiedView: Bool
     let isStoring: Bool
     let canAddToLibrary: Bool
@@ -749,6 +775,7 @@ private struct ChatSidebarRow: View {
     let addToLibrary: () -> Void
     let refreshStoredChat: () -> Void
     let revealStoredChat: () -> Void
+    let detachStoredChat: () -> Void
     let deleteStoredChat: () -> Void
 
     var body: some View {
@@ -820,6 +847,15 @@ private struct ChatSidebarRow: View {
                         "Último",
                         value: Self.detailDateFormatter.string(from: chat.lastMessageDate)
                     )
+                    if let contributedMessageCount {
+                        Text(
+                            UnifiedViewPresentation.contributionDescription(
+                                messageCount: contributedMessageCount
+                            )
+                        )
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -842,19 +878,26 @@ private struct ChatSidebarRow: View {
                         action: revealStoredChat
                     )
                     .help("Abrir la copia guardada de este chat en Finder")
-                    actionButton(
-                        UnifiedViewPresentation.deletionActionTitle(
-                            isPartOfUnifiedView: isPartOfUnifiedView
-                        ),
-                        systemImage: "trash",
-                        tint: .red,
-                        action: deleteStoredChat
-                    )
-                    .help(
-                        isPartOfUnifiedView
-                            ? "Eliminar esta copia de la Vista unificada"
-                            : "Eliminar esta conversación guardada"
-                    )
+                    if canDetachFromUnifiedView {
+                        actionButton(
+                            "Eliminar de la conversación",
+                            systemImage: "arrow.right",
+                            action: detachStoredChat
+                        )
+                        .help(
+                            "Retirar esta copia de la Vista unificada y conservar el chat "
+                                + "extraído en su copia de WhatsApp"
+                        )
+                    }
+                    if !storedChatState.isExtracted {
+                        actionButton(
+                            "Borrar",
+                            systemImage: "trash",
+                            tint: .red,
+                            action: deleteStoredChat
+                        )
+                        .help("Borrar esta copia guardada de la biblioteca")
+                    }
                 }
             }
 
@@ -922,6 +965,15 @@ private struct ChatSidebarRow: View {
                 Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
+        case .extracted:
+            actionButton(
+                "Añadir a la conversación",
+                systemImage: "plus",
+                action: addToLibrary
+            )
+            .help(
+                "Incorporar los mensajes de esta copia ya extraída a la Vista unificada"
+            )
         case .stored:
             Label("En la biblioteca", systemImage: "checkmark")
                 .foregroundStyle(.secondary)

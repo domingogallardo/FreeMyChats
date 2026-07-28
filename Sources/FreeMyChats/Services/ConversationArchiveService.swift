@@ -10,6 +10,7 @@ enum ConversationArchiveError: Error, LocalizedError {
     case importedConversationAlreadyExists(String)
     case importedContributionNotFound(String)
     case cannotRemoveLastLocalContribution(String)
+    case contributionIsNotUnified(VersionChatID)
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +33,8 @@ enum ConversationArchiveError: Error, LocalizedError {
         case .cannotRemoveLastLocalContribution(let name):
             return "No se puede borrar la última copia local de “\(name)” mientras conserve chats importados, "
                 + "porque esa copia fija la perspectiva local de la Vista unificada."
+        case .contributionIsNotUnified(let selection):
+            return "La copia \(selection.versionID)/\(selection.chatID) no forma parte de una Vista unificada."
         }
     }
 }
@@ -58,6 +61,10 @@ struct ConversationContributionRemoval {
     let session: LibrarySession
     let conversationID: ConversationArchiveID
     let conversation: ArchivedConversation?
+}
+
+struct ConversationContributionDetachment {
+    let conversation: ArchivedConversation
 }
 
 struct PortableConversationImportResult {
@@ -371,6 +378,14 @@ enum ConversationArchiveService {
                 record.contributions.contains(where: { $0.source == source })
             })?
             .totalContributionCount
+    }
+
+    static func incorporatedContributionSources(
+        in session: LibrarySession
+    ) throws -> Set<VersionChatID> {
+        Set(try loadAvailableRecords(in: session).flatMap {
+            $0.contributions.map(\.source)
+        })
     }
 
     static func removalMessageImpact(
@@ -705,6 +720,62 @@ enum ConversationArchiveService {
         }
     }
 
+    static func detachContribution(
+        source: VersionChatID,
+        from session: LibrarySession,
+        progress: WABackupProgressHandler? = nil
+    ) throws -> ConversationContributionDetachment {
+        guard var record = try loadAvailableRecords(in: session).first(where: {
+            $0.contributions.contains(where: { $0.source == source })
+        }) else {
+            throw ConversationArchiveError.contributionNotFound(source)
+        }
+        guard record.totalContributionCount > 1 else {
+            throw ConversationArchiveError.contributionIsNotUnified(source)
+        }
+        if record.contributions.count == 1, !record.importedContributions.isEmpty {
+            throw ConversationArchiveError.cannotRemoveLastLocalContribution(
+                record.summary?.name ?? "esta conversación"
+            )
+        }
+
+        record.contributions.removeAll { $0.source == source }
+        record.updatedAt = Date()
+
+        let archiveDirectoryURL = archiveURL(id: record.id, paths: session.paths)
+        let fileManager = FileManager.default
+        let stagingURL = session.paths.rootURL.appendingPathComponent(
+            ".detaching-contribution-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let stagedArchiveURL = stagingURL.appendingPathComponent(
+            "Conversation",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
+        do {
+            try fileManager.moveItem(at: archiveDirectoryURL, to: stagedArchiveURL)
+        } catch {
+            try? fileManager.removeItem(at: stagingURL)
+            throw error
+        }
+
+        do {
+            let rebuilt = try store(record: record, in: session, progress: progress)
+            try? fileManager.removeItem(at: stagingURL)
+            return ConversationContributionDetachment(
+                conversation: rebuilt
+            )
+        } catch {
+            removeInstalledRecord(record, in: session)
+            if fileManager.fileExists(atPath: stagedArchiveURL.path) {
+                try? fileManager.moveItem(at: stagedArchiveURL, to: archiveDirectoryURL)
+            }
+            try? fileManager.removeItem(at: stagingURL)
+            throw error
+        }
+    }
+
     static func removeImportedContribution(
         id importID: String,
         from session: LibrarySession,
@@ -801,6 +872,13 @@ enum ConversationArchiveService {
                 chat: chat,
                 updatedAt: record.updatedAt,
                 contributionSources: record.contributions.map(\.source),
+                localContributionMessageCounts: Dictionary(
+                    uniqueKeysWithValues: record.contributions.compactMap { contribution in
+                        contribution.exclusiveMessageCount.map {
+                            (contribution.source, $0)
+                        }
+                    }
+                ),
                 importedContributions: record.importedContributions,
                 directoryURL: locations.directoryURL,
                 photoURL: photoURL
@@ -1626,6 +1704,24 @@ enum ConversationArchiveService {
 
     private static func archiveURL(id: ConversationArchiveID, paths: LibraryPaths) -> URL {
         paths.mergedChatsURL.appendingPathComponent(id.rawValue, isDirectory: true)
+    }
+
+    private static func removeInstalledRecord(
+        _ record: ConversationArchiveRecord,
+        in session: LibrarySession
+    ) {
+        let fileManager = FileManager.default
+        if record.contributions.count == 1,
+           record.importedContributions.isEmpty,
+           let source = record.contributions.first?.source,
+           let version = session.version(id: source.versionID) {
+            try? fileManager.removeItem(
+                at: sourceDirectoryURL(source, in: version)
+                    .appendingPathComponent(recordFilename)
+            )
+        } else {
+            try? fileManager.removeItem(at: archiveURL(id: record.id, paths: session.paths))
+        }
     }
 
     private static func sourceDirectoryURL(

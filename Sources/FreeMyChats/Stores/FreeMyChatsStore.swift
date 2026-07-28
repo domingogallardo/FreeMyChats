@@ -3,6 +3,11 @@ import Foundation
 
 private let appProgressUpdateCoalescer = AppProgressUpdateCoalescer()
 
+private enum StoredContributionChange: Equatable {
+    case detach
+    case delete
+}
+
 @MainActor
 final class FreeMyChatsStore: ObservableObject {
     static let defaultBackupPath = NSString(
@@ -35,6 +40,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var informationMessage: String?
     @Published private(set) var unifiedViewAdditionPreview: UnifiedViewAdditionPreview?
+    @Published private(set) var storedCopyDetachmentPreview: StoredCopyDetachmentPreview?
     @Published private(set) var storedCopyDeletionPreview: StoredCopyDeletionPreview?
     @Published private(set) var discoveryIssue: BackupDiscoveryIssue?
     @Published private(set) var importedBackupCleanupPrompt: ImportedIPhoneBackupCleanupPrompt?
@@ -51,6 +57,7 @@ final class FreeMyChatsStore: ObservableObject {
     private var hasStarted = false
     private var conversationCatalogRequestID: UUID?
     private var openConversationRequestID: UUID?
+    private var localContributionMessageCounts: [VersionChatID: Int] = [:]
     private let readingPositionStore = ChatReadingPositionStore()
 
     init() {
@@ -69,8 +76,7 @@ final class FreeMyChatsStore: ObservableObject {
                     ImportedChatSidebarItem(
                         contribution: $0,
                         conversationID: item.id,
-                        conversationName: item.chat.name,
-                        contributionCount: item.contributionCount
+                        conversationName: item.chat.name
                     )
                 }
             }
@@ -123,6 +129,10 @@ final class FreeMyChatsStore: ObservableObject {
             }
         }
         return chatSortOrder.sort(filteredChats)
+    }
+
+    func contributedMessageCount(for selection: VersionChatID) -> Int? {
+        localContributionMessageCounts[selection]
     }
 
     func readingPosition(for selection: ConversationArchiveID) -> Int? {
@@ -180,6 +190,7 @@ final class FreeMyChatsStore: ObservableObject {
 
     func closeLibrary() {
         unifiedViewAdditionPreview = nil
+        storedCopyDetachmentPreview = nil
         storedCopyDeletionPreview = nil
         session = nil
         storedChatStates = [:]
@@ -187,6 +198,7 @@ final class FreeMyChatsStore: ObservableObject {
         importedChatDetails = [:]
         selectedChatID = nil
         conversationCatalog = []
+        localContributionMessageCounts = [:]
         selectedConversationID = nil
         selectedConversation = nil
         highlightedChatIDs = []
@@ -320,6 +332,10 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func addChatToLibrary(_ selection: VersionChatID) {
+        if storedChatStates[selection]?.isExtracted == true {
+            incorporateExtractedChat(selection)
+            return
+        }
         guard storedChatStates[selection] == .notStored
                 || isUpdateAvailable(storedChatStates[selection]) else { return }
         // Storing replaces an existing incomplete directory safely.
@@ -330,7 +346,7 @@ final class FreeMyChatsStore: ObservableObject {
         guard let session,
               let version = session.version(id: selection.versionID),
               let chat = version.chats.first(where: { $0.id == selection.chatID }),
-              isUpdateAvailable(storedChatStates[selection]) else {
+              isUnifiedViewAdditionAvailable(storedChatStates[selection]) else {
             return
         }
         do {
@@ -365,6 +381,18 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func prepareStoredCopyDeletion(_ selection: VersionChatID) {
+        prepareStoredContributionChange(selection, change: .delete)
+    }
+
+    func prepareStoredCopyDetachment(_ selection: VersionChatID) {
+        guard canDetachFromUnifiedView(selection) else { return }
+        prepareStoredContributionChange(selection, change: .detach)
+    }
+
+    private func prepareStoredContributionChange(
+        _ selection: VersionChatID,
+        change: StoredContributionChange
+    ) {
         guard let session,
               let version = session.version(id: selection.versionID),
               storedChatStates[selection]?.isPhysicallyStored == true else { return }
@@ -374,8 +402,8 @@ final class FreeMyChatsStore: ObservableObject {
                 of: selection,
                 in: session
             ) {
-                storedCopyDeletionPreview = StoredCopyDeletionPreview(
-                    id: UUID(),
+                installStoredContributionPreview(
+                    change: change,
                     selection: selection,
                     chatName: chatName,
                     versionTitle: version.record.title,
@@ -391,7 +419,9 @@ final class FreeMyChatsStore: ObservableObject {
         // Si una operación incompleta no dejó estos contadores disponibles, se
         // calculan de nuevo antes de confirmar el borrado.
         let operationID = beginOperation(
-            kind: .preparingStoredCopyDeletion(selection),
+            kind: change == .detach
+                ? .detachingStoredContribution(selection)
+                : .preparingStoredCopyDeletion(selection),
             title: "Calculando los mensajes de “\(chatName)”…",
             detail: "Comprobando cuáles están también en otras copias guardadas."
         )
@@ -415,8 +445,8 @@ final class FreeMyChatsStore: ObservableObject {
                 self.operation = nil
                 switch result {
                 case .success(let impact):
-                    self.storedCopyDeletionPreview = StoredCopyDeletionPreview(
-                        id: UUID(),
+                    self.installStoredContributionPreview(
+                        change: change,
                         selection: selection,
                         chatName: chatName,
                         versionTitle: version.record.title,
@@ -427,6 +457,37 @@ final class FreeMyChatsStore: ObservableObject {
                 }
             }
         }
+    }
+
+    private func installStoredContributionPreview(
+        change: StoredContributionChange,
+        selection: VersionChatID,
+        chatName: String,
+        versionTitle: String,
+        impact: ConversationRemovalMessageImpact
+    ) {
+        switch change {
+        case .detach:
+            storedCopyDetachmentPreview = StoredCopyDetachmentPreview(
+                id: UUID(),
+                selection: selection,
+                chatName: chatName,
+                versionTitle: versionTitle,
+                impact: impact
+            )
+        case .delete:
+            storedCopyDeletionPreview = StoredCopyDeletionPreview(
+                id: UUID(),
+                selection: selection,
+                chatName: chatName,
+                versionTitle: versionTitle,
+                impact: impact
+            )
+        }
+    }
+
+    func dismissStoredCopyDetachmentPreview() {
+        storedCopyDetachmentPreview = nil
     }
 
     func dismissStoredCopyDeletionPreview() {
@@ -450,9 +511,9 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
-    func isPartOfUnifiedView(_ selection: VersionChatID) -> Bool {
+    func canDetachFromUnifiedView(_ selection: VersionChatID) -> Bool {
         conversationCatalog.contains { item in
-            item.contributionCount > 1 && item.contributionSources.contains(selection)
+            item.localContributionCount > 1 && item.contributionSources.contains(selection)
         }
     }
 
@@ -810,6 +871,75 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
+    func detachStoredContribution(_ selection: VersionChatID) {
+        guard let session,
+              storedChatStates[selection]?.isPhysicallyStored == true,
+              canDetachFromUnifiedView(selection) else { return }
+        storedCopyDetachmentPreview = nil
+        let chatName = session.chat(for: selection)?.name ?? "chat"
+        guard let contributionCount = contributionCount(containing: selection),
+              contributionCount > 1 else { return }
+        let operationDetail = contributionCount == 2
+            ? "Separando las dos copias guardadas."
+            : "Reconstruyendo la Vista unificada y conservando esta copia por separado."
+        let operationID = beginOperation(
+            kind: .detachingStoredContribution(selection),
+            title: "Eliminando “\(chatName)” de la conversación…",
+            detail: operationDetail
+        )
+
+        workQueue.async { [weak self] in
+            let result = Result {
+                try ConversationArchiveService.detachContribution(
+                    source: selection,
+                    from: session
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: "Eliminando “\(chatName)” de la conversación…"
+                    )
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success(let detachment):
+                    let previousConversationID = self.selectedConversationID
+                    let previousConversation = self.selectedConversation
+                    self.install(session, preservingSelection: true)
+
+                    if previousConversationID == detachment.conversation.record.id {
+                        self.selectedConversationID = detachment.conversation.record.id
+                        self.selectedConversation = detachment.conversation
+                        self.highlightedChatIDs = Set(
+                            detachment.conversation.record.contributions.map(\.source)
+                        )
+                    } else if let previousConversationID, let previousConversation {
+                        self.selectedConversationID = previousConversationID
+                        self.selectedConversation = previousConversation
+                        self.highlightedChatIDs = Set(
+                            previousConversation.record.contributions.map(\.source)
+                        )
+                    }
+
+                    if contributionCount == 2 {
+                        self.informationMessage = "La copia de “\(chatName)” se conserva "
+                            + "extraída en la columna izquierda. La Vista unificada ha "
+                            + "desaparecido y el catálogo muestra directamente la copia restante."
+                    } else {
+                        self.informationMessage = "La copia de “\(chatName)” se conserva "
+                            + "extraída en la columna izquierda. La Vista unificada se ha "
+                            + "reconstruido con las \(contributionCount - 1) aportaciones restantes."
+                    }
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     func profilePhotoURL(for chat: ChatInfo, in version: LibraryVersionSession) -> URL? {
         guard let filename = chat.photoFilename else { return nil }
         let catalogURL = session?.paths
@@ -986,6 +1116,71 @@ final class FreeMyChatsStore: ObservableObject {
         }
     }
 
+    private func incorporateExtractedChat(_ selection: VersionChatID) {
+        guard let session,
+              let version = session.version(id: selection.versionID),
+              let chat = version.chats.first(where: { $0.id == selection.chatID }),
+              case .extracted(let storedAt) = storedChatStates[selection] else { return }
+        let chatName = chat.name
+        let operationTitle = "Añadiendo “\(chatName)” a la conversación…"
+        let operationID = beginOperation(
+            kind: .storingChat(selection),
+            title: operationTitle,
+            detail: "Incorporando la copia ya extraída a la Vista unificada."
+        )
+
+        workQueue.async { [weak self] in
+            let result = Result {
+                let stored = try version.storedChatStore.openChat(chatId: selection.chatID)
+                let context = try ConversationArchiveService.prepareIncorporation(
+                    for: stored.document.chat,
+                    in: version,
+                    session: session
+                )
+                guard let record = context.record,
+                      !record.contributions.contains(where: { $0.source == selection }) else {
+                    throw ConversationArchiveError.invalidArchive(
+                        stored.directoryURL,
+                        "La copia extraída ya forma parte de la conversación o no tiene "
+                            + "una conversación compatible."
+                    )
+                }
+                let update = try ConversationArchiveService.incorporate(
+                    stored,
+                    source: selection,
+                    context: context,
+                    in: session
+                ) { progress in
+                    self?.publish(
+                        progress,
+                        operationID: operationID,
+                        fallbackTitle: operationTitle
+                    )
+                }
+                return (stored, update, record.totalContributionCount)
+            }
+            DispatchQueue.main.async {
+                guard let self, self.operation?.id == operationID else { return }
+                self.operation = nil
+                switch result {
+                case .success(let (stored, update, previousContributionCount)):
+                    self.finishStoringChat(
+                        selection: selection,
+                        chatName: chatName,
+                        stored: stored,
+                        update: update,
+                        previousContributionCount: previousContributionCount,
+                        sourceWasAlreadyIncluded: false,
+                        reportUpdate: true
+                    )
+                case .failure(let error):
+                    self.storedChatStates[selection] = .extracted(storedAt)
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     private func finishStoringChat(
         selection: VersionChatID,
         chatName: String,
@@ -1038,6 +1233,11 @@ final class FreeMyChatsStore: ObservableObject {
                     in: version,
                     paths: session.paths
                 ) ? .updateAvailable(Date()) : .notStored
+            } else if let incorporated = try? ConversationArchiveService
+                .incorporatedContributionSources(in: session),
+                      !incorporated.contains(selection),
+                      let stored = try? version.storedChatStore.openChat(chatId: chat.id) {
+                displayState = .extracted(stored.document.storedAt)
             } else if let reader = version.reader {
                 displayState = StoredChatDisplayState(reader.storageState(for: chat))
             } else if version.storedChatStore.containsChat(chatId: chat.id),
@@ -1067,11 +1267,13 @@ final class FreeMyChatsStore: ObservableObject {
 
     private func install(_ newSession: LibrarySession, preservingSelection: Bool) {
         unifiedViewAdditionPreview = nil
+        storedCopyDetachmentPreview = nil
         storedCopyDeletionPreview = nil
         let previousSelection = preservingSelection ? selectedChatID : nil
         session = newSession
         selectedChatID = previousSelection.flatMap { newSession.chat(for: $0) == nil ? nil : $0 }
         conversationCatalog = []
+        localContributionMessageCounts = [:]
         selectedConversationID = nil
         selectedConversation = nil
         highlightedChatIDs = []
@@ -1191,6 +1393,8 @@ final class FreeMyChatsStore: ObservableObject {
             }
             let existingContributionCounts = (try? ConversationArchiveService
                 .existingContributionCounts(for: chatCandidates, in: session)) ?? [:]
+            let incorporatedSources = (try? ConversationArchiveService
+                .incorporatedContributionSources(in: session)) ?? []
             for version in session.versions {
                 for chat in version.chats {
                     let key = VersionChatID(versionID: version.id, chatID: chat.id)
@@ -1198,6 +1402,9 @@ final class FreeMyChatsStore: ObservableObject {
                         states[key] = existingContributionCounts[key] == nil
                             ? .notStored
                             : .updateAvailable(Date())
+                    } else if !incorporatedSources.contains(key),
+                              let stored = try? version.storedChatStore.openChat(chatId: chat.id) {
+                        states[key] = .extracted(stored.document.storedAt)
                     } else if let reader = version.reader {
                         states[key] = StoredChatDisplayState(reader.storageState(for: chat))
                     } else if let stored = try? version.storedChatStore.openChat(chatId: chat.id) {
@@ -1231,6 +1438,11 @@ final class FreeMyChatsStore: ObservableObject {
                 self.isLoadingConversationCatalog = false
                 switch result {
                 case .success(let items):
+                    self.localContributionMessageCounts = Dictionary(
+                        uniqueKeysWithValues: items.flatMap {
+                            $0.localContributionMessageCounts
+                        }
+                    )
                     self.conversationCatalog = items
                     self.refreshStoredChatStates()
                 case .failure(let error):
@@ -1254,6 +1466,10 @@ final class FreeMyChatsStore: ObservableObject {
     private func isUpdateAvailable(_ state: StoredChatDisplayState?) -> Bool {
         if case .updateAvailable = state { return true }
         return false
+    }
+
+    private func isUnifiedViewAdditionAvailable(_ state: StoredChatDisplayState?) -> Bool {
+        isUpdateAvailable(state) || state?.isExtracted == true
     }
 
     private func beginOperation(kind: AppOperation.Kind, title: String, detail: String? = nil) -> UUID {

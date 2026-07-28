@@ -366,6 +366,7 @@ struct ConversationCatalogItem: Identifiable {
     let chat: ChatInfo
     let updatedAt: Date
     let contributionSources: [VersionChatID]
+    let localContributionMessageCounts: [VersionChatID: Int]
     let importedContributions: [ImportedConversationContribution]
     let directoryURL: URL
     let photoURL: URL?
@@ -382,11 +383,8 @@ struct ImportedChatSidebarItem: Identifiable {
     let contribution: ImportedConversationContribution
     let conversationID: ConversationArchiveID
     let conversationName: String
-    let contributionCount: Int
 
     var id: String { contribution.id }
-
-    var isPartOfUnifiedView: Bool { contributionCount > 1 }
 }
 
 enum ChatDetailsState: Equatable {
@@ -502,6 +500,7 @@ enum StoredChatDisplayState: Equatable {
     case checking
     case notStored
     case updateAvailable(Date)
+    case extracted(Date)
     case stored(Date)
     case stale(Date)
     case invalid(String)
@@ -521,11 +520,15 @@ enum StoredChatDisplayState: Equatable {
 
     var isPhysicallyStored: Bool {
         switch self {
-        case .stored, .stale, .invalid: return true
+        case .extracted, .stored, .stale, .invalid: return true
         case .checking, .notStored, .updateAvailable: return false
         }
     }
 
+    var isExtracted: Bool {
+        if case .extracted = self { return true }
+        return false
+    }
 }
 
 struct AppOperation: Equatable {
@@ -536,6 +539,7 @@ struct AppOperation: Equatable {
         case addingBackup
         case deletingBackup(String)
         case deletingOriginalIPhoneBackup
+        case detachingStoredContribution(VersionChatID)
         case deletingStoredContribution(VersionChatID)
         case preparingStoredCopyDeletion(VersionChatID)
         case loadingChats

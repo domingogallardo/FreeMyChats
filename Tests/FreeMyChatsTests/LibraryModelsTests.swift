@@ -5,7 +5,7 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
-    func testConversationActionLabelsReflectUnifiedViewParticipation() {
+    func testConversationActionLabelsDifferentiateAddingDetachingAndDeleting() {
         XCTAssertEqual(
             UnifiedViewPresentation.additionActionTitle(addsToExistingConversation: false),
             "Añadir conversación"
@@ -15,12 +15,16 @@ final class LibraryModelsTests: XCTestCase {
             "Añadir a la conversación"
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionActionTitle(isPartOfUnifiedView: false),
-            "Eliminar conversación"
+            UnifiedViewPresentation.contributionDescription(messageCount: 12),
+            "Aporta 12 mensajes a la conversación"
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionActionTitle(isPartOfUnifiedView: true),
-            "Eliminar de la conversación"
+            UnifiedViewPresentation.detachmentTitle(contributionCount: 3),
+            "¿Eliminar de la conversación?"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionTitle(contributionCount: 3),
+            "¿Borrar esta copia guardada de la Vista unificada?"
         )
     }
 
@@ -110,7 +114,7 @@ final class LibraryModelsTests: XCTestCase {
     func testDeletingOneOfTwoSavedCopiesExplainsThatUnifiedViewDisappears() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 2),
-            "¿Eliminar de la conversación y deshacer la Vista unificada?"
+            "¿Borrar esta copia guardada y deshacer la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -133,7 +137,7 @@ final class LibraryModelsTests: XCTestCase {
     func testDeletingOneOfThreeSavedCopiesExplainsThatUnifiedViewIsRebuilt() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 3),
-            "¿Eliminar de la conversación?"
+            "¿Borrar esta copia guardada de la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -151,8 +155,33 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(message.contains("no desaparecerá ninguno"))
         XCTAssertEqual(
             UnifiedViewPresentation.deletionButtonTitle(contributionCount: 3),
-            "Eliminar de la conversación"
+            "Borrar y actualizar la vista"
         )
+    }
+
+    func testDetachingCopyExplainsThatItRemainsExtractedOnTheLeft() {
+        let impact = ConversationRemovalMessageImpact(
+            contributionCount: 3,
+            existingMessageCount: 900,
+            sourceMessageCount: 700,
+            removedMessageCount: 25,
+            resultingMessageCount: 875
+        )
+
+        XCTAssertEqual(
+            UnifiedViewPresentation.detachmentTitle(contributionCount: 3),
+            "¿Eliminar de la conversación?"
+        )
+        let message = UnifiedViewPresentation.detachmentMessage(
+            chatName: "Familia",
+            versionTitle: "Copia de junio",
+            impact: impact
+        )
+        XCTAssertTrue(message.contains("se conservará extraída en su copia de WhatsApp"))
+        XCTAssertTrue(message.contains("“Añadir a la conversación”"))
+        XCTAssertTrue(message.contains("se reconstruirá con las 2 aportaciones restantes"))
+        XCTAssertTrue(message.contains("La copia extraída conservará sus 700 mensajes"))
+        XCTAssertTrue(message.contains("25 mensajes exclusivos dejarán de aparecer"))
     }
 
     func testAudioTimeFormatterUsesClockStyleDurations() {
@@ -427,6 +456,8 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertEqual(StoredChatDisplayState(.notStored), .notStored)
         XCTAssertEqual(StoredChatDisplayState(.invalid(reason: "broken")), .invalid("broken"))
         XCTAssertFalse(StoredChatDisplayState.notStored.isPhysicallyStored)
+        XCTAssertTrue(StoredChatDisplayState.extracted(Date()).isPhysicallyStored)
+        XCTAssertTrue(StoredChatDisplayState.extracted(Date()).isExtracted)
         XCTAssertTrue(StoredChatDisplayState.invalid("broken").isPhysicallyStored)
     }
 
