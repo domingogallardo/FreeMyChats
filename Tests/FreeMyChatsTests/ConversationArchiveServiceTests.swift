@@ -468,6 +468,89 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(result.conversation.record.totalContributionCount, 2)
     }
 
+    func testImportCombinesDisjointLocalFragmentsBeforeCrossPerspectiveComposition() throws {
+        let fixtures = oppositeGroupStoredChats() + [
+            StoredChatFixture(
+                versionID: "local-group-new",
+                chatID: 31,
+                jid: "family@g.us",
+                name: "Familia",
+                storedAt: "2026-02-10T12:00:00Z",
+                messages: [
+                    MessageFixture(
+                        id: 31,
+                        text: "Exclusive future local",
+                        date: "2026-02-01T10:00:00Z",
+                        isFromMe: true
+                    )
+                ]
+            )
+        ]
+        let fixture = try makeLibrary(storedChats: fixtures)
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "local-group"))
+        let newVersion = try XCTUnwrap(fixture.session.version(id: "local-group-new"))
+        let receivedVersion = try XCTUnwrap(fixture.session.version(id: "received-group"))
+
+        for version in [oldVersion, newVersion] {
+            let chat = try XCTUnwrap(version.chats.first)
+            let stored = try version.storedChatStore.openChat(chatId: chat.id)
+            _ = try ConversationArchiveService.incorporate(
+                stored,
+                source: VersionChatID(versionID: version.id, chatID: chat.id),
+                context: ConversationArchiveService.prepareIncorporation(
+                    for: chat,
+                    in: version,
+                    session: fixture.session
+                ),
+                in: fixture.session
+            )
+        }
+
+        let receivedStored = try receivedVersion.storedChatStore.openChat(chatId: 40)
+        let archiveURL = fixture.rootURL.appendingPathComponent("received-group.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "received-group"),
+                storedChat: receivedStored
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+
+        let result = try ConversationArchiveService.importPortableConversationArchive(
+            at: archiveURL,
+            into: fixture.session
+        )
+        let localContributions = Dictionary(
+            uniqueKeysWithValues: result.conversation.record.contributions.map {
+                ($0.source.versionID, $0)
+            }
+        )
+
+        XCTAssertEqual(result.conversation.document.chat.id, 31)
+        XCTAssertEqual(result.conversation.document.messages.count, 7)
+        XCTAssertEqual(result.addedMessageCount, 3)
+        XCTAssertEqual(result.conversation.record.contributions.count, 2)
+        XCTAssertEqual(result.conversation.record.importedContributions.count, 1)
+        XCTAssertEqual(localContributions["local-group"]?.messageCount, 3)
+        XCTAssertEqual(localContributions["local-group"]?.exclusiveMessageCount, 0)
+        XCTAssertEqual(localContributions["local-group-new"]?.messageCount, 1)
+        XCTAssertEqual(localContributions["local-group-new"]?.exclusiveMessageCount, 1)
+        XCTAssertEqual(result.importedContribution.messageCount, 6)
+        XCTAssertEqual(result.importedContribution.exclusiveMessageCount, 3)
+        XCTAssertTrue(
+            result.conversation.document.messages.contains {
+                $0.message == "Exclusive future local"
+            }
+        )
+        XCTAssertFalse(
+            try FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.mergedChatsURL.path
+            ).contains { $0.hasPrefix(".combining-local-") }
+        )
+    }
+
     func testImportRejectsAnArchiveThatMatchesSeveralExistingConversations() throws {
         let localMessages = [
             MessageFixture(
