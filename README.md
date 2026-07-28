@@ -20,50 +20,24 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran guardados en la biblioteca.
 
+
 ## Funcionalidades detalladas
 
-- Descubrimiento e inspección de copias de iPhone en MobileSync o en otra carpeta.
-- Creación y reapertura de bibliotecas locales con múltiples versiones de una copia.
-- Incorporación y eliminación de copias desde el navegador lateral.
-- Listado de los chats de cada copia con tamaño multimedia en GB, filtros por grupo, persona o archivado,
-  y orden por fecha o por tamaño de mayor a menor.
-- Avatares locales cargados en segundo plano mediante un caché acotado de
-  miniaturas, incluidas las fotos JPEG que WhatsApp guarda con extensión
-  `.thumb`.
-- Vista previa de número de mensajes y fechas antes de añadir un chat a la biblioteca.
-- Incorporación explícita a la biblioteca desde la fila desplegada del chat.
-- Exportación de la conversación visible completa como archivo autocontenido
-  `.fmcchat`, incluyendo todas las copias locales y chats importados de su Vista
-  unificada.
-- Importación de `.fmcchat` sobre una conversación existente: la aplicación
-  localiza automáticamente una única coincidencia segura, crea la Vista unificada
-  y conserva la aportación de forma reversible en `ImportedChats`.
-- Grupo `Chats importados` en la parte superior de la columna izquierda, con
-  nombre, fecha de importación y acciones para abrir o retirar cada aportación.
-- Actualización incremental: si el mismo chat ya se guardó desde una copia anterior,
-  `Añadir conversación` conserva la nueva copia por separado y reúne los
-  mensajes de todas las copias guardadas en una sola cronología, sin crear un duplicado
-  en el catálogo.
-- Antes de añadir una copia, la confirmación indica cuántos mensajes contiene
-  y cuántos puede añadir como máximo; al terminar muestra la cifra incorporada realmente.
-  Antes de borrar, indica al instante cuántos mensajes exclusivos deja de aportar
-  esa copia.
-- Identificación por JID y tipo de chat, deduplicación de mensajes coincidentes y
-  conservación de cada copia como aportación reconstruible.
-- Indicador de actividad mientras se añade un chat a la biblioteca.
-- Detección de copias guardadas vigentes, desactualizadas o inválidas.
-- Visor de mensajes, autores, respuestas con vista previa, reacciones
-  consultables por autor, ubicaciones y adjuntos, con reproductores integrados
-  para audios y vídeos.
-- Navegación entre los mensajes de respuesta y sus originales, con resaltado
-  temporal y retorno al punto de partida.
-- Búsqueda de texto dentro de la conversación guardada.
-- Acciones para abrir la biblioteca, cada copia guardada y la carpeta de la conversación combinada en Finder.
-- Borrado por copia guardada desde la columna izquierda: el catálogo reconstruye la conversación con las copias restantes y la retira si ya no queda ninguna.
-- Limpieza automática de una copia sin fuente cuando se borra su último chat guardado.
-- Guía para conceder acceso total al disco y volver a intentar la inspección cuando sea necesario.
-- Opción de mover a la Papelera la copia original del iPhone después de extraer WhatsApp.
-- Recordatorio de que, tras guardar un chat en la biblioteca, puedes usar `Vaciar chat` en WhatsApp para liberar espacio en el iPhone.
+- Localización e inspección de copias de iPhone en MobileSync o en cualquier otra carpeta.
+- Creación de bibliotecas locales que pueden reunir distintas copias y versiones de WhatsApp.
+- Navegación por las copias guardadas, con opciones para incorporarlas, abrirlas en Finder o eliminarlas.
+- Listado de chats con su tamaño multimedia, fecha, número de mensajes y filtros por persona, grupo o estado archivado.
+- Ordenación por fecha o tamaño y carga en segundo plano de los avatares de WhatsApp.
+- Incorporación selectiva de conversaciones a la biblioteca, con indicación previa de los mensajes que pueden añadirse.
+- Actualización incremental de conversaciones desde copias posteriores, conservando cada aportación y evitando mensajes duplicados.
+- Detección de copias vigentes, desactualizadas o inválidas.
+- Exportación de conversaciones completas como archivos portables y autocontenidos `.fmcchat`.
+- Importación reversible de archivos `.fmcchat`, integrándolos automáticamente con la conversación correspondiente.
+- Visor completo de mensajes, autores, respuestas, reacciones, ubicaciones, imágenes, audios, vídeos y otros adjuntos.
+- Navegación entre respuestas y mensajes originales, búsqueda de texto y acceso directo a las carpetas desde Finder.
+- Eliminación segura de copias o aportaciones: las conversaciones se reconstruyen automáticamente con la información restante.
+- Ayuda para conceder acceso al disco, eliminar la copia original del iPhone y liberar espacio posteriormente mediante `Vaciar chat` en WhatsApp.
+
 
 ## Estructura de una biblioteca
 
