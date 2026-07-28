@@ -241,6 +241,15 @@ private struct MediaAttachmentView: View {
                 filename: filename,
                 expectedDuration: seconds
             )
+        } else if isVideo {
+            VideoPlayerView(
+                url: url,
+                filename: filename,
+                expectedDuration: seconds,
+                isLooping: MediaAttachmentPresentation.shouldLoopVideo(
+                    messageType: messageType
+                )
+            )
         } else if isImage {
             Button {
                 WorkspaceService.open(url)
@@ -285,6 +294,13 @@ private struct MediaAttachmentView: View {
         messageType.caseInsensitiveCompare("audio") == .orderedSame
     }
 
+    private var isVideo: Bool {
+        MediaAttachmentPresentation.shouldUseVideoPlayer(
+            messageType: messageType,
+            url: url
+        )
+    }
+
     private var attachmentIcon: String {
         switch messageType.lowercased() {
         case "video": return "video.fill"
@@ -299,6 +315,25 @@ private struct MediaAttachmentView: View {
             return "\(messageType) · \(Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond)))"
         }
         return messageType
+    }
+}
+
+enum MediaAttachmentPresentation {
+    private static let videoExtensions: Set<String> = [
+        "mp4", "mov", "m4v", "3gp"
+    ]
+
+    static func shouldUseVideoPlayer(messageType: String, url: URL) -> Bool {
+        let normalizedType = messageType.lowercased()
+        if normalizedType == "video" {
+            return true
+        }
+        return normalizedType == "gif"
+            && videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    static func shouldLoopVideo(messageType: String) -> Bool {
+        messageType.caseInsensitiveCompare("gif") == .orderedSame
     }
 }
 
