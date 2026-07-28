@@ -27,6 +27,9 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Incorporación y eliminación de copias desde el navegador lateral.
 - Listado de los chats de cada copia con tamaño multimedia en GB, filtros por grupo, persona o archivado,
   y orden por fecha o por tamaño de mayor a menor.
+- Avatares locales cargados en segundo plano mediante un caché acotado de
+  miniaturas, incluidas las fotos JPEG que WhatsApp guarda con extensión
+  `.thumb`.
 - Vista previa de número de mensajes y fechas antes de añadir un chat a la biblioteca.
 - Incorporación explícita a la biblioteca desde la fila desplegada del chat.
 - Exportación de la conversación visible completa como archivo autocontenido
@@ -125,7 +128,7 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 Este proyecto integra [SwiftWABackupAPI 6.0.5](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/6.0.5), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
 
-Free My Chats 2.1.7 usa la API de composición para
+Free My Chats 2.1.8 usa la API de composición para
 construir las Vistas unificadas y el formato `.fmcchat` v1. La API crea,
 inspecciona, extrae, diagnostica, reorienta al target y materializa; Free My Chats
 registra cada aportación en `ImportedChats`, instala el resultado o hace rollback

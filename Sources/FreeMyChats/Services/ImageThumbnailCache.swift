@@ -1,6 +1,7 @@
 @preconcurrency import AppKit
 import Foundation
 @preconcurrency import ImageIO
+import UniformTypeIdentifiers
 
 final class ImageThumbnailCache: @unchecked Sendable {
     static let shared = ImageThumbnailCache()
@@ -34,7 +35,7 @@ final class ImageThumbnailCache: @unchecked Sendable {
     }
 
     private static func loadThumbnail(from url: URL) -> LoadedThumbnail {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+        guard let source = imageSource(for: url) else {
             return LoadedThumbnail(image: nil, cost: 0)
         }
 
@@ -52,5 +53,19 @@ final class ImageThumbnailCache: @unchecked Sendable {
             image: NSImage(cgImage: cgImage, size: .zero),
             cost: cgImage.width * cgImage.height * 4
         )
+    }
+
+    private static func imageSource(for url: URL) -> CGImageSource? {
+        guard url.pathExtension.caseInsensitiveCompare("thumb") == .orderedSame else {
+            return CGImageSourceCreateWithURL(url as CFURL, nil)
+        }
+
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceTypeIdentifierHint: UTType.jpeg.identifier
+        ]
+        return CGImageSourceCreateWithData(data as CFData, options as CFDictionary)
     }
 }

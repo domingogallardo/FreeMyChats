@@ -821,6 +821,41 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(first === second)
     }
 
+    func testImageThumbnailCacheLoadsJPEGWithThumbExtension() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = root.appendingPathComponent("pixel.thumb")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let bitmap = try XCTUnwrap(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: 1,
+                pixelsHigh: 1,
+                bitsPerSample: 8,
+                samplesPerPixel: 3,
+                hasAlpha: false,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 3,
+                bitsPerPixel: 24
+            )
+        )
+        let pixels = try XCTUnwrap(bitmap.bitmapData)
+        pixels[0] = 0
+        pixels[1] = 255
+        pixels[2] = 0
+        let jpegData = try XCTUnwrap(
+            bitmap.representation(using: .jpeg, properties: [:])
+        )
+        try jpegData.write(to: imageURL)
+
+        let thumbnail = await ImageThumbnailCache.shared.thumbnail(for: imageURL)
+
+        XCTAssertNotNil(thumbnail)
+    }
+
     private func makeMessage(id: Int) throws -> MessageInfo {
         let data = Data(
             """

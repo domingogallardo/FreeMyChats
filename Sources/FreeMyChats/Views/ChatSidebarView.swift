@@ -600,7 +600,6 @@ private struct ImportedChatSidebarRow: View {
                 expandedDetails
                     .padding(.leading, 48)
                     .padding(.top, 8)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.leading, 18)
@@ -613,7 +612,6 @@ private struct ImportedChatSidebarRow: View {
                     .padding(.vertical, 4)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: isExpanded)
         .animation(.easeInOut(duration: 0.16), value: isHighlighted)
     }
 
@@ -831,7 +829,7 @@ private struct ChatSidebarRow: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggleExpansion) {
                 HStack(spacing: 10) {
-                    ChatAvatar(photoURL: photoURL, name: chat.name)
+                    LocalImageAvatar(photoURL: photoURL, name: chat.name, size: 38)
 
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -867,7 +865,6 @@ private struct ChatSidebarRow: View {
                 expandedDetails
                     .padding(.leading, 48)
                     .padding(.top, 8)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.leading, 18)
@@ -880,7 +877,6 @@ private struct ChatSidebarRow: View {
                     .padding(.vertical, 4)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: isExpanded)
         .animation(.easeInOut(duration: 0.16), value: isHighlighted)
     }
 
@@ -1127,28 +1123,4 @@ private struct ChatSidebarRow: View {
         formatter.isAdaptive = false
         return formatter
     }()
-}
-
-private struct ChatAvatar: View {
-    let photoURL: URL?
-    let name: String
-
-    var body: some View {
-        Group {
-            if let photoURL, let image = NSImage(contentsOf: photoURL) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                ZStack {
-                    Circle().fill(.quaternary)
-                    Text(String(name.prefix(1)).uppercased())
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(width: 38, height: 38)
-        .clipShape(Circle())
-    }
 }

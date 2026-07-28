@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct ConversationCatalogView: View {
@@ -133,7 +132,7 @@ private struct ConversationCatalogRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            ConversationAvatar(photoURL: item.photoURL, name: item.chat.name)
+            LocalImageAvatar(photoURL: item.photoURL, name: item.chat.name, size: 42)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.chat.name)
@@ -192,28 +191,4 @@ private struct ConversationCatalogRow: View {
         formatter.doesRelativeDateFormatting = true
         return formatter
     }()
-}
-
-private struct ConversationAvatar: View {
-    let photoURL: URL?
-    let name: String
-
-    var body: some View {
-        Group {
-            if let photoURL, let image = NSImage(contentsOf: photoURL) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                ZStack {
-                    Circle().fill(.quaternary)
-                    Text(String(name.prefix(1)).uppercased())
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(width: 42, height: 42)
-        .clipShape(Circle())
-    }
 }
