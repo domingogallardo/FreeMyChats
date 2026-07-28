@@ -12,6 +12,10 @@ struct ChatSidebarView: View {
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
 
     var body: some View {
+        storedCopyDeletionDialog
+    }
+
+    private var importedChatDetachmentDialog: some View {
         sidebarContent
         .confirmationDialog(
             "¿Eliminar este chat importado de la conversación?",
@@ -37,6 +41,10 @@ struct ChatSidebarView: View {
                     + "“Añadir a la conversación”."
             )
         }
+    }
+
+    private var importedChatDeletionDialog: some View {
+        importedChatDetachmentDialog
         .confirmationDialog(
             "¿Borrar este chat importado?",
             isPresented: Binding(
@@ -60,6 +68,10 @@ struct ChatSidebarView: View {
                     + "definitivamente de Chats importados."
             )
         }
+    }
+
+    private var storedCopyDetachmentDialog: some View {
+        importedChatDeletionDialog
         .confirmationDialog(
             store.storedCopyDetachmentPreview.map {
                 UnifiedViewPresentation.detachmentTitle(
@@ -91,6 +103,10 @@ struct ChatSidebarView: View {
                 )
             }
         }
+    }
+
+    private var sourceBackupDeletionDialog: some View {
+        storedCopyDetachmentDialog
         .confirmationDialog(
             "¿Eliminar esta copia fuente?",
             isPresented: Binding(
@@ -114,6 +130,10 @@ struct ChatSidebarView: View {
                 + "seguirán disponibles, pero no se podrán añadir otros chats de esta copia a la biblioteca."
             )
         }
+    }
+
+    private var unifiedViewAdditionDialog: some View {
+        sourceBackupDeletionDialog
         .confirmationDialog(
             store.unifiedViewAdditionPreview.map {
                 UnifiedViewPresentation.additionTitle(
@@ -149,6 +169,10 @@ struct ChatSidebarView: View {
                 )
             }
         }
+    }
+
+    private var storedCopyDeletionDialog: some View {
+        unifiedViewAdditionDialog
         .confirmationDialog(
             store.storedCopyDeletionPreview.map {
                 UnifiedViewPresentation.deletionTitle(
