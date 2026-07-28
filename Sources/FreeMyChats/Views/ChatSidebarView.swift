@@ -5,7 +5,7 @@ import SwiftWABackupAPI
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
-    @State private var isImportedChatsExpanded = true
+    @State private var isImportedChatsExpanded = false
     @State private var expandedImportedChatID: String?
     @State private var versionPendingDeletion: LibraryVersionSession?
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
