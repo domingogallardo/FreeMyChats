@@ -11,7 +11,11 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
 - Al seleccionar un chat se despliega su información; la copia física y autocontenida solo se crea al pulsar `Añadir conversación`.
 - Cada copia guardada desde la columna izquierda se puede abrir en Finder o borrar de forma independiente.
-- Si una copia forma parte de una Vista unificada, `Eliminar de la conversación` la retira de esa cronología sin borrar el chat extraído. La copia permanece en la columna izquierda y puede reincorporarse con `Añadir a la conversación`.
+- Toda copia local o chat importado que forme parte de una conversación ofrece
+  `Eliminar de la conversación`, incluso si es su única aportación. La primera
+  fase lo conserva en la columna izquierda y permite reincorporarlo con
+  `Añadir a la conversación`; solo cuando está fuera de toda conversación
+  aparece `Borrar`, que elimina físicamente la copia.
 - La columna derecha contiene el catálogo y muestra cada conversación una sola vez. Si procede de varias copias guardadas, al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran guardados en la biblioteca.
@@ -79,6 +83,8 @@ Mi biblioteca Free My Chats/
 │               ├── chat.json
 │               └── Media/
 ├── ImportedChats/
+│   ├── .Detached/
+│   │   └── <importId>.json       # Registro de un importado fuera del catálogo
 │   └── <conversationId>/
 │       └── <importId>/
 │           ├── manifest.json
@@ -99,8 +105,9 @@ Si una conversación solo tiene una aportación, su `archive.json` se guarda den
 de la propia copia guardada y el panel derecho abre directamente ese `chat.json` y
 su carpeta `Media`. No se crea una segunda carpeta para ella en `MergedChats`.
 
-`MergedChats` contiene las conversaciones que reúnen varias copias locales o al
-menos un chat importado. Cada una es una materialización completa: su `chat.json`
+`MergedChats` contiene las conversaciones que reúnen varias copias locales o
+algún chat importado, incluso si este es temporalmente su única aportación. Cada
+una es una materialización completa: su `chat.json`
 combina los mensajes, los ordena cronológicamente, elimina los coincidentes y
 reconstruye sus identificadores y respuestas. La vista abre ese único documento
 y su carpeta `Media`; no va saltando entre copias guardadas. Si varias
@@ -118,7 +125,7 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 Este proyecto integra [SwiftWABackupAPI 6.0.3](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/6.0.3), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
 
-Free My Chats 2.1.5 usa la API de composición para
+Free My Chats 2.1.6 usa la API de composición para
 construir las Vistas unificadas y el formato `.fmcchat` v1. La API crea,
 inspecciona, extrae, diagnostica, reorienta al target y materializa; Free My Chats
 registra cada aportación en `ImportedChats`, instala el resultado o hace rollback

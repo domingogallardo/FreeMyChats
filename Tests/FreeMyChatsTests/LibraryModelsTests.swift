@@ -23,8 +23,16 @@ final class LibraryModelsTests: XCTestCase {
             "¿Eliminar de la conversación?"
         )
         XCTAssertEqual(
+            UnifiedViewPresentation.detachmentTitle(contributionCount: 1),
+            "¿Eliminar de la conversación?"
+        )
+        XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 3),
             "¿Borrar esta copia guardada de la Vista unificada?"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionTitle(contributionCount: 0),
+            "¿Borrar este chat extraído?"
         )
     }
 
@@ -182,6 +190,43 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertTrue(message.contains("se reconstruirá con las 2 aportaciones restantes"))
         XCTAssertTrue(message.contains("La copia extraída conservará sus 700 mensajes"))
         XCTAssertTrue(message.contains("25 mensajes exclusivos dejarán de aparecer"))
+    }
+
+    func testDetachingOnlyContributionExplainsTheTwoPhaseRemoval() {
+        let impact = ConversationRemovalMessageImpact(
+            contributionCount: 1,
+            existingMessageCount: 700,
+            sourceMessageCount: 700,
+            removedMessageCount: 700,
+            resultingMessageCount: 0
+        )
+
+        let detachment = UnifiedViewPresentation.detachmentMessage(
+            chatName: "Familia",
+            versionTitle: "Copia de junio",
+            impact: impact
+        )
+        XCTAssertTrue(detachment.contains("se conservará extraída"))
+        XCTAssertTrue(detachment.contains("la conversación desaparecerá del catálogo"))
+        XCTAssertTrue(detachment.contains("“Añadir a la conversación”"))
+
+        let deletion = UnifiedViewPresentation.deletionMessage(
+            chatName: "Familia",
+            versionTitle: "Copia de junio",
+            impact: ConversationRemovalMessageImpact(
+                contributionCount: 0,
+                existingMessageCount: 700,
+                sourceMessageCount: 700,
+                removedMessageCount: 700,
+                resultingMessageCount: 0
+            )
+        )
+        XCTAssertTrue(deletion.contains("no forma parte de ninguna conversación"))
+        XCTAssertTrue(deletion.contains("definitivamente de la biblioteca"))
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 0),
+            "Borrar chat"
+        )
     }
 
     func testAudioTimeFormatterUsesClockStyleDurations() {

@@ -47,6 +47,7 @@ struct LibraryView: View {
              .detachingStoredContribution, .deletingStoredContribution,
              .preparingStoredCopyDeletion,
              .exportingConversation, .importingPortableConversation,
+             .incorporatingImportedConversation, .detachingImportedConversation,
              .removingImportedConversation:
             return operation
         case .discovering, .creatingLibrary, .addingBackup, .storingChat, .loadingChats:

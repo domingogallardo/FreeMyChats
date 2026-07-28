@@ -75,6 +75,8 @@ enum UnifiedViewPresentation {
 
     static func deletionTitle(contributionCount: Int) -> String {
         switch contributionCount {
+        case 0:
+            return "¿Borrar este chat extraído?"
         case 2:
             return "¿Borrar esta copia guardada y deshacer la Vista unificada?"
         case 3...:
@@ -92,6 +94,10 @@ enum UnifiedViewPresentation {
         let origin = "Se borrará la copia guardada de “\(chatName)” procedente de “\(versionTitle)”. "
         let messageImpact = removalImpactMessage(impact)
         switch impact.contributionCount {
+        case 0:
+            return origin
+                + "Este chat no forma parte de ninguna conversación del catálogo. "
+                + "Se eliminará definitivamente de la biblioteca."
         case 2:
             return origin
                 + "La otra copia no se modificará y seguirá guardada por separado. "
@@ -111,7 +117,11 @@ enum UnifiedViewPresentation {
     }
 
     static func deletionButtonTitle(contributionCount: Int) -> String {
-        contributionCount > 2 ? "Borrar y actualizar la vista" : "Borrar copia"
+        switch contributionCount {
+        case 0: return "Borrar chat"
+        case 3...: return "Borrar y actualizar la vista"
+        default: return "Borrar copia"
+        }
     }
 
     static func detachmentTitle(contributionCount: Int) -> String {
@@ -130,7 +140,11 @@ enum UnifiedViewPresentation {
             + "de la conversación del catálogo. Podrás volver a incorporarla con "
             + "“Añadir a la conversación”. "
         let messageImpact = detachmentImpactMessage(impact)
-        if impact.contributionCount == 2 {
+        if impact.contributionCount == 1 {
+            return origin
+                + "Como era la única aportación, la conversación desaparecerá del catálogo. "
+                + messageImpact
+        } else if impact.contributionCount == 2 {
             return origin
                 + "La otra aportación tampoco se modificará. Como solo quedará una aportación "
                 + "en la conversación actual, la Vista unificada desaparecerá y el catálogo "

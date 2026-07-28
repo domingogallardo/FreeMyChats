@@ -64,7 +64,7 @@ struct ConversationContributionRemoval {
 }
 
 struct ConversationContributionDetachment {
-    let conversation: ArchivedConversation
+    let conversation: ArchivedConversation?
 }
 
 struct PortableConversationImportResult {
@@ -74,15 +74,21 @@ struct PortableConversationImportResult {
     let addedMessageCount: Int
 }
 
-struct ImportedConversationRemoval {
+struct ImportedConversationDetachment {
+    let conversation: ArchivedConversation?
+    let detachedContribution: ImportedConversationContribution
+}
+
+struct ImportedConversationIncorporation {
     let conversation: ArchivedConversation
-    let removedContribution: ImportedConversationContribution
+    let addedMessageCount: Int
 }
 
 enum ConversationArchiveService {
     private static let recordFilename = "archive.json"
     private static let documentFilename = "chat.json"
     private static let mediaDirectoryName = "Media"
+    private static let detachedImportsDirectoryName = ".Detached"
 
     /// Creates an interoperable conversation package.
     ///
@@ -192,11 +198,15 @@ enum ConversationArchiveService {
             cancellation: cancellation
         )
         let records = try loadAvailableRecords(in: session)
+        let detachedImports = try loadDetachedImportedRegistrations(in: session)
         if records.contains(where: {
             $0.importedContributions.contains {
                 $0.packageID == archiveInfo.manifest.packageID
                     || $0.contentDigest == archiveInfo.manifest.contentDigest
             }
+        }) || detachedImports.contains(where: {
+            $0.contribution.packageID == archiveInfo.manifest.packageID
+                || $0.contribution.contentDigest == archiveInfo.manifest.contentDigest
         }) {
             throw ConversationArchiveError.importedConversationAlreadyExists(
                 archiveInfo.manifest.conversation.displayName
@@ -386,6 +396,19 @@ enum ConversationArchiveService {
         Set(try loadAvailableRecords(in: session).flatMap {
             $0.contributions.map(\.source)
         })
+    }
+
+    static func detachedImportedChats(
+        in session: LibrarySession
+    ) throws -> [ImportedChatSidebarItem] {
+        try loadDetachedImportedRegistrations(in: session).map {
+            ImportedChatSidebarItem(
+                contribution: $0.contribution,
+                conversationID: $0.conversationID,
+                conversationName: $0.conversationName,
+                isInConversation: false
+            )
+        }
     }
 
     static func removalMessageImpact(
@@ -591,7 +614,8 @@ enum ConversationArchiveService {
         item: ConversationCatalogItem,
         in session: LibrarySession
     ) throws -> ArchivedConversation {
-        guard item.contributionCount == 1 else {
+        guard item.localContributionCount == 1,
+              item.importedContributionCount == 0 else {
             return try openRepairing(id: item.id, in: session)
         }
 
@@ -730,15 +754,16 @@ enum ConversationArchiveService {
         }) else {
             throw ConversationArchiveError.contributionNotFound(source)
         }
-        guard record.totalContributionCount > 1 else {
-            throw ConversationArchiveError.contributionIsNotUnified(source)
-        }
-        if record.contributions.count == 1, !record.importedContributions.isEmpty {
-            throw ConversationArchiveError.cannotRemoveLastLocalContribution(
-                record.summary?.name ?? "esta conversación"
+        if record.totalContributionCount == 1 {
+            guard let version = session.version(id: source.versionID) else {
+                throw ConversationArchiveError.contributionNotFound(source)
+            }
+            try FileManager.default.removeItem(
+                at: sourceDirectoryURL(source, in: version)
+                    .appendingPathComponent(recordFilename)
             )
+            return ConversationContributionDetachment(conversation: nil)
         }
-
         record.contributions.removeAll { $0.source == source }
         record.updatedAt = Date()
 
@@ -776,20 +801,27 @@ enum ConversationArchiveService {
         }
     }
 
-    static func removeImportedContribution(
+    static func detachImportedContribution(
         id importID: String,
         from session: LibrarySession,
         progress: WABackupProgressHandler? = nil,
         cancellation: WABackupCancellationHandler? = nil
-    ) throws -> ImportedConversationRemoval {
+    ) throws -> ImportedConversationDetachment {
         guard var record = try loadAvailableRecords(in: session).first(where: {
             $0.importedContributions.contains(where: { $0.id == importID })
-        }), let removed = record.importedContributions.first(where: { $0.id == importID }) else {
+        }), let detached = record.importedContributions.first(where: { $0.id == importID }) else {
             throw ConversationArchiveError.importedContributionNotFound(importID)
         }
         record.importedContributions.removeAll { $0.id == importID }
         record.markCurrentSchema()
         record.updatedAt = Date()
+        var detachedBaseRecord = record
+        detachedBaseRecord.contributions = []
+        detachedBaseRecord.importedContributions = []
+        let registration = DetachedImportedContributionRegistration(
+            conversationRecord: detachedBaseRecord,
+            contribution: detached
+        )
 
         let fileManager = FileManager.default
         let archiveDirectoryURL = archiveURL(id: record.id, paths: session.paths)
@@ -801,30 +833,32 @@ enum ConversationArchiveService {
             "Conversation",
             isDirectory: true
         )
-        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
         do {
+            try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
+            try writeDetachedImportedRegistration(registration, in: session)
             try fileManager.moveItem(at: archiveDirectoryURL, to: stagedArchiveURL)
         } catch {
+            try? removeDetachedImportedRegistration(id: importID, in: session)
             try? fileManager.removeItem(at: stagingURL)
             throw error
         }
 
         do {
-            let rebuilt = try store(
-                record: record,
-                in: session,
-                progress: progress,
-                cancellation: cancellation
-            )
-            let importedURL = importedContributionURL(removed, in: session)
-            try fileManager.removeItem(at: importedURL)
-            try? removeDirectoryIfEmpty(importedURL.deletingLastPathComponent())
+            let rebuilt = record.totalContributionCount == 0
+                ? nil
+                : try store(
+                    record: record,
+                    in: session,
+                    progress: progress,
+                    cancellation: cancellation
+                )
             try? fileManager.removeItem(at: stagingURL)
-            return ImportedConversationRemoval(
+            return ImportedConversationDetachment(
                 conversation: rebuilt,
-                removedContribution: removed
+                detachedContribution: detached
             )
         } catch {
+            try? removeDetachedImportedRegistration(id: importID, in: session)
             if record.importedContributions.isEmpty, record.contributions.count == 1,
                let remainingSource = record.contributions.first?.source,
                let version = session.version(id: remainingSource.versionID) {
@@ -841,6 +875,63 @@ enum ConversationArchiveService {
             try? fileManager.removeItem(at: stagingURL)
             throw error
         }
+    }
+
+    static func incorporateDetachedImportedContribution(
+        id importID: String,
+        into session: LibrarySession,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> ImportedConversationIncorporation {
+        let registration = try detachedImportedRegistration(id: importID, in: session)
+        let existingRecord = try loadAvailableRecords(in: session).first(where: {
+            $0.id == registration.conversationID
+        })
+        var record = existingRecord ?? registration.conversationRecord
+        guard !record.importedContributions.contains(where: { $0.id == importID }) else {
+            throw ConversationArchiveError.importedContributionNotFound(importID)
+        }
+        _ = try importedContributionURL(
+            registration.contribution,
+            conversationID: registration.conversationID,
+            in: session
+        )
+        let previousMessageCount = try existingRecord.map {
+            try openStoredConversation(record: $0, in: session).document.messages.count
+        } ?? 0
+
+        record.importedContributions.append(registration.contribution)
+        record.markCurrentSchema()
+        record.updatedAt = Date()
+        let conversation = try store(
+            record: record,
+            in: session,
+            progress: progress,
+            cancellation: cancellation
+        )
+        try? removeDetachedImportedRegistration(id: importID, in: session)
+        return ImportedConversationIncorporation(
+            conversation: conversation,
+            addedMessageCount: max(
+                0,
+                conversation.document.messages.count - previousMessageCount
+            )
+        )
+    }
+
+    static func deleteDetachedImportedContribution(
+        id importID: String,
+        from session: LibrarySession
+    ) throws {
+        let registration = try detachedImportedRegistration(id: importID, in: session)
+        let importedURL = try importedContributionURL(
+            registration.contribution,
+            conversationID: registration.conversationID,
+            in: session
+        )
+        try FileManager.default.removeItem(at: importedURL)
+        try? removeDirectoryIfEmpty(importedURL.deletingLastPathComponent())
+        try removeDetachedImportedRegistration(id: importID, in: session)
     }
 
     private static func catalog(
@@ -921,7 +1012,6 @@ enum ConversationArchiveService {
         if let invalid = materialized.first(where: {
             !$0.isSupported
                 || ($0.importedContributions.isEmpty && $0.contributions.count < 2)
-                || $0.contributions.isEmpty
         }) {
             throw ConversationArchiveError.invalidArchive(
                 archiveURL(id: invalid.id, paths: session.paths),
@@ -1144,11 +1234,11 @@ enum ConversationArchiveService {
         progress: WABackupProgressHandler? = nil,
         cancellation: WABackupCancellationHandler? = nil
     ) throws -> ArchivedConversation {
-        guard record.totalContributionCount > 1,
-              !record.contributions.isEmpty else {
+        guard record.totalContributionCount > 0,
+              record.totalContributionCount > 1 || !record.importedContributions.isEmpty else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "Una conversación combinada requiere una copia local y otra aportación."
+                "La conversación materializada no contiene aportaciones válidas."
             )
         }
 
@@ -1205,13 +1295,6 @@ enum ConversationArchiveService {
         cancellation: WABackupCancellationHandler? = nil
     ) throws -> ArchivedConversation {
         let resolved = try resolvedContributions(for: record, in: session)
-        guard !resolved.isEmpty else {
-            throw ConversationArchiveError.invalidArchive(
-                archiveURL(id: record.id, paths: session.paths),
-                "No contiene ninguna aportación."
-            )
-        }
-
         let fileManager = FileManager.default
         try fileManager.createDirectory(
             at: session.paths.mergedChatsURL,
@@ -1224,7 +1307,6 @@ enum ConversationArchiveService {
         try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: false)
         defer { try? fileManager.removeItem(at: temporaryURL) }
 
-        let target = try compositionTarget(in: resolved)
         let localSources = try compositionSources(for: record, contributions: resolved)
         let imported = try resolvedImportedContributions(for: record, in: session)
         let importedSources = try imported.map {
@@ -1233,92 +1315,120 @@ enum ConversationArchiveService {
                 perspectiveHint: $0.contribution.perspectiveHint
             )
         }
-        let localTargetSourceID = ConversationSourceID(rawValue: target.contribution.id)
+        guard !localSources.isEmpty || !importedSources.isEmpty else {
+            throw ConversationArchiveError.invalidArchive(
+                archiveURL(id: record.id, paths: session.paths),
+                "No contiene ninguna aportación."
+            )
+        }
         let result: ConversationMaterializationResult
         let localMessageCountsByID: [String: ContributionMessageCounts]
 
-        if importedSources.isEmpty {
-            result = try ConversationCompositionEngine(policy: .currentUnifiedView).compose(
-                sources: localSources,
-                targetSourceID: localTargetSourceID,
-                perspectiveConstraints: [
-                    .samePerspective(sourceIDs: localSources.map(\.id))
-                ],
-                targetChatID: target.stored.document.chat.id,
-                destinationDirectory: temporaryURL,
-                progress: progress,
-                cancellation: cancellation
-            )
-            localMessageCountsByID = messageCountsBySourceID(result.sourceImpacts)
-        } else if localSources.count == 1 {
+        if localSources.isEmpty, let importedTargetSource = importedSources.first {
             result = try ConversationCompositionEngine(policy: .conservativeDefault).compose(
-                sources: localSources + importedSources,
-                targetSourceID: localTargetSourceID,
+                sources: importedSources,
+                targetSourceID: importedTargetSource.id,
                 perspectiveConstraints: [],
-                targetChatID: target.stored.document.chat.id,
+                targetChatID: 1,
                 destinationDirectory: temporaryURL,
                 progress: progress,
                 cancellation: cancellation
             )
-            localMessageCountsByID = messageCountsBySourceID(result.sourceImpacts)
+            localMessageCountsByID = [:]
         } else {
-            let localTemporaryURL = session.paths.mergedChatsURL.appendingPathComponent(
-                ".combining-local-\(record.id.rawValue)-\(UUID().uuidString)",
-                isDirectory: true
-            )
-            try fileManager.createDirectory(
-                at: localTemporaryURL,
-                withIntermediateDirectories: false
-            )
-            defer { try? fileManager.removeItem(at: localTemporaryURL) }
+            let target = try compositionTarget(in: resolved)
+            let localTargetSourceID = ConversationSourceID(rawValue: target.contribution.id)
+            if importedSources.isEmpty {
+                result = try ConversationCompositionEngine(policy: .currentUnifiedView).compose(
+                    sources: localSources,
+                    targetSourceID: localTargetSourceID,
+                    perspectiveConstraints: [
+                        .samePerspective(sourceIDs: localSources.map(\.id))
+                    ],
+                    targetChatID: target.stored.document.chat.id,
+                    destinationDirectory: temporaryURL,
+                    progress: progress,
+                    cancellation: cancellation
+                )
+                localMessageCountsByID = messageCountsBySourceID(result.sourceImpacts)
+            } else if localSources.count == 1 {
+                result = try ConversationCompositionEngine(policy: .conservativeDefault).compose(
+                    sources: localSources + importedSources,
+                    targetSourceID: localTargetSourceID,
+                    perspectiveConstraints: [],
+                    targetChatID: target.stored.document.chat.id,
+                    destinationDirectory: temporaryURL,
+                    progress: progress,
+                    cancellation: cancellation
+                )
+                localMessageCountsByID = messageCountsBySourceID(result.sourceImpacts)
+            } else {
+                let localTemporaryURL = session.paths.mergedChatsURL.appendingPathComponent(
+                    ".combining-local-\(record.id.rawValue)-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+                try fileManager.createDirectory(
+                    at: localTemporaryURL,
+                    withIntermediateDirectories: false
+                )
+                defer { try? fileManager.removeItem(at: localTemporaryURL) }
 
-            let localResult = try ConversationCompositionEngine(
-                policy: .currentUnifiedView
-            ).compose(
-                sources: localSources,
-                targetSourceID: localTargetSourceID,
-                perspectiveConstraints: [
-                    .samePerspective(sourceIDs: localSources.map(\.id))
-                ],
-                targetChatID: target.stored.document.chat.id,
-                destinationDirectory: localTemporaryURL,
-                progress: { update in
-                    if update.phase != .completed {
-                        progress?(update)
-                    }
-                },
-                cancellation: cancellation
-            )
-            let combinedLocalSourceID = ConversationSourceID(
-                rawValue: "combined-local-\(record.id.rawValue)"
-            )
-            let combinedLocalSource = try ConversationSource(
-                id: combinedLocalSourceID,
-                document: localResult.document,
-                mediaDirectoryURL: localResult.mediaDirectoryURL,
-                conversationIdentityHint: conversationIdentityHint(for: record),
-                stableMessageIDs: localResult.stableMessageIDsByMaterializedID
-            )
-            result = try ConversationCompositionEngine(
-                policy: .conservativeDefault
-            ).compose(
-                sources: [combinedLocalSource] + importedSources,
-                targetSourceID: combinedLocalSourceID,
-                perspectiveConstraints: [],
-                targetChatID: target.stored.document.chat.id,
-                destinationDirectory: temporaryURL,
-                progress: progress,
-                cancellation: cancellation
-            )
-            localMessageCountsByID = try localMessageCounts(
-                localResult: localResult,
-                finalResult: result,
-                combinedLocalSourceID: combinedLocalSourceID
-            )
+                let localResult = try ConversationCompositionEngine(
+                    policy: .currentUnifiedView
+                ).compose(
+                    sources: localSources,
+                    targetSourceID: localTargetSourceID,
+                    perspectiveConstraints: [
+                        .samePerspective(sourceIDs: localSources.map(\.id))
+                    ],
+                    targetChatID: target.stored.document.chat.id,
+                    destinationDirectory: localTemporaryURL,
+                    progress: { update in
+                        if update.phase != .completed {
+                            progress?(update)
+                        }
+                    },
+                    cancellation: cancellation
+                )
+                let combinedLocalSourceID = ConversationSourceID(
+                    rawValue: "combined-local-\(record.id.rawValue)"
+                )
+                let combinedLocalSource = try ConversationSource(
+                    id: combinedLocalSourceID,
+                    document: localResult.document,
+                    mediaDirectoryURL: localResult.mediaDirectoryURL,
+                    conversationIdentityHint: conversationIdentityHint(for: record),
+                    stableMessageIDs: localResult.stableMessageIDsByMaterializedID
+                )
+                result = try ConversationCompositionEngine(
+                    policy: .conservativeDefault
+                ).compose(
+                    sources: [combinedLocalSource] + importedSources,
+                    targetSourceID: combinedLocalSourceID,
+                    perspectiveConstraints: [],
+                    targetChatID: target.stored.document.chat.id,
+                    destinationDirectory: temporaryURL,
+                    progress: progress,
+                    cancellation: cancellation
+                )
+                localMessageCountsByID = try localMessageCounts(
+                    localResult: localResult,
+                    finalResult: result,
+                    combinedLocalSourceID: combinedLocalSourceID
+                )
+            }
         }
 
         let document = result.document
         var installedRecord = record
+        if installedRecord.contributions.isEmpty {
+            let materializedKey = ConversationIdentityKey(chat: document.chat)
+            if !installedRecord.identityKeys.contains(materializedKey) {
+                var aliases = installedRecord.contactJIDAliases ?? []
+                aliases.append(materializedKey.contactJID)
+                installedRecord.contactJIDAliases = Array(Set(aliases)).sorted()
+            }
+        }
         installedRecord.summary = document.chat
         let impactsByID = Dictionary(
             uniqueKeysWithValues: result.sourceImpacts.map { ($0.sourceID.rawValue, $0) }
@@ -1661,6 +1771,79 @@ enum ConversationArchiveService {
         return url
     }
 
+    private static func detachedImportsURL(in session: LibrarySession) -> URL {
+        session.paths.importedChatsURL.appendingPathComponent(
+            detachedImportsDirectoryName,
+            isDirectory: true
+        )
+    }
+
+    private static func detachedImportedRegistrationURL(
+        id: String,
+        in session: LibrarySession
+    ) -> URL {
+        detachedImportsURL(in: session).appendingPathComponent("\(id).json")
+    }
+
+    private static func loadDetachedImportedRegistrations(
+        in session: LibrarySession
+    ) throws -> [DetachedImportedContributionRegistration] {
+        let directoryURL = detachedImportsURL(in: session)
+        guard FileManager.default.fileExists(atPath: directoryURL.path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        .filter { $0.pathExtension == "json" }
+        .map {
+            try decoder().decode(
+                DetachedImportedContributionRegistration.self,
+                from: Data(contentsOf: $0)
+            )
+        }
+    }
+
+    private static func detachedImportedRegistration(
+        id: String,
+        in session: LibrarySession
+    ) throws -> DetachedImportedContributionRegistration {
+        let registrationURL = detachedImportedRegistrationURL(id: id, in: session)
+        guard FileManager.default.fileExists(atPath: registrationURL.path) else {
+            throw ConversationArchiveError.importedContributionNotFound(id)
+        }
+        return try decoder().decode(
+            DetachedImportedContributionRegistration.self,
+            from: Data(contentsOf: registrationURL)
+        )
+    }
+
+    private static func writeDetachedImportedRegistration(
+        _ registration: DetachedImportedContributionRegistration,
+        in session: LibrarySession
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: detachedImportsURL(in: session),
+            withIntermediateDirectories: true
+        )
+        try encoder().encode(registration).write(
+            to: detachedImportedRegistrationURL(
+                id: registration.contribution.id,
+                in: session
+            ),
+            options: .atomic
+        )
+    }
+
+    private static func removeDetachedImportedRegistration(
+        id: String,
+        in session: LibrarySession
+    ) throws {
+        let registrationURL = detachedImportedRegistrationURL(id: id, in: session)
+        try FileManager.default.removeItem(at: registrationURL)
+        try? removeDirectoryIfEmpty(registrationURL.deletingLastPathComponent())
+    }
+
     private static func removeDirectoryIfEmpty(_ directoryURL: URL) throws {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: directoryURL.path) else { return }
@@ -1776,6 +1959,16 @@ private struct ResolvedContribution {
 private struct ResolvedImportedContribution {
     let contribution: ImportedConversationContribution
     let directory: PortableConversationDirectory
+}
+
+private struct DetachedImportedContributionRegistration: Codable {
+    let conversationRecord: ConversationArchiveRecord
+    let contribution: ImportedConversationContribution
+
+    var conversationID: ConversationArchiveID { conversationRecord.id }
+    var conversationName: String {
+        conversationRecord.summary?.name ?? contribution.displayName
+    }
 }
 
 private struct ContributionMessageCounts {

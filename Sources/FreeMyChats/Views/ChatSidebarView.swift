@@ -8,10 +8,35 @@ struct ChatSidebarView: View {
     @State private var isImportedChatsExpanded = false
     @State private var expandedImportedChatID: String?
     @State private var versionPendingDeletion: LibraryVersionSession?
+    @State private var importedChatPendingDetachment: ImportedChatSidebarItem?
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
 
     var body: some View {
         sidebarContent
+        .confirmationDialog(
+            "¿Eliminar este chat importado de la conversación?",
+            isPresented: Binding(
+                get: { importedChatPendingDetachment != nil },
+                set: { if !$0 { importedChatPendingDetachment = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Eliminar de la conversación") {
+                if let item = importedChatPendingDetachment {
+                    store.detachImportedChat(item)
+                }
+                importedChatPendingDetachment = nil
+            }
+            Button("Cancelar", role: .cancel) {
+                importedChatPendingDetachment = nil
+            }
+        } message: {
+            Text(
+                "El chat importado se conservará en la columna izquierda, dejará de aportar "
+                    + "mensajes a la conversación y podrás volver a incorporarlo con "
+                    + "“Añadir a la conversación”."
+            )
+        }
         .confirmationDialog(
             "¿Borrar este chat importado?",
             isPresented: Binding(
@@ -20,14 +45,19 @@ struct ChatSidebarView: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Borrar", role: .destructive, action: confirmImportedChatDeletion)
+            Button("Borrar", role: .destructive) {
+                if let item = importedChatPendingDeletion {
+                    store.deleteImportedChat(item)
+                }
+                importedChatPendingDeletion = nil
+            }
             Button("Cancelar", role: .cancel) {
                 importedChatPendingDeletion = nil
             }
         } message: {
             Text(
-                "La aportación importada se eliminará de ImportedChats y la Vista unificada "
-                    + "se reconstruirá con las copias y chats restantes."
+                "Este chat no forma parte de ninguna conversación. Se eliminará "
+                    + "definitivamente de Chats importados."
             )
         }
         .confirmationDialog(
@@ -170,13 +200,6 @@ struct ChatSidebarView: View {
         .onAppear(perform: initializeExpandedVersions)
     }
 
-    private func confirmImportedChatDeletion() {
-        if let item = importedChatPendingDeletion {
-            store.removeImportedChat(item)
-        }
-        importedChatPendingDeletion = nil
-    }
-
     private var sidebarList: some View {
         List(selection: $store.selectedChatID) {
             importedChatsSection
@@ -203,7 +226,9 @@ struct ChatSidebarView: View {
 
     private func updateImportedChatExpansion(_ conversationID: ConversationArchiveID?) {
         guard let conversationID,
-              store.importedChats.contains(where: { $0.conversationID == conversationID }) else {
+              store.importedChats.contains(where: {
+                  $0.isInConversation && $0.conversationID == conversationID
+              }) else {
             return
         }
         isImportedChatsExpanded = true
@@ -299,7 +324,8 @@ struct ChatSidebarView: View {
 
     private func importedChatSidebarRow(_ item: ImportedChatSidebarItem) -> some View {
         let isExpanded = expandedImportedChatID == item.id
-        let isHighlighted = store.selectedConversationID == item.conversationID
+        let isHighlighted = item.isInConversation
+            && store.selectedConversationID == item.conversationID
         return ImportedChatSidebarRow(
             item: item,
             isExpanded: isExpanded,
@@ -314,7 +340,9 @@ struct ChatSidebarView: View {
                 }
             },
             reveal: { store.revealImportedChat(item) },
-            remove: { importedChatPendingDeletion = item }
+            addToConversation: { store.incorporateImportedChat(item) },
+            detachFromConversation: { importedChatPendingDetachment = item },
+            delete: { importedChatPendingDeletion = item }
         )
         .listRowBackground(importedChatRowBackground(
             isExpanded: isExpanded,
@@ -352,7 +380,7 @@ struct ChatSidebarView: View {
             detailsState: store.chatDetails[selection],
             storedChatState: store.storedChatStates[selection] ?? .checking,
             contributedMessageCount: store.contributedMessageCount(for: selection),
-            canDetachFromUnifiedView: store.canDetachFromUnifiedView(selection),
+            isInConversation: store.isStoredChatInConversation(selection),
             additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
             isStoring: store.storingChatID == selection,
             canAddToLibrary: version.hasSourceBackup,
@@ -529,7 +557,9 @@ private struct ImportedChatSidebarRow: View {
     let detailsState: ImportedChatDetailsState?
     let toggleExpansion: () -> Void
     let reveal: () -> Void
-    let remove: () -> Void
+    let addToConversation: () -> Void
+    let detachFromConversation: () -> Void
+    let delete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -601,7 +631,11 @@ private struct ImportedChatSidebarRow: View {
                     )
                     detailLine("Primero", value: firstMessageDescription)
                     detailLine("Último", value: lastMessageDescription)
-                    if let messageCount = item.contribution.exclusiveMessageCount {
+                    if !item.isInConversation {
+                        Text("No está en ninguna conversación")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if let messageCount = item.contribution.exclusiveMessageCount {
                         Text(
                             UnifiedViewPresentation.contributionDescription(
                                 messageCount: messageCount
@@ -621,8 +655,23 @@ private struct ImportedChatSidebarRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 actionButton("Abrir carpeta", systemImage: "folder", action: reveal)
                     .help("Abrir la carpeta del chat importado en Finder")
-                actionButton("Borrar", systemImage: "trash", tint: .red, action: remove)
-                    .help("Borrar este chat importado y reconstruir su conversación")
+                if item.isInConversation {
+                    actionButton(
+                        "Eliminar de la conversación",
+                        systemImage: "arrow.right",
+                        action: detachFromConversation
+                    )
+                    .help("Retirar este chat importado y conservarlo en Chats importados")
+                } else {
+                    actionButton(
+                        "Añadir a la conversación",
+                        systemImage: "plus",
+                        action: addToConversation
+                    )
+                    .help("Volver a incorporar este chat importado a su conversación")
+                    actionButton("Borrar", systemImage: "trash", tint: .red, action: delete)
+                        .help("Borrar definitivamente este chat importado")
+                }
             }
         }
         .font(.caption)
@@ -767,7 +816,7 @@ private struct ChatSidebarRow: View {
     let detailsState: ChatDetailsState?
     let storedChatState: StoredChatDisplayState
     let contributedMessageCount: Int?
-    let canDetachFromUnifiedView: Bool
+    let isInConversation: Bool
     let additionTargetsUnifiedView: Bool
     let isStoring: Bool
     let canAddToLibrary: Bool
@@ -878,18 +927,18 @@ private struct ChatSidebarRow: View {
                         action: revealStoredChat
                     )
                     .help("Abrir la copia guardada de este chat en Finder")
-                    if canDetachFromUnifiedView {
+                    if isInConversation {
                         actionButton(
                             "Eliminar de la conversación",
                             systemImage: "arrow.right",
                             action: detachStoredChat
                         )
                         .help(
-                            "Retirar esta copia de la Vista unificada y conservar el chat "
+                            "Retirar esta copia de la conversación y conservar el chat "
                                 + "extraído en su copia de WhatsApp"
                         )
                     }
-                    if !storedChatState.isExtracted {
+                    if !isInConversation {
                         actionButton(
                             "Borrar",
                             systemImage: "trash",

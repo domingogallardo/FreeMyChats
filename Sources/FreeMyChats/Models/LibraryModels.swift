@@ -383,6 +383,7 @@ struct ImportedChatSidebarItem: Identifiable {
     let contribution: ImportedConversationContribution
     let conversationID: ConversationArchiveID
     let conversationName: String
+    let isInConversation: Bool
 
     var id: String { contribution.id }
 }
@@ -546,6 +547,8 @@ struct AppOperation: Equatable {
         case storingChat(VersionChatID)
         case exportingConversation(ConversationArchiveID)
         case importingPortableConversation
+        case incorporatingImportedConversation(String)
+        case detachingImportedConversation(String)
         case removingImportedConversation(String)
     }
 

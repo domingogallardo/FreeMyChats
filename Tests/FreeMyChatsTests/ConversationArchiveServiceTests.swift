@@ -642,7 +642,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
-    func testRemovingImportedConversationRestoresLocalConversation() throws {
+    func testImportedChatCanBeDetachedReincorporatedAndThenDeleted() throws {
         let fixture = try makeLibrary(storedChats: oppositeIndividualStoredChats())
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
         let localVersion = try XCTUnwrap(fixture.session.version(id: "local"))
@@ -686,24 +686,114 @@ final class ConversationArchiveServiceTests: XCTestCase {
             }
         }
 
-        let removal = try ConversationArchiveService.removeImportedContribution(
+        let localDetachment = try ConversationArchiveService.detachContribution(
+            source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
+            from: imported.session
+        )
+        let importedOnlyConversation = try XCTUnwrap(localDetachment.conversation)
+        XCTAssertTrue(importedOnlyConversation.record.contributions.isEmpty)
+        XCTAssertEqual(importedOnlyConversation.record.importedContributions.count, 1)
+        let importedOnlyItem = try XCTUnwrap(
+            ConversationArchiveService.catalog(in: imported.session).first
+        )
+        let reopenedImportedOnly = try ConversationArchiveService.openRepairing(
+            item: importedOnlyItem,
+            in: imported.session
+        )
+        XCTAssertEqual(reopenedImportedOnly.record.importedContributions.count, 1)
+        XCTAssertTrue(reopenedImportedOnly.record.contributions.isEmpty)
+
+        let onlyImportedDetachment =
+            try ConversationArchiveService.detachImportedContribution(
+                id: imported.importedContribution.id,
+                from: imported.session
+            )
+        XCTAssertNil(onlyImportedDetachment.conversation)
+        XCTAssertTrue(try ConversationArchiveService.catalog(in: imported.session).isEmpty)
+
+        let importedOnlyReincorporation =
+            try ConversationArchiveService.incorporateDetachedImportedContribution(
+                id: imported.importedContribution.id,
+                into: imported.session
+            )
+        XCTAssertTrue(importedOnlyReincorporation.conversation.record.contributions.isEmpty)
+        XCTAssertEqual(
+            importedOnlyReincorporation.conversation.record.importedContributions.count,
+            1
+        )
+
+        let localContext = try ConversationArchiveService.prepareIncorporation(
+            for: localChat,
+            in: localVersion,
+            session: imported.session
+        )
+        _ = try ConversationArchiveService.incorporate(
+            localStored,
+            source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
+            context: localContext,
+            in: imported.session
+        )
+
+        let detachment = try ConversationArchiveService.detachImportedContribution(
             id: imported.importedContribution.id,
             from: imported.session
         )
+        let localOnlyConversation = try XCTUnwrap(detachment.conversation)
         let importedURL = fixture.session.paths.importedChatsURL
             .appendingPathComponent(imported.importedContribution.relativeDirectory)
         let mergedURL = fixture.session.paths.mergedChatsURL
             .appendingPathComponent(imported.conversation.record.id.rawValue)
 
-        XCTAssertEqual(removal.conversation.document.messages.count, 3)
-        XCTAssertEqual(removal.conversation.record.contributions.count, 1)
-        XCTAssertTrue(removal.conversation.record.importedContributions.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: importedURL.path))
+        XCTAssertEqual(localOnlyConversation.document.messages.count, 3)
+        XCTAssertEqual(localOnlyConversation.record.contributions.count, 1)
+        XCTAssertTrue(localOnlyConversation.record.importedContributions.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: mergedURL.path))
         XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: localStored.directoryURL.appendingPathComponent("archive.json").path
             )
+        )
+        let detached = try XCTUnwrap(
+            ConversationArchiveService.detachedImportedChats(in: imported.session).first
+        )
+        XCTAssertEqual(detached.id, imported.importedContribution.id)
+        XCTAssertFalse(detached.isInConversation)
+
+        XCTAssertThrowsError(
+            try ConversationArchiveService.importPortableConversationArchive(
+                at: archiveURL,
+                into: imported.session
+            )
+        ) { error in
+            guard case ConversationArchiveError.importedConversationAlreadyExists = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+
+        let reincorporation =
+            try ConversationArchiveService.incorporateDetachedImportedContribution(
+                id: detached.id,
+                into: imported.session
+            )
+        XCTAssertEqual(reincorporation.conversation.document.messages.count, 5)
+        XCTAssertEqual(reincorporation.conversation.record.importedContributions.count, 1)
+        XCTAssertTrue(
+            try ConversationArchiveService.detachedImportedChats(in: imported.session).isEmpty
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
+
+        _ = try ConversationArchiveService.detachImportedContribution(
+            id: imported.importedContribution.id,
+            from: imported.session
+        )
+        try ConversationArchiveService.deleteDetachedImportedContribution(
+            id: imported.importedContribution.id,
+            from: imported.session
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: importedURL.path))
+        XCTAssertTrue(
+            try ConversationArchiveService.detachedImportedChats(in: imported.session).isEmpty
         )
     }
 
@@ -1239,14 +1329,15 @@ final class ConversationArchiveServiceTests: XCTestCase {
             source: VersionChatID(versionID: "old", chatID: 7),
             from: fixture.session
         )
+        let remainingConversation = try XCTUnwrap(detachment.conversation)
         let catalog = try ConversationArchiveService.catalog(in: fixture.session)
 
-        XCTAssertEqual(detachment.conversation.record.id, original.id)
+        XCTAssertEqual(remainingConversation.record.id, original.id)
         XCTAssertEqual(
-            detachment.conversation.record.contributions.map(\.source),
+            remainingConversation.record.contributions.map(\.source),
             [VersionChatID(versionID: "new", chatID: 7)]
         )
-        XCTAssertEqual(detachment.conversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertEqual(remainingConversation.document.messages.map(\.message), ["A", "B", "C"])
         XCTAssertNotNil(fixture.session.version(id: "old"))
         XCTAssertNotNil(fixture.session.version(id: "new"))
         XCTAssertEqual(catalog.count, 1)
@@ -1282,6 +1373,51 @@ final class ConversationArchiveServiceTests: XCTestCase {
                 in: fixture.session
             ),
             [VersionChatID(versionID: "new", chatID: 7)]
+        )
+    }
+
+    func testDetachingTheOnlyContributionKeepsTheChatExtractedOutsideTheCatalog() throws {
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "only",
+                    chatID: 7,
+                    jid: "group@g.us",
+                    name: "Grupo",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        _ = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
+        let selection = VersionChatID(versionID: "only", chatID: 7)
+
+        let detachment = try ConversationArchiveService.detachContribution(
+            source: selection,
+            from: fixture.session
+        )
+        let version = try XCTUnwrap(fixture.session.version(id: "only"))
+        let chatURL = version.storedChatsURL.appendingPathComponent("Chats/7")
+
+        XCTAssertNil(detachment.conversation)
+        XCTAssertTrue(try ConversationArchiveService.catalog(in: fixture.session).isEmpty)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: chatURL.appendingPathComponent("chat.json").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: chatURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertFalse(
+            try ConversationArchiveService.incorporatedContributionSources(
+                in: fixture.session
+            ).contains(selection)
         )
     }
 
@@ -1327,17 +1463,18 @@ final class ConversationArchiveServiceTests: XCTestCase {
             source: VersionChatID(versionID: "second", chatID: 7),
             from: fixture.session
         )
+        let remainingConversation = try XCTUnwrap(detachment.conversation)
         let catalog = try ConversationArchiveService.catalog(in: fixture.session)
 
-        XCTAssertEqual(detachment.conversation.record.id, original.id)
+        XCTAssertEqual(remainingConversation.record.id, original.id)
         XCTAssertEqual(
-            Set(detachment.conversation.record.contributions.map(\.source)),
+            Set(remainingConversation.record.contributions.map(\.source)),
             Set([
                 VersionChatID(versionID: "first", chatID: 7),
                 VersionChatID(versionID: "third", chatID: 7)
             ])
         )
-        XCTAssertEqual(detachment.conversation.document.messages.map(\.message), ["A", "C"])
+        XCTAssertEqual(remainingConversation.document.messages.map(\.message), ["A", "C"])
         XCTAssertEqual(
             catalog.map(\.contributionCount),
             [2]
@@ -1378,38 +1515,6 @@ final class ConversationArchiveServiceTests: XCTestCase {
             try FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)
                 .contains { $0.hasPrefix(".detaching-contribution-") }
         )
-    }
-
-    func testDetachingSingleConversationIsRejectedWithoutChangingIt() throws {
-        let fixture = try makeLibrary(
-            storedChats: [
-                StoredChatFixture(
-                    versionID: "only",
-                    chatID: 7,
-                    jid: "34600111222@s.whatsapp.net",
-                    name: "Ana",
-                    storedAt: "2026-01-10T12:00:00Z",
-                    messages: [
-                        MessageFixture(id: 1, text: "Hola", date: "2026-01-01T10:00:00Z")
-                    ]
-                )
-            ]
-        )
-        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
-        _ = try incorporateAllStoredChats(in: fixture)
-
-        XCTAssertThrowsError(
-            try ConversationArchiveService.detachContribution(
-                source: VersionChatID(versionID: "only", chatID: 7),
-                from: fixture.session
-            )
-        ) { error in
-            guard case ConversationArchiveError.contributionIsNotUnified = error else {
-                return XCTFail("Error inesperado: \(error)")
-            }
-        }
-        XCTAssertEqual(try ConversationArchiveService.catalog(in: fixture.session).count, 1)
-        XCTAssertNotNil(fixture.session.version(id: "only"))
     }
 
     func testRemovingOlderContributionKeepsTheNewerCompleteConversation() throws {
