@@ -816,9 +816,13 @@ final class LibraryModelsTests: XCTestCase {
 
         let first = await ImageThumbnailCache.shared.thumbnail(for: imageURL)
         let second = await ImageThumbnailCache.shared.thumbnail(for: imageURL)
+        let firstPreview = await ImageThumbnailCache.shared.preview(for: imageURL)
+        let secondPreview = await ImageThumbnailCache.shared.preview(for: imageURL)
 
         XCTAssertNotNil(first)
         XCTAssertTrue(first === second)
+        XCTAssertNotNil(firstPreview)
+        XCTAssertTrue(firstPreview === secondPreview)
     }
 
     func testImageThumbnailCacheLoadsJPEGWithThumbExtension() async throws {

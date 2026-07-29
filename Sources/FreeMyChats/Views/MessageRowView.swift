@@ -286,8 +286,10 @@ private struct MediaAttachmentView: View {
     }
 
     private var isImage: Bool {
-        ["jpg", "jpeg", "png", "gif", "webp", "heic", "thumb"]
-            .contains(url.pathExtension.lowercased())
+        MediaAttachmentPresentation.shouldUseImagePreview(
+            messageType: messageType,
+            url: url
+        )
     }
 
     private var isAudio: Bool {
@@ -315,25 +317,6 @@ private struct MediaAttachmentView: View {
             return "\(messageType) · \(Duration.seconds(seconds).formatted(.time(pattern: .minuteSecond)))"
         }
         return messageType
-    }
-}
-
-enum MediaAttachmentPresentation {
-    private static let videoExtensions: Set<String> = [
-        "mp4", "mov", "m4v", "3gp"
-    ]
-
-    static func shouldUseVideoPlayer(messageType: String, url: URL) -> Bool {
-        let normalizedType = messageType.lowercased()
-        if normalizedType == "video" {
-            return true
-        }
-        return normalizedType == "gif"
-            && videoExtensions.contains(url.pathExtension.lowercased())
-    }
-
-    static func shouldLoopVideo(messageType: String) -> Bool {
-        messageType.caseInsensitiveCompare("gif") == .orderedSame
     }
 }
 

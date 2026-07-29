@@ -10,6 +10,8 @@ struct ConversationView: View {
     @State private var searchResultCount = 0
     @State private var searchNavigationRequest: MessageSearchNavigationRequest?
     @State private var searchExitRequest: MessageSearchExitRequest?
+    @State private var messageNavigationRequest: MessageNavigationRequest?
+    @State private var isShowingMediaGallery = false
 
     var body: some View {
         Group {
@@ -84,6 +86,9 @@ struct ConversationView: View {
                 navigateSearch: navigateSearch,
                 finishSearch: finishMessageSearch,
                 cancelSearch: cancelMessageSearch,
+                showMediaGallery: {
+                    isShowingMediaGallery = true
+                },
                 goBack: store.showConversationCatalog,
                 revealInFinder: store.revealSelectedChat,
                 exportConversation: store.exportSelectedConversation
@@ -95,6 +100,7 @@ struct ConversationView: View {
                 initialMessageID: store.readingPosition(for: selection),
                 searchNavigationRequest: searchNavigationRequest,
                 searchExitRequest: searchExitRequest,
+                messageNavigationRequest: messageNavigationRequest,
                 searchSelectionChanged: { resultNumber, resultCount in
                     selectedSearchResultNumber = resultNumber
                     searchResultCount = resultCount
@@ -103,7 +109,17 @@ struct ConversationView: View {
                     store.saveReadingPosition(messageID, for: selection)
                 }
             )
-            .id(conversation.contentRevisionID)
+            .id(
+                "\(conversation.contentRevisionID.uuidString)-"
+                    + (messageNavigationRequest?.id.uuidString ?? "reading-position")
+            )
+        }
+        .sheet(isPresented: $isShowingMediaGallery) {
+            ConversationMediaGalleryView(
+                conversationName: conversation.document.chat.name,
+                items: ConversationMediaItem.items(in: conversation),
+                navigateToMessage: navigateToMessageFromGallery
+            )
         }
         .task(id: messageSearchText) {
             let query = messageSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,7 +139,9 @@ struct ConversationView: View {
             searchResultCount = 0
             searchNavigationRequest = nil
             searchExitRequest = nil
+            messageNavigationRequest = nil
             isSearching = false
+            isShowingMediaGallery = false
         }
     }
 
@@ -136,6 +154,17 @@ struct ConversationView: View {
         searchNavigationRequest = MessageSearchNavigationRequest(
             id: UUID(),
             direction: direction
+        )
+    }
+
+    private func navigateToMessageFromGallery(_ messageID: Int) {
+        isShowingMediaGallery = false
+        if isSearching {
+            closeMessageSearch(behavior: .restoreInitialPosition)
+        }
+        messageNavigationRequest = MessageNavigationRequest(
+            id: UUID(),
+            messageID: messageID
         )
     }
 
@@ -172,6 +201,11 @@ struct MessageSearchExitRequest: Equatable {
     let behavior: MessageSearchExitBehavior
 }
 
+struct MessageNavigationRequest: Equatable {
+    let id: UUID
+    let messageID: Int
+}
+
 private struct ConversationBackHeader: View {
     let title: String
     let action: () -> Void
@@ -206,6 +240,7 @@ private struct ConversationHeaderView: View {
     let navigateSearch: (MessageSearchDirection) -> Void
     let finishSearch: () -> Void
     let cancelSearch: () -> Void
+    let showMediaGallery: () -> Void
     let goBack: () -> Void
     let revealInFinder: () -> Void
     let exportConversation: () -> Void
@@ -248,6 +283,12 @@ private struct ConversationHeaderView: View {
                     }
                 }
                 Spacer()
+                Button(action: showMediaGallery) {
+                    Label("Fotos y vídeos", systemImage: "photo.on.rectangle.angled")
+                }
+                .help("Ver todas las fotos y vídeos de la conversación")
+                .accessibilityLabel("Ver fotos y vídeos de la conversación")
+
                 Button {
                     if isSearching {
                         isSearchFieldFocused = true

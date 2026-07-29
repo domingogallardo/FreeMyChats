@@ -35,6 +35,7 @@ struct MessageListView: View {
         initialMessageID: Int?,
         searchNavigationRequest: MessageSearchNavigationRequest?,
         searchExitRequest: MessageSearchExitRequest?,
+        messageNavigationRequest: MessageNavigationRequest?,
         searchSelectionChanged: @escaping (Int?, Int) -> Void,
         saveReadingPosition: @escaping (Int) -> Void
     ) {
@@ -56,8 +57,11 @@ struct MessageListView: View {
             messageIDs: searchText.isEmpty ? [] : filteredMessages.map(\.id),
             selectedIndex: initialSelectedIndex
         )
+        let requestedMessageID = searchText.isEmpty
+            ? messageNavigationRequest?.messageID
+            : nil
         let initialTarget = searchText.isEmpty
-            ? initialMessageID
+            ? requestedMessageID ?? initialMessageID
             : initialSearchNavigator.selectedMessageID
         _timeline = State(
             initialValue: MessageTimelineWindow(
@@ -66,9 +70,15 @@ struct MessageListView: View {
             )
         )
         _searchNavigator = State(initialValue: initialSearchNavigator)
-        _lastReadingPosition = State(initialValue: initialMessageID)
+        _lastReadingPosition = State(initialValue: initialTarget)
         _observedSearchText = State(initialValue: searchText)
         _handledSearchExitRequestID = State(initialValue: searchExitRequest?.id)
+        _pendingRestorationAnchor = State(
+            initialValue: requestedMessageID == nil ? nil : .center
+        )
+        _pendingRestorationHighlightMessageID = State(
+            initialValue: requestedMessageID
+        )
     }
 
     var body: some View {

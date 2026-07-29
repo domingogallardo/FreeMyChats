@@ -34,6 +34,7 @@ La biblioteca mantiene dos niveles deliberadamente distintos:
 - Exportación de conversaciones completas como archivos portables y autocontenidos `.fmcchat`.
 - Importación reversible de archivos `.fmcchat`, integrándolos automáticamente con la conversación correspondiente.
 - Visor completo de mensajes, autores, respuestas, reacciones, ubicaciones, imágenes, audios, vídeos y otros adjuntos.
+- Galería de todas las fotos y vídeos de cada conversación, con visor ampliado y acceso directo al mensaje original.
 - Navegación entre respuestas y mensajes originales, búsqueda de texto y acceso directo a las carpetas desde Finder.
 - Eliminación segura de copias o aportaciones: las conversaciones se reconstruyen automáticamente con la información restante.
 - Ayuda para conceder acceso al disco, eliminar la copia original del iPhone y liberar espacio posteriormente mediante `Vaciar chat` en WhatsApp.
@@ -100,15 +101,15 @@ La versión estable más reciente está disponible en [GitHub Releases](https://
 
 ## Relación con SwiftWABackupAPI
 
-Este proyecto integra [SwiftWABackupAPI 6.0.5](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/6.0.5), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
+Este proyecto integra [SwiftWABackupAPI 6.0.6](https://github.com/domingogallardo/SwiftWABackupAPI/releases/tag/6.0.6), el paquete Swift que implementa el acceso a las copias de iPhone, la extracción de WhatsApp, el guardado persistente de chats, la composición de conversaciones y el formato portable `.fmcchat` v1.
 
-Free My Chats 2.1.8 usa la API de composición para
+Free My Chats 2.2.0 usa la API de composición para
 construir las Vistas unificadas y el formato `.fmcchat` v1. La API crea,
 inspecciona, extrae, diagnostica, reorienta al target y materializa; Free My Chats
 registra cada aportación en `ImportedChats`, instala el resultado o hace rollback
 y permite retirarla posteriormente. La exportación, la búsqueda automática de
 una única conversación receptora y la interfaz de importaciones están
-implementadas y probadas. `Package.swift` fija la versión exacta `6.0.5` para
+implementadas y probadas. `Package.swift` fija la versión exacta `6.0.6` para
 mantener sincronizados el contrato JSON, la terminología de chats guardados y el
 motor de composición.
 

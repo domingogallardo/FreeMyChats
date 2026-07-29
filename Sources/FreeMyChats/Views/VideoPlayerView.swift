@@ -4,6 +4,7 @@ import SwiftUI
 struct VideoPlayerView: View {
     let filename: String
     let expectedDuration: Int?
+    let displaySize: CGSize
 
     @StateObject private var playback: VideoPlaybackController
     @State private var thumbnail: NSImage?
@@ -13,10 +14,12 @@ struct VideoPlayerView: View {
         url: URL,
         filename: String,
         expectedDuration: Int?,
-        isLooping: Bool
+        isLooping: Bool,
+        displaySize: CGSize = CGSize(width: 420, height: 236)
     ) {
         self.filename = filename
         self.expectedDuration = expectedDuration
+        self.displaySize = displaySize
         _playback = StateObject(
             wrappedValue: VideoPlaybackController(
                 url: url,
@@ -78,7 +81,7 @@ struct VideoPlayerView: View {
     private var playerSurface: some View {
         if let player = playback.player {
             EmbeddedVideoPlayerView(player: player)
-                .frame(width: 420, height: 236)
+                .frame(width: displaySize.width, height: displaySize.height)
                 .background(.black)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
         } else {
@@ -108,7 +111,7 @@ struct VideoPlayerView: View {
                             .shadow(radius: 4)
                     }
                 }
-                .frame(width: 420, height: 236)
+                .frame(width: displaySize.width, height: displaySize.height)
                 .contentShape(Rectangle())
                 .clipShape(RoundedRectangle(cornerRadius: 7))
             }
