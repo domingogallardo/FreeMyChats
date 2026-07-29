@@ -12,6 +12,7 @@ struct ConversationView: View {
     @State private var searchExitRequest: MessageSearchExitRequest?
     @State private var messageNavigationRequest: MessageNavigationRequest?
     @State private var isShowingMediaGallery = false
+    @State private var currentConversationDate: Date?
 
     var body: some View {
         Group {
@@ -86,6 +87,9 @@ struct ConversationView: View {
                 navigateSearch: navigateSearch,
                 finishSearch: finishMessageSearch,
                 cancelSearch: cancelMessageSearch,
+                currentDate: currentConversationDate
+                    ?? initialConversationDate(in: conversation, selection: selection),
+                navigateToMessage: navigateToMessage,
                 showMediaGallery: {
                     isShowingMediaGallery = true
                 },
@@ -104,6 +108,9 @@ struct ConversationView: View {
                 searchSelectionChanged: { resultNumber, resultCount in
                     selectedSearchResultNumber = resultNumber
                     searchResultCount = resultCount
+                },
+                readingDateChanged: { date in
+                    currentConversationDate = date
                 },
                 saveReadingPosition: { messageID in
                     store.saveReadingPosition(messageID, for: selection)
@@ -142,7 +149,19 @@ struct ConversationView: View {
             messageNavigationRequest = nil
             isSearching = false
             isShowingMediaGallery = false
+            currentConversationDate = nil
         }
+    }
+
+    private func initialConversationDate(
+        in conversation: ArchivedConversation,
+        selection: ConversationArchiveID
+    ) -> Date? {
+        if let messageID = store.readingPosition(for: selection),
+           let message = conversation.document.messages.first(where: { $0.id == messageID }) {
+            return message.date
+        }
+        return conversation.document.messages.last?.date
     }
 
     private var isMessageSearchPending: Bool {
@@ -159,6 +178,10 @@ struct ConversationView: View {
 
     private func navigateToMessageFromGallery(_ messageID: Int) {
         isShowingMediaGallery = false
+        navigateToMessage(messageID)
+    }
+
+    private func navigateToMessage(_ messageID: Int) {
         if isSearching {
             closeMessageSearch(behavior: .restoreInitialPosition)
         }
@@ -240,6 +263,8 @@ private struct ConversationHeaderView: View {
     let navigateSearch: (MessageSearchDirection) -> Void
     let finishSearch: () -> Void
     let cancelSearch: () -> Void
+    let currentDate: Date?
+    let navigateToMessage: (Int) -> Void
     let showMediaGallery: () -> Void
     let goBack: () -> Void
     let revealInFinder: () -> Void
@@ -283,6 +308,12 @@ private struct ConversationHeaderView: View {
                     }
                 }
                 Spacer()
+                ConversationDateNavigationButton(
+                    messages: conversation.document.messages,
+                    currentDate: currentDate,
+                    navigateToMessage: navigateToMessage
+                )
+
                 Button(action: showMediaGallery) {
                     Label("Fotos y vídeos", systemImage: "photo.on.rectangle.angled")
                 }
@@ -461,6 +492,203 @@ private struct ConversationHeaderView: View {
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
         return formatter
+    }()
+}
+
+private struct ConversationDateNavigationButton: View {
+    let messages: [MessageInfo]
+    let currentDate: Date?
+    let navigateToMessage: (Int) -> Void
+
+    @State private var isShowingDatePicker = false
+    @State private var selectedDate = Date()
+
+    var body: some View {
+        Button {
+            selectedDate = pickerInitialDate
+            isShowingDatePicker = true
+        } label: {
+            Label("Ir a fecha", systemImage: "calendar")
+        }
+        .disabled(messages.isEmpty)
+        .help("Ir al mensaje más cercano a una fecha")
+        .accessibilityHint("Abre un calendario para escoger el día")
+        .popover(isPresented: $isShowingDatePicker) {
+            ConversationDateNavigationPopover(
+                messages: messages,
+                selectedDate: $selectedDate,
+                navigateToMessage: { messageID in
+                    isShowingDatePicker = false
+                    navigateToMessage(messageID)
+                },
+                cancel: {
+                    isShowingDatePicker = false
+                }
+            )
+        }
+    }
+
+    private var pickerInitialDate: Date {
+        guard let dateRange = MessageDateNavigation.dateRange(in: messages) else {
+            return .now
+        }
+
+        let date = Calendar.autoupdatingCurrent.startOfDay(
+            for: currentDate ?? dateRange.upperBound
+        )
+        return min(max(date, dateRange.lowerBound), dateRange.upperBound)
+    }
+}
+
+private struct ConversationDateNavigationPopover: View {
+    let messages: [MessageInfo]
+    @Binding var selectedDate: Date
+    let navigateToMessage: (Int) -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ir a una fecha")
+                .font(.headline)
+
+            if let dateRange = MessageDateNavigation.dateRange(in: messages) {
+                HStack(spacing: 8) {
+                    Picker("Mes", selection: selectedMonth) {
+                        ForEach(availableMonths, id: \.self) { month in
+                            Text(Self.monthNames[month - 1])
+                                .tag(month)
+                        }
+                    }
+                    .frame(minWidth: 145)
+
+                    Picker("Año", selection: selectedYear) {
+                        ForEach(availableYears, id: \.self) { year in
+                            Text(year.formatted(.number.grouping(.never)))
+                                .tag(year)
+                        }
+                    }
+                    .frame(width: 105)
+                }
+                .pickerStyle(.menu)
+
+                DatePicker(
+                    "Fecha",
+                    selection: $selectedDate,
+                    in: dateRange,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+
+                if let selectedTarget, !selectedTarget.isExactDate {
+                    HStack(alignment: .top, spacing: 7) {
+                        Image(systemName: "calendar.badge.clock")
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 1)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("No hay mensajes ese día.")
+                                .foregroundStyle(.secondary)
+                            Text(
+                                "Se abrirá el \(selectedTarget.date.formatted(date: .long, time: .omitted))."
+                            )
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Cancelar", role: .cancel, action: cancel)
+                    Button("Ir a la fecha") {
+                        if let selectedTarget {
+                            navigateToMessage(selectedTarget.messageID)
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(selectedTarget == nil)
+                }
+            }
+        }
+        .padding(14)
+    }
+
+    private var selectedTarget: MessageDateNavigation.Target? {
+        MessageDateNavigation.target(closestTo: selectedDate, in: messages)
+    }
+
+    private var selectedMonth: Binding<Int> {
+        Binding(
+            get: {
+                Calendar.autoupdatingCurrent.component(.month, from: selectedDate)
+            },
+            set: { month in
+                updateSelectedDate(year: selectedYear.wrappedValue, month: month)
+            }
+        )
+    }
+
+    private var selectedYear: Binding<Int> {
+        Binding(
+            get: {
+                Calendar.autoupdatingCurrent.component(.year, from: selectedDate)
+            },
+            set: { year in
+                updateSelectedDate(year: year, month: selectedMonth.wrappedValue)
+            }
+        )
+    }
+
+    private var availableMonths: [Int] {
+        guard let dateRange = MessageDateNavigation.dateRange(in: messages) else {
+            return []
+        }
+
+        let calendar = Calendar.autoupdatingCurrent
+        let year = calendar.component(.year, from: selectedDate)
+        let firstYear = calendar.component(.year, from: dateRange.lowerBound)
+        let lastYear = calendar.component(.year, from: dateRange.upperBound)
+        let firstMonth = year == firstYear
+            ? calendar.component(.month, from: dateRange.lowerBound)
+            : 1
+        let lastMonth = year == lastYear
+            ? calendar.component(.month, from: dateRange.upperBound)
+            : 12
+        return Array(firstMonth...lastMonth)
+    }
+
+    private var availableYears: [Int] {
+        guard let dateRange = MessageDateNavigation.dateRange(in: messages) else {
+            return []
+        }
+
+        let calendar = Calendar.autoupdatingCurrent
+        let firstYear = calendar.component(.year, from: dateRange.lowerBound)
+        let lastYear = calendar.component(.year, from: dateRange.upperBound)
+        return Array(firstYear...lastYear)
+    }
+
+    private func updateSelectedDate(year: Int, month: Int) {
+        guard let dateRange = MessageDateNavigation.dateRange(in: messages),
+              let updatedDate = MessageDateNavigation.date(
+                bySelectingYear: year,
+                month: month,
+                preservingDayFrom: selectedDate,
+                within: dateRange
+              ) else {
+            return
+        }
+        selectedDate = updatedDate
+    }
+
+    private static let monthNames: [String] = {
+        let formatter = DateFormatter()
+        return formatter.standaloneMonthSymbols.map {
+            $0.capitalized(with: formatter.locale ?? .autoupdatingCurrent)
+        }
     }()
 }
 

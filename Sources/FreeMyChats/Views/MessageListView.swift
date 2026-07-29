@@ -8,6 +8,7 @@ struct MessageListView: View {
     let searchNavigationRequest: MessageSearchNavigationRequest?
     let searchExitRequest: MessageSearchExitRequest?
     let searchSelectionChanged: (Int?, Int) -> Void
+    let readingDateChanged: (Date) -> Void
     let saveReadingPosition: (Int) -> Void
 
     @State private var timeline: MessageTimelineWindow
@@ -28,6 +29,8 @@ struct MessageListView: View {
     @State private var replyReturnMessageID: Int?
     @State private var activeTimelineShift: TimelineShiftRequest?
     @State private var pendingTimelineShift: TimelineShiftRequest?
+    @State private var canPublishVisibleReadingDate = false
+    @State private var visibleDatePublicationID = UUID()
 
     init(
         conversation: ArchivedConversation,
@@ -37,6 +40,7 @@ struct MessageListView: View {
         searchExitRequest: MessageSearchExitRequest?,
         messageNavigationRequest: MessageNavigationRequest?,
         searchSelectionChanged: @escaping (Int?, Int) -> Void,
+        readingDateChanged: @escaping (Date) -> Void,
         saveReadingPosition: @escaping (Int) -> Void
     ) {
         self.conversation = conversation
@@ -45,6 +49,7 @@ struct MessageListView: View {
         self.searchNavigationRequest = searchNavigationRequest
         self.searchExitRequest = searchExitRequest
         self.searchSelectionChanged = searchSelectionChanged
+        self.readingDateChanged = readingDateChanged
         self.saveReadingPosition = saveReadingPosition
 
         let filteredMessages = MessageSearch.filter(conversation.document.messages, query: searchText)
@@ -100,6 +105,10 @@ struct MessageListView: View {
         }
         .onAppear {
             publishSearchSelection()
+            if searchText.isEmpty,
+               let messageID = lastReadingPosition ?? initialMessageID ?? timeline.lastMessageID {
+                updateReadingPosition(messageID)
+            }
         }
         .onDisappear {
             restorationID = UUID()
@@ -229,6 +238,7 @@ struct MessageListView: View {
         restorationID = UUID()
         activeTimelineShift = nil
         pendingTimelineShift = nil
+        suspendVisibleDatePublication()
         isRestoringPosition = true
         isAtBeginning = false
         replyReturnMessageID = nil
@@ -275,10 +285,10 @@ struct MessageListView: View {
             pendingRestorationHighlightMessageID = nil
         }
         publishSearchSelection()
-        if query.isEmpty, let target {
-            lastReadingPosition = target
-        }
         timeline = MessageTimelineWindow(messages: filteredMessages, centeredOn: target)
+        if query.isEmpty, let target {
+            updateReadingPosition(target)
+        }
         timelineID = UUID()
     }
 
@@ -324,6 +334,7 @@ struct MessageListView: View {
         guard let target else { return }
         activeTimelineShift = nil
         pendingTimelineShift = nil
+        suspendVisibleDatePublication()
         isRestoringPosition = true
         visibleMessageIDs.removeAll()
         let requestID = UUID()
@@ -342,7 +353,7 @@ struct MessageListView: View {
 
             guard restorationID == requestID else { return }
             if searchText.isEmpty {
-                lastReadingPosition = target
+                updateReadingPosition(target)
                 positionBeforeSearch = nil
                 pendingRestorationAnchor = nil
                 if pendingRestorationHighlightMessageID == target {
@@ -356,6 +367,7 @@ struct MessageListView: View {
                 isAtBeginning = true
             }
             isRestoringPosition = false
+            resumeVisibleDatePublicationAfterLayout()
             requestTimelineShiftIfNeeded(around: target, using: proxy)
         }
     }
@@ -372,15 +384,19 @@ struct MessageListView: View {
 
     private func updateVisiblePosition(using proxy: ScrollViewProxy) {
         guard !isRestoringPosition else { return }
-        guard let messageID = timeline.rows.first(where: {
+        guard let visibleRow = timeline.rows.first(where: {
             visibleMessageIDs.contains($0.id)
-        })?.id else { return }
+        }) else { return }
+        let messageID = visibleRow.id
 
         // Lazy stacks can emit visibility changes after a programmatic jump has
         // completed. Keep the reply return destination until an explicit
         // navigation action clears or replaces it.
-        if searchText.isEmpty {
-            lastReadingPosition = messageID
+        if searchText.isEmpty, canPublishVisibleReadingDate {
+            updateReadingPosition(
+                messageID,
+                date: visibleRow.message.date
+            )
         }
         requestTimelineShiftIfNeeded(around: messageID, using: proxy)
     }
@@ -485,6 +501,7 @@ struct MessageListView: View {
         restorationID = UUID()
         activeTimelineShift = nil
         pendingTimelineShift = nil
+        suspendVisibleDatePublication()
         isRestoringPosition = true
         isAtBeginning = false
         replyReturnMessageID = nil
@@ -515,10 +532,11 @@ struct MessageListView: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard restorationID == requestID else { return }
             if searchText.isEmpty {
-                lastReadingPosition = target
+                updateReadingPosition(target)
             }
             isAtBeginning = boundary == .beginning
             isRestoringPosition = false
+            resumeVisibleDatePublicationAfterLayout()
         }
     }
 
@@ -530,6 +548,7 @@ struct MessageListView: View {
         restorationID = UUID()
         activeTimelineShift = nil
         pendingTimelineShift = nil
+        suspendVisibleDatePublication()
         isRestoringPosition = true
         isAtBeginning = false
         visibleMessageIDs.removeAll()
@@ -554,10 +573,11 @@ struct MessageListView: View {
             try? await Task.sleep(for: .milliseconds(40))
             guard restorationID == requestID else { return }
             if searchText.isEmpty {
-                lastReadingPosition = target
+                updateReadingPosition(target)
             }
             isAtBeginning = !timeline.hasEarlierMessages && target == timeline.firstMessageID
             isRestoringPosition = false
+            resumeVisibleDatePublicationAfterLayout()
         }
     }
 
@@ -601,6 +621,35 @@ struct MessageListView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             highlightedMessageID = messageID
             highlightID = UUID()
+        }
+    }
+
+    private func updateReadingPosition(
+        _ messageID: Int,
+        date: Date? = nil
+    ) {
+        lastReadingPosition = messageID
+        guard searchText.isEmpty else { return }
+
+        let readingDate = date ?? timeline.rows.first(where: {
+            $0.id == messageID
+        })?.message.date
+        if let readingDate {
+            readingDateChanged(readingDate)
+        }
+    }
+
+    private func suspendVisibleDatePublication() {
+        canPublishVisibleReadingDate = false
+        visibleDatePublicationID = UUID()
+    }
+
+    private func resumeVisibleDatePublicationAfterLayout() {
+        let requestID = visibleDatePublicationID
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard visibleDatePublicationID == requestID else { return }
+            canPublishVisibleReadingDate = true
         }
     }
 
