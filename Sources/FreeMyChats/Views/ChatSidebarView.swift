@@ -689,7 +689,7 @@ private struct ImportedChatSidebarRow: View {
                 if item.isInConversation {
                     actionButton(
                         UnifiedViewPresentation.catalogRemovalActionTitle,
-                        systemImage: "arrow.right",
+                        systemImage: "minus",
                         action: detachFromConversation
                     )
                     .help(UnifiedViewPresentation.catalogRemovalActionTitle)
@@ -967,7 +967,7 @@ private struct ChatSidebarRow: View {
                     if isInConversation {
                         actionButton(
                             UnifiedViewPresentation.catalogRemovalActionTitle,
-                            systemImage: "arrow.right",
+                            systemImage: "minus",
                             action: detachStoredChat
                         )
                         .help(UnifiedViewPresentation.catalogRemovalActionTitle)
