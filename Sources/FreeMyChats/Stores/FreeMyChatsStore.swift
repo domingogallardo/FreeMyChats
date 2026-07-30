@@ -357,10 +357,8 @@ final class FreeMyChatsStore: ObservableObject {
         do {
             guard let existingContributionCount = try ConversationArchiveService
                 .existingContributionCount(for: chat, in: version, session: session) else {
-                throw ConversationArchiveError.invalidArchive(
-                    session.paths.rootURL,
-                    "No se ha encontrado la conversación guardada que debía actualizarse."
-                )
+                addChatToLibrary(selection)
+                return
             }
             unifiedViewAdditionPreview = UnifiedViewAdditionPreview(
                 id: UUID(),
@@ -446,7 +444,7 @@ final class FreeMyChatsStore: ObservableObject {
                 ? .detachingStoredContribution(selection)
                 : .preparingStoredCopyDeletion(selection),
             title: "Calculando los mensajes de “\(chatName)”…",
-            detail: "Comprobando cuáles están también en otras copias guardadas."
+            detail: "Comprobando cuáles están también en otros chats guardados."
         )
         workQueue.async { [weak self] in
             let result = Result {
@@ -524,7 +522,7 @@ final class FreeMyChatsStore: ObservableObject {
                 containing: selection,
                 in: session
             ) else {
-                errorMessage = "No se ha encontrado la conversación a la que pertenece esta copia guardada."
+                errorMessage = "No se ha encontrado la conversación a la que pertenece este chat guardado."
                 return nil
             }
             return count
@@ -532,6 +530,11 @@ final class FreeMyChatsStore: ObservableObject {
             errorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    func contributionCount(containing item: ImportedChatSidebarItem) -> Int? {
+        guard item.isInConversation else { return nil }
+        return conversationCatalog.first { $0.id == item.conversationID }?.contributionCount
     }
 
     func isStoredChatInConversation(_ selection: VersionChatID) -> Bool {
@@ -607,7 +610,7 @@ final class FreeMyChatsStore: ObservableObject {
             .appendingPathComponent("Chats", isDirectory: true)
             .appendingPathComponent(String(selection.chatID), isDirectory: true)
         guard FileManager.default.fileExists(atPath: storedChatURL.path) else {
-            errorMessage = "La carpeta de esta copia guardada ya no está disponible."
+            errorMessage = "La carpeta de este chat guardado ya no está disponible."
             return
         }
         WorkspaceService.reveal(storedChatURL)
@@ -904,15 +907,15 @@ final class FreeMyChatsStore: ObservableObject {
         let operationDetail: String
         switch contributionCount {
         case 2:
-            operationDetail = "Retirando la Vista unificada y conservando la copia restante."
+            operationDetail = "Retirando la Vista unificada y conservando el chat restante."
         case 3...:
-            operationDetail = "Reconstruyendo la Vista unificada con las demás copias guardadas."
+            operationDetail = "Reconstruyendo la Vista unificada con los demás chats."
         default:
             operationDetail = "Retirando la conversación del catálogo."
         }
         let operationID = beginOperation(
             kind: .deletingStoredContribution(selection),
-            title: "Borrando la copia guardada de “\(chatName)”…",
+            title: "Borrando el chat guardado “\(chatName)”…",
             detail: operationDetail
         )
 
@@ -925,7 +928,7 @@ final class FreeMyChatsStore: ObservableObject {
                     self?.publish(
                         progress,
                         operationID: operationID,
-                        fallbackTitle: "Borrando la copia guardada de “\(chatName)”…"
+                        fallbackTitle: "Borrando el chat guardado “\(chatName)”…"
                     )
                 }
             }
@@ -962,16 +965,17 @@ final class FreeMyChatsStore: ObservableObject {
                     if let conversation = removal.conversation {
                         let count = conversation.record.totalContributionCount
                         if count == 1 {
-                            self.informationMessage = "Se ha borrado la copia guardada de “\(chatName)”. "
-                                + "La Vista unificada ha desaparecido y el catálogo muestra "
-                                + "directamente la copia restante."
+                            self.informationMessage = "Se ha borrado el chat guardado “\(chatName)”. "
+                                + "La Vista unificada ha desaparecido y la conversación "
+                                + "conserva el chat restante."
                         } else {
-                            self.informationMessage = "Se ha borrado la copia guardada de “\(chatName)”. "
+                            self.informationMessage = "Se ha borrado el chat guardado “\(chatName)”. "
                                 + "La Vista unificada se ha reconstruido con las \(count) "
-                                + "aportaciones restantes."
+                                + "chats restantes."
                         }
                     } else {
-                        self.informationMessage = "Se ha borrado la última copia guardada de “\(chatName)” y la conversación ha salido del catálogo."
+                        self.informationMessage = "Se ha borrado el último chat guardado "
+                            + "“\(chatName)” y la conversación ha salido del catálogo."
                     }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
@@ -988,7 +992,7 @@ final class FreeMyChatsStore: ObservableObject {
         let operationID = beginOperation(
             kind: .deletingStoredContribution(selection),
             title: "Borrando el chat extraído “\(chatName)”…",
-            detail: "Eliminando su copia física de la biblioteca."
+            detail: "Eliminando sus archivos de la biblioteca."
         )
         workQueue.async { [weak self] in
             let result = Result {
@@ -1020,13 +1024,13 @@ final class FreeMyChatsStore: ObservableObject {
         case 1:
             operationDetail = "Conservando el chat extraído fuera del catálogo."
         case 2:
-            operationDetail = "Separando las dos aportaciones guardadas."
+            operationDetail = "Separando los dos chats guardados."
         default:
-            operationDetail = "Reconstruyendo la Vista unificada y conservando esta copia por separado."
+            operationDetail = "Reconstruyendo la Vista unificada y conservando este chat por separado."
         }
         let operationID = beginOperation(
             kind: .detachingStoredContribution(selection),
-            title: "Eliminando “\(chatName)” de la conversación…",
+            title: "Eliminando “\(chatName)” del catálogo…",
             detail: operationDetail
         )
 
@@ -1039,7 +1043,7 @@ final class FreeMyChatsStore: ObservableObject {
                     self?.publish(
                         progress,
                         operationID: operationID,
-                        fallbackTitle: "Eliminando “\(chatName)” de la conversación…"
+                        fallbackTitle: "Eliminando “\(chatName)” del catálogo…"
                     )
                 }
             }
@@ -1072,13 +1076,13 @@ final class FreeMyChatsStore: ObservableObject {
                         self.informationMessage = "“\(chatName)” se conserva extraído en "
                             + "la columna izquierda y ha salido del catálogo."
                     } else if contributionCount == 2 {
-                        self.informationMessage = "La copia de “\(chatName)” se conserva "
-                            + "extraída en la columna izquierda. La Vista unificada ha "
-                            + "desaparecido y el catálogo muestra directamente la copia restante."
+                        self.informationMessage = "El chat “\(chatName)” se conserva "
+                            + "extraído en la columna izquierda. La Vista unificada ha "
+                            + "desaparecido y la conversación conserva el chat restante."
                     } else {
-                        self.informationMessage = "La copia de “\(chatName)” se conserva "
-                            + "extraída en la columna izquierda. La Vista unificada se ha "
-                            + "reconstruido con las \(contributionCount - 1) aportaciones restantes."
+                        self.informationMessage = "El chat “\(chatName)” se conserva "
+                            + "extraído en la columna izquierda. La Vista unificada se ha "
+                            + "reconstruido con los \(contributionCount - 1) chats restantes."
                     }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
@@ -1167,17 +1171,17 @@ final class FreeMyChatsStore: ObservableObject {
             )
             if count == 1 {
                 operationTitle = "Creando la Vista unificada de “\(chatName)”…"
-                operationDetail = "Guardando ambas copias por separado y reuniendo sus mensajes."
+                operationDetail = "Guardando ambos chats por separado y reuniendo sus mensajes."
             } else {
                 operationTitle = "Actualizando la Vista unificada de “\(chatName)”…"
-                operationDetail = "Guardando la nueva copia por separado y reuniendo todos sus mensajes."
+                operationDetail = "Guardando el nuevo chat por separado y reuniendo todos sus mensajes."
             }
         case .stale:
             operationTitle = "Actualizando “\(chatName)” en la biblioteca…"
-            operationDetail = "Recreando la copia y actualizando la conversación guardada."
+            operationDetail = "Volviendo a extraer el chat y actualizando la conversación."
         case .invalid:
             operationTitle = "Reparando “\(chatName)” en la biblioteca…"
-            operationDetail = "Reemplazando la copia no válida y actualizando la conversación guardada."
+            operationDetail = "Reemplazando el chat no válido y actualizando la conversación."
         default:
             operationTitle = "Añadiendo “\(chatName)” a la biblioteca…"
             operationDetail = "Creando una conversación independiente con sus mensajes y archivos."
@@ -1269,11 +1273,11 @@ final class FreeMyChatsStore: ObservableObject {
               let chat = version.chats.first(where: { $0.id == selection.chatID }),
               case .extracted(let storedAt) = storedChatStates[selection] else { return }
         let chatName = chat.name
-        let operationTitle = "Añadiendo “\(chatName)” a la conversación…"
+        let operationTitle = "Añadiendo “\(chatName)” al catálogo…"
         let operationID = beginOperation(
             kind: .storingChat(selection),
             title: operationTitle,
-            detail: "Incorporando la copia ya extraída a la Vista unificada."
+            detail: "Incorporando el chat ya extraído al catálogo."
         )
 
         workQueue.async { [weak self] in
@@ -1284,14 +1288,15 @@ final class FreeMyChatsStore: ObservableObject {
                     in: version,
                     session: session
                 )
-                guard let record = context.record,
-                      !record.contributions.contains(where: { $0.source == selection }) else {
+                if context.record?.contributions.contains(where: {
+                    $0.source == selection
+                }) == true {
                     throw ConversationArchiveError.invalidArchive(
                         stored.directoryURL,
-                        "La copia extraída ya forma parte de la conversación o no tiene "
-                            + "una conversación compatible."
+                        "El chat extraído ya forma parte de la conversación."
                     )
                 }
+                let previousContributionCount = context.record?.totalContributionCount ?? 0
                 let update = try ConversationArchiveService.incorporate(
                     stored,
                     source: selection,
@@ -1304,7 +1309,7 @@ final class FreeMyChatsStore: ObservableObject {
                         fallbackTitle: operationTitle
                     )
                 }
-                return (stored, update, record.totalContributionCount)
+                return (stored, update, previousContributionCount)
             }
             DispatchQueue.main.async {
                 guard let self, self.operation?.id == operationID else { return }

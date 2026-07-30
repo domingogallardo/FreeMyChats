@@ -8,11 +8,11 @@ final class LibraryModelsTests: XCTestCase {
     func testConversationActionLabelsDifferentiateAddingDetachingAndDeleting() {
         XCTAssertEqual(
             UnifiedViewPresentation.additionActionTitle(addsToExistingConversation: false),
-            "Añadir conversación"
+            "Añadir al catálogo"
         )
         XCTAssertEqual(
             UnifiedViewPresentation.additionActionTitle(addsToExistingConversation: true),
-            "Añadir a la conversación"
+            "Añadir al catálogo"
         )
         XCTAssertEqual(
             UnifiedViewPresentation.contributionDescription(messageCount: 12),
@@ -20,19 +20,27 @@ final class LibraryModelsTests: XCTestCase {
         )
         XCTAssertEqual(
             UnifiedViewPresentation.detachmentTitle(contributionCount: 3),
-            "¿Eliminar de la conversación?"
+            "¿Eliminar del catálogo?"
         )
         XCTAssertEqual(
             UnifiedViewPresentation.detachmentTitle(contributionCount: 1),
-            "¿Eliminar de la conversación?"
+            "¿Eliminar del catálogo?"
         )
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 3),
-            "¿Borrar esta copia guardada de la Vista unificada?"
+            "¿Borrar este chat guardado de la Vista unificada?"
         )
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 0),
             "¿Borrar este chat extraído?"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 3),
+            "Borrar y actualizar la vista"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 0),
+            "Borrar chat"
         )
     }
 
@@ -56,7 +64,7 @@ final class LibraryModelsTests: XCTestCase {
                 contributionCount: 1,
                 date: "hoy, 10:10"
             ),
-            "Grupo · 820 mensajes · 1 copia guardada · hoy, 10:10"
+            "Grupo · 820 mensajes · 1 chat guardado · hoy, 10:10"
         )
         XCTAssertEqual(
             ConversationPresentation.headerTitle(contributionCount: 2),
@@ -69,7 +77,7 @@ final class LibraryModelsTests: XCTestCase {
                 contributionCount: 2,
                 date: "hoy, 10:10"
             ),
-            "Vista unificada · Grupo · 900 mensajes · 2 copias guardadas · hoy, 10:10"
+            "Vista unificada · Grupo · 900 mensajes · 2 chats guardados · hoy, 10:10"
         )
     }
 
@@ -85,14 +93,17 @@ final class LibraryModelsTests: XCTestCase {
             existingContributionCount: 1,
             sourceMessageCount: 900
         )
-        XCTAssertTrue(message.contains("ambas copias seguirán guardadas por separado"))
-        XCTAssertTrue(message.contains("reúne sus mensajes en una sola cronología"))
-        XCTAssertTrue(message.contains("La nueva copia guardada contiene 900 mensajes"))
-        XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
-        XCTAssertTrue(message.contains("se han añadido realmente"))
+        XCTAssertEqual(
+            message,
+            "Esta conversación del catálogo ya incluye otro chat. Ambos chats se "
+                + "conservarán por separado y sus mensajes se mostrarán juntos en una "
+                + "Vista unificada.\n\nEl chat que vas a añadir contiene 900 mensajes. "
+                + "Los mensajes repetidos aparecerán una sola vez; al terminar verás "
+                + "cuántos mensajes nuevos se han incorporado."
+        )
         XCTAssertEqual(
             UnifiedViewPresentation.additionButtonTitle(existingContributionCount: 1),
-            "Crear Vista unificada"
+            "Añadir al catálogo"
         )
     }
 
@@ -108,21 +119,24 @@ final class LibraryModelsTests: XCTestCase {
             existingContributionCount: 2,
             sourceMessageCount: 900
         )
-        XCTAssertTrue(message.contains("creada a partir de 2 copias guardadas"))
-        XCTAssertTrue(message.contains("La nueva copia se guardará por separado"))
-        XCTAssertTrue(message.contains("mensajes de todas ellas"))
-        XCTAssertTrue(message.contains("puede añadir hasta 900 mensajes"))
-        XCTAssertTrue(message.contains("se mostrarán una sola vez"))
+        XCTAssertEqual(
+            message,
+            "Esta conversación del catálogo ya incluye 2 chats en una Vista unificada. "
+                + "El nuevo chat se conservará por separado y sus mensajes se añadirán "
+                + "a la misma cronología.\n\nEl chat que vas a añadir contiene 900 mensajes. "
+                + "Los mensajes repetidos aparecerán una sola vez; al terminar verás "
+                + "cuántos mensajes nuevos se han incorporado."
+        )
         XCTAssertEqual(
             UnifiedViewPresentation.additionButtonTitle(existingContributionCount: 2),
-            "Añadir y actualizar"
+            "Añadir al catálogo"
         )
     }
 
     func testDeletingOneOfTwoSavedCopiesExplainsThatUnifiedViewDisappears() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 2),
-            "¿Borrar esta copia guardada y deshacer la Vista unificada?"
+            "¿Borrar este chat guardado y deshacer la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -135,9 +149,9 @@ final class LibraryModelsTests: XCTestCase {
                 resultingMessageCount: 850
             )
         )
-        XCTAssertTrue(message.contains("La otra copia no se modificará"))
+        XCTAssertTrue(message.contains("El otro chat no se modificará"))
         XCTAssertTrue(message.contains("la Vista unificada desaparecerá"))
-        XCTAssertTrue(message.contains("Esta copia contiene 850 mensajes"))
+        XCTAssertTrue(message.contains("Este chat contiene 850 mensajes"))
         XCTAssertTrue(message.contains("50 mensajes exclusivos dejarán de aparecer"))
         XCTAssertTrue(message.contains("quedará con 850 mensajes"))
     }
@@ -145,7 +159,7 @@ final class LibraryModelsTests: XCTestCase {
     func testDeletingOneOfThreeSavedCopiesExplainsThatUnifiedViewIsRebuilt() {
         XCTAssertEqual(
             UnifiedViewPresentation.deletionTitle(contributionCount: 3),
-            "¿Borrar esta copia guardada de la Vista unificada?"
+            "¿Borrar este chat guardado de la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
@@ -158,7 +172,7 @@ final class LibraryModelsTests: XCTestCase {
                 resultingMessageCount: 900
             )
         )
-        XCTAssertTrue(message.contains("Las 2 copias restantes no se modificarán"))
+        XCTAssertTrue(message.contains("Los 2 chats restantes no se modificarán"))
         XCTAssertTrue(message.contains("La Vista unificada se reconstruirá"))
         XCTAssertTrue(message.contains("no desaparecerá ninguno"))
         XCTAssertEqual(
@@ -178,17 +192,17 @@ final class LibraryModelsTests: XCTestCase {
 
         XCTAssertEqual(
             UnifiedViewPresentation.detachmentTitle(contributionCount: 3),
-            "¿Eliminar de la conversación?"
+            "¿Eliminar del catálogo?"
         )
         let message = UnifiedViewPresentation.detachmentMessage(
             chatName: "Familia",
             versionTitle: "Copia de junio",
             impact: impact
         )
-        XCTAssertTrue(message.contains("se conservará extraída en su copia de WhatsApp"))
-        XCTAssertTrue(message.contains("“Añadir a la conversación”"))
-        XCTAssertTrue(message.contains("se reconstruirá con las 2 aportaciones restantes"))
-        XCTAssertTrue(message.contains("La copia extraída conservará sus 700 mensajes"))
+        XCTAssertTrue(message.contains("se conservará extraído en su copia de WhatsApp"))
+        XCTAssertTrue(message.contains("“Añadir al catálogo”"))
+        XCTAssertTrue(message.contains("se reconstruirá con los 2 chats restantes"))
+        XCTAssertTrue(message.contains("El chat extraído conservará sus 700 mensajes"))
         XCTAssertTrue(message.contains("25 mensajes exclusivos dejarán de aparecer"))
     }
 
@@ -206,9 +220,11 @@ final class LibraryModelsTests: XCTestCase {
             versionTitle: "Copia de junio",
             impact: impact
         )
-        XCTAssertTrue(detachment.contains("se conservará extraída"))
-        XCTAssertTrue(detachment.contains("la conversación desaparecerá del catálogo"))
-        XCTAssertTrue(detachment.contains("“Añadir a la conversación”"))
+        XCTAssertEqual(
+            detachment,
+            "“Familia” se eliminará del catálogo, pero podrá volver a añadirse "
+                + "con “Añadir al catálogo”."
+        )
 
         let deletion = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",

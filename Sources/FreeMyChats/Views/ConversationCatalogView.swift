@@ -24,7 +24,7 @@ struct ConversationCatalogView: View {
                     "Todavía no hay conversaciones en el catálogo",
                     systemImage: "tray",
                     description:
-                        "Despliega un chat en el panel izquierdo y pulsa Añadir conversación. "
+                        "Despliega un chat en el panel izquierdo y pulsa Añadir al catálogo. "
                         + "Aparecerá aquí como una conversación guardada."
                 )
             } else if filteredChats.isEmpty {
@@ -80,7 +80,7 @@ struct ConversationCatalogView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
 
-                TextField("Buscar chats", text: $searchText)
+                TextField("Buscar conversaciones", text: $searchText)
                     .textFieldStyle(.plain)
 
                 if !searchText.isEmpty {
@@ -165,8 +165,8 @@ private struct ConversationCatalogRow: View {
     private var detail: String {
         let type = ConversationPresentation.cellTypeLabel(chatType: item.chat.chatType)
         let savedCopies = item.localContributionCount == 1
-            ? "1 copia guardada"
-            : "\(item.localContributionCount) copias guardadas"
+            ? "1 chat guardado"
+            : "\(item.localContributionCount) chats guardados"
         let importedChats: String? = switch item.importedContributionCount {
         case 0: nil
         case 1: "1 chat importado"

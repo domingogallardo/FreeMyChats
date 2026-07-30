@@ -27,18 +27,71 @@ struct ConversationIdentityResolver {
     }
 
     func identity(for chat: ChatInfo) -> ResolvedConversationIdentity {
+        resolvedIdentity(for: chat, participantJIDs: [])
+    }
+
+    func identity(for document: StoredChatDocument) -> ResolvedConversationIdentity {
+        let participantJIDs: Set<String>
+        if document.chat.chatType == .individual {
+            participantJIDs = Set(document.messages.compactMap { message in
+                guard !message.isFromMe,
+                      message.author?.kind == .participant,
+                      let jid = message.author?.jid else { return nil }
+                let normalized = Self.normalizedJID(jid)
+                guard normalized.hasSuffix("@s.whatsapp.net")
+                        || normalized.hasSuffix("@lid") else {
+                    return nil
+                }
+                return normalized
+            })
+        } else {
+            participantJIDs = []
+        }
+        return resolvedIdentity(
+            for: document.chat,
+            participantJIDs: participantJIDs
+        )
+    }
+
+    private func resolvedIdentity(
+        for chat: ChatInfo,
+        participantJIDs: Set<String>
+    ) -> ResolvedConversationIdentity {
         let rawKey = ConversationIdentityKey(chat: chat)
-        guard let phoneJID = phoneJIDByLID[rawKey.contactJID] else {
-            return ResolvedConversationIdentity(primaryKey: rawKey, keys: [rawKey])
+        var contactJIDs = participantJIDs
+        contactJIDs.insert(rawKey.contactJID)
+        for jid in Array(contactJIDs) {
+            if let phoneJID = phoneJIDByLID[jid] {
+                contactJIDs.insert(phoneJID)
+            }
         }
 
-        let phoneKey = ConversationIdentityKey(
+        let keys = Set(contactJIDs.map {
+            ConversationIdentityKey(
+                chatType: chat.chatType,
+                contactJID: $0
+            )
+        })
+        let phoneJIDs = contactJIDs.filter {
+            $0.hasSuffix("@s.whatsapp.net")
+        }
+        let primaryJID: String
+        if let mappedPhoneJID = phoneJIDByLID[rawKey.contactJID] {
+            primaryJID = mappedPhoneJID
+        } else if rawKey.contactJID.hasSuffix("@s.whatsapp.net") {
+            primaryJID = rawKey.contactJID
+        } else if phoneJIDs.count == 1, let phoneJID = phoneJIDs.first {
+            primaryJID = phoneJID
+        } else {
+            primaryJID = rawKey.contactJID
+        }
+        let primaryKey = ConversationIdentityKey(
             chatType: chat.chatType,
-            contactJID: phoneJID
+            contactJID: primaryJID
         )
         return ResolvedConversationIdentity(
-            primaryKey: phoneKey,
-            keys: [rawKey, phoneKey]
+            primaryKey: primaryKey,
+            keys: keys
         )
     }
 

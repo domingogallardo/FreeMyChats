@@ -300,7 +300,7 @@ private struct ConversationHeaderView: View {
                             .buttonStyle(.plain)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .help("Ver las copias incluidas en esta Vista unificada")
+                            .help("Ver los chats incluidos en esta Vista unificada")
                             .popover(isPresented: $isShowingUnifiedViewHelp) {
                                 UnifiedViewHelpView(sourceTitles: sourceTitles)
                             }
@@ -725,8 +725,8 @@ enum ConversationPresentation {
     ) -> String {
         let type = chatType == .group ? "Grupo" : "Conversación individual"
         let savedCopies = localContributionCount == 1
-            ? "1 copia guardada"
-            : "\(localContributionCount) copias guardadas"
+            ? "1 chat guardado"
+            : "\(localContributionCount) chats guardados"
         let importedChats: String? = switch importedContributionCount {
         case 0: nil
         case 1: "1 chat importado"

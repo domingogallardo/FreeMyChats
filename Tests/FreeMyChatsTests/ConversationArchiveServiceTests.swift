@@ -1073,6 +1073,97 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
     }
 
+    func testStoredLIDChatLearnsPhoneAliasWhenAddedBeforeOlderPhoneChat() throws {
+        let phoneJID = "34608100195@s.whatsapp.net"
+        let lidJID = "54950012932116@lid"
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "recent",
+                    chatID: 762,
+                    jid: lidJID,
+                    name: "Instituto Juan Gil Albert",
+                    storedAt: "2026-07-23T10:16:50Z",
+                    messages: [
+                        MessageFixture(
+                            id: 183500,
+                            text: "Mensaje reciente",
+                            date: "2026-07-22T13:42:16Z",
+                            authorJID: phoneJID,
+                            authorPhone: "34608100195"
+                        )
+                    ]
+                ),
+                StoredChatFixture(
+                    versionID: "old",
+                    chatID: 548,
+                    jid: phoneJID,
+                    name: "Instituto Juan Gil Albert",
+                    storedAt: "2026-07-20T16:42:54Z",
+                    messages: [
+                        MessageFixture(
+                            id: 182949,
+                            text: "Mensaje antiguo",
+                            date: "2026-07-16T09:58:01Z",
+                            authorJID: phoneJID,
+                            authorPhone: "34608100195"
+                        )
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let recentVersion = try XCTUnwrap(fixture.session.version(id: "recent"))
+        let recent = try recentVersion.storedChatStore.openChat(chatId: 762)
+        let recentSource = VersionChatID(versionID: "recent", chatID: 762)
+        let recentUpdate = try ConversationArchiveService.incorporate(
+            recent,
+            source: recentSource,
+            context: ConversationArchiveService.prepareIncorporation(
+                for: recent.document.chat,
+                in: recentVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+
+        XCTAssertEqual(recentUpdate.conversation.record.key.contactJID, phoneJID)
+        XCTAssertEqual(
+            recentUpdate.conversation.record.identityKeys,
+            Set([
+                ConversationIdentityKey(chatType: .individual, contactJID: phoneJID),
+                ConversationIdentityKey(chatType: .individual, contactJID: lidJID)
+            ])
+        )
+
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
+        let old = try oldVersion.storedChatStore.openChat(chatId: 548)
+        let oldSource = VersionChatID(versionID: "old", chatID: 548)
+        let oldContext = try ConversationArchiveService.prepareIncorporation(
+            for: old.document.chat,
+            in: oldVersion,
+            session: fixture.session
+        )
+
+        XCTAssertEqual(oldContext.record?.id, recentUpdate.conversation.record.id)
+
+        _ = try ConversationArchiveService.incorporate(
+            old,
+            source: oldSource,
+            context: oldContext,
+            in: fixture.session
+        )
+        let catalog = try ConversationArchiveService.catalog(in: fixture.session)
+
+        XCTAssertEqual(catalog.count, 1)
+        XCTAssertEqual(catalog.first?.contributionCount, 2)
+        XCTAssertEqual(
+            Set(catalog.first?.contributionSources ?? []),
+            Set([recentSource, oldSource])
+        )
+    }
+
     func testSuccessiveStoredChatsFromSameOwnerBecomeOneConversation() throws {
         let fixture = try makeLibrary(
             storedChats: [
@@ -1415,6 +1506,32 @@ final class ConversationArchiveServiceTests: XCTestCase {
             )
         )
         XCTAssertFalse(
+            try ConversationArchiveService.incorporatedContributionSources(
+                in: fixture.session
+            ).contains(selection)
+        )
+
+        let stored = try version.storedChatStore.openChat(chatId: selection.chatID)
+        let context = try ConversationArchiveService.prepareIncorporation(
+            for: stored.document.chat,
+            in: version,
+            session: fixture.session
+        )
+        XCTAssertNil(context.record)
+
+        let update = try ConversationArchiveService.incorporate(
+            stored,
+            source: selection,
+            context: context,
+            in: fixture.session
+        )
+        let restoredCatalog = try ConversationArchiveService.catalog(in: fixture.session)
+
+        XCTAssertEqual(update.conversation.record.contributions.map(\.source), [selection])
+        XCTAssertEqual(update.conversation.document.messages.map(\.message), ["A"])
+        XCTAssertEqual(restoredCatalog.count, 1)
+        XCTAssertEqual(restoredCatalog.first?.contributionCount, 1)
+        XCTAssertTrue(
             try ConversationArchiveService.incorporatedContributionSources(
                 in: fixture.session
             ).contains(selection)

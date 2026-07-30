@@ -9,14 +9,14 @@
 La biblioteca mantiene dos niveles deliberadamente distintos:
 
 - La columna izquierda organiza las distintas copias locales de WhatsApp y muestra claramente el espacio ocupado por cada una.
-- Al seleccionar un chat se despliega su información; la copia física y autocontenida solo se crea al pulsar `Añadir conversación`.
-- Cada copia guardada desde la columna izquierda se puede abrir en Finder o borrar de forma independiente.
-- Toda copia local o chat importado que forme parte de una conversación ofrece
-  `Eliminar de la conversación`, incluso si es su única aportación. La primera
-  fase lo conserva en la columna izquierda y permite reincorporarlo con
-  `Añadir a la conversación`; solo cuando está fuera de toda conversación
-  aparece `Borrar`, que elimina físicamente la copia.
-- La columna derecha contiene el catálogo y muestra cada conversación una sola vez. Si procede de varias copias guardadas, al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
+- Al seleccionar un chat se despliega su información; el chat autocontenido solo se guarda al pulsar `Añadir al catálogo`.
+- Cada chat guardado desde la columna izquierda se puede abrir en Finder o borrar de forma independiente.
+- Todo chat local o importado que forme parte de una conversación ofrece
+  `Eliminar del catálogo`, incluso si es el único chat. La primera fase
+  lo conserva en la columna izquierda y permite reincorporarlo con
+  `Añadir al catálogo`; cuando ya está fuera de toda conversación aparece
+  `Borrar`, que elimina físicamente el chat.
+- La columna derecha contiene el catálogo y muestra cada conversación una sola vez. Si procede de varios chats guardados, al pulsarla abre su cronología combinada; una flecha permite volver al catálogo.
 - La selección y navegación del catálogo no cambian al explorar chats o copias en el panel izquierdo.
 - Una copia fuente se puede eliminar para liberar espacio sin perder los chats que ya estuvieran guardados en la biblioteca.
 

@@ -25,11 +25,15 @@ struct StoredCopyDetachmentPreview: Equatable, Identifiable {
 }
 
 enum UnifiedViewPresentation {
+    static let catalogAdditionActionTitle = "Añadir al catálogo"
+    static let catalogRemovalActionTitle = "Eliminar del catálogo"
+    static let catalogRemovalConfirmationTitle = "¿Eliminar del catálogo?"
+
     static let explanation =
-        "Una Vista unificada reúne en una sola cronología los mensajes de varias "
-        + "copias guardadas y chats importados de la misma conversación. Todas las "
-        + "aportaciones permanecen guardadas por separado y pueden retirarse individualmente. "
-        + "Si un mensaje aparece en varias copias, se muestra una sola vez."
+        "Una Vista unificada reúne en una sola cronología los mensajes de varios "
+        + "chats de la misma conversación. Cada chat permanece guardado por separado "
+        + "y puede eliminarse individualmente del catálogo. Si un mensaje aparece "
+        + "en varios chats, se muestra una sola vez."
 
     static func additionTitle(chatName: String, existingContributionCount: Int) -> String {
         if existingContributionCount == 1 {
@@ -43,34 +47,34 @@ enum UnifiedViewPresentation {
         sourceMessageCount: Int
     ) -> String {
         let source = messageCount(sourceMessageCount)
-        let messageImpact = "La nueva copia guardada contiene \(source) y puede añadir hasta "
-            + "\(source) a la Vista unificada. Los mensajes que ya estén en otra copia "
-            + "se mostrarán una sola vez. Al terminar se indicará cuántos mensajes nuevos "
-            + "se han añadido realmente."
+        let messageImpact = "El chat que vas a añadir contiene \(source). Los mensajes "
+            + "repetidos aparecerán una sola vez; al terminar verás cuántos mensajes "
+            + "nuevos se han incorporado."
         if existingContributionCount == 1 {
-            return "Esta conversación ya está en la biblioteca desde otra copia de WhatsApp. "
-                + "Si continúas, ambas copias seguirán guardadas por separado y "
-                + "Free My Chats creará una Vista unificada que reúne sus mensajes en "
-                + "una sola cronología. \(messageImpact)"
+            return "Esta conversación del catálogo ya incluye otro chat. Ambos chats se "
+                + "conservarán por separado y sus mensajes se mostrarán juntos en una "
+                + "Vista unificada.\n\n\(messageImpact)"
         }
-        return "Esta conversación ya tiene una Vista unificada creada a partir de "
-            + "\(existingContributionCount) copias guardadas. La nueva copia se "
-            + "guardará por separado y la Vista unificada se actualizará con los "
-            + "mensajes de todas ellas. \(messageImpact)"
+        return "Esta conversación del catálogo ya incluye \(existingContributionCount) "
+            + "chats en una Vista unificada. El nuevo chat se conservará por separado "
+            + "y sus mensajes se añadirán a la misma cronología.\n\n\(messageImpact)"
     }
 
-    static func additionButtonTitle(existingContributionCount: Int) -> String {
-        existingContributionCount == 1
-            ? "Crear Vista unificada"
-            : "Añadir y actualizar"
+    static func additionButtonTitle(existingContributionCount _: Int) -> String {
+        catalogAdditionActionTitle
     }
 
-    static func additionActionTitle(addsToExistingConversation: Bool) -> String {
-        addsToExistingConversation ? "Añadir a la conversación" : "Añadir conversación"
+    static func additionActionTitle(addsToExistingConversation _: Bool) -> String {
+        catalogAdditionActionTitle
     }
 
     static func contributionDescription(messageCount: Int) -> String {
         "Aporta \(messageCount.formatted()) mensajes a la conversación"
+    }
+
+    static func standaloneDetachmentMessage(chatName: String) -> String {
+        "“\(chatName)” se eliminará del catálogo, pero podrá volver a añadirse "
+            + "con “Añadir al catálogo”."
     }
 
     static func deletionTitle(contributionCount: Int) -> String {
@@ -78,11 +82,11 @@ enum UnifiedViewPresentation {
         case 0:
             return "¿Borrar este chat extraído?"
         case 2:
-            return "¿Borrar esta copia guardada y deshacer la Vista unificada?"
+            return "¿Borrar este chat guardado y deshacer la Vista unificada?"
         case 3...:
-            return "¿Borrar esta copia guardada de la Vista unificada?"
+            return "¿Borrar este chat guardado de la Vista unificada?"
         default:
-            return "¿Borrar esta copia guardada?"
+            return "¿Borrar este chat guardado?"
         }
     }
 
@@ -91,7 +95,7 @@ enum UnifiedViewPresentation {
         versionTitle: String,
         impact: ConversationRemovalMessageImpact
     ) -> String {
-        let origin = "Se borrará la copia guardada de “\(chatName)” procedente de “\(versionTitle)”. "
+        let origin = "Se borrará el chat guardado “\(chatName)” procedente de “\(versionTitle)”. "
         let messageImpact = removalImpactMessage(impact)
         switch impact.contributionCount {
         case 0:
@@ -100,18 +104,18 @@ enum UnifiedViewPresentation {
                 + "Se eliminará definitivamente de la biblioteca."
         case 2:
             return origin
-                + "La otra copia no se modificará y seguirá guardada por separado. "
-                + "Como solo quedará una copia guardada, la Vista unificada desaparecerá y "
-                + "el catálogo mostrará directamente la copia restante. \(messageImpact)"
+                + "El otro chat no se modificará y seguirá guardado por separado. "
+                + "Como solo quedará un chat, la Vista unificada desaparecerá. "
+                + "\(messageImpact)"
         case 3...:
             let remainingCount = impact.contributionCount - 1
             return origin
-                + "Las \(remainingCount) copias restantes no se modificarán y "
-                + "seguirán guardadas por separado. La Vista unificada se reconstruirá "
+                + "Los \(remainingCount) chats restantes no se modificarán y "
+                + "seguirán guardados por separado. La Vista unificada se reconstruirá "
                 + "con sus mensajes. \(messageImpact)"
         default:
             return origin
-                + "Como es la única copia guardada, la conversación desaparecerá del catálogo. "
+                + "Como es el único chat, la conversación desaparecerá del catálogo. "
                 + messageImpact
         }
     }
@@ -120,14 +124,12 @@ enum UnifiedViewPresentation {
         switch contributionCount {
         case 0: return "Borrar chat"
         case 3...: return "Borrar y actualizar la vista"
-        default: return "Borrar copia"
+        default: return "Borrar chat"
         }
     }
 
-    static func detachmentTitle(contributionCount: Int) -> String {
-        contributionCount == 2
-            ? "¿Eliminar de la conversación y deshacer la Vista unificada?"
-            : "¿Eliminar de la conversación?"
+    static func detachmentTitle(contributionCount _: Int) -> String {
+        catalogRemovalConfirmationTitle
     }
 
     static func detachmentMessage(
@@ -135,24 +137,22 @@ enum UnifiedViewPresentation {
         versionTitle: String,
         impact: ConversationRemovalMessageImpact
     ) -> String {
-        let origin = "La copia guardada de “\(chatName)” procedente de “\(versionTitle)” "
-            + "se conservará extraída en su copia de WhatsApp, pero dejará de formar parte "
-            + "de la conversación del catálogo. Podrás volver a incorporarla con "
-            + "“Añadir a la conversación”. "
-        let messageImpact = detachmentImpactMessage(impact)
         if impact.contributionCount == 1 {
+            return standaloneDetachmentMessage(chatName: chatName)
+        }
+        let origin = "El chat guardado “\(chatName)” procedente de “\(versionTitle)” "
+            + "se conservará extraído en su copia de WhatsApp, pero se eliminará del catálogo. "
+            + "Podrás volver a incorporarlo con "
+            + "“Añadir al catálogo”. "
+        let messageImpact = detachmentImpactMessage(impact)
+        if impact.contributionCount == 2 {
             return origin
-                + "Como era la única aportación, la conversación desaparecerá del catálogo. "
-                + messageImpact
-        } else if impact.contributionCount == 2 {
-            return origin
-                + "La otra aportación tampoco se modificará. Como solo quedará una aportación "
-                + "en la conversación actual, la Vista unificada desaparecerá y el catálogo "
-                + "mostrará directamente la copia restante. \(messageImpact)"
+                + "El otro chat tampoco se modificará. Como solo quedará un chat en la "
+                + "conversación, la Vista unificada desaparecerá. \(messageImpact)"
         }
         let remainingCount = impact.contributionCount - 1
         return origin
-            + "La Vista unificada se reconstruirá con las \(remainingCount) aportaciones "
+            + "La Vista unificada se reconstruirá con los \(remainingCount) chats "
             + "restantes. \(messageImpact)"
     }
 
@@ -165,11 +165,11 @@ enum UnifiedViewPresentation {
     ) -> String {
         let action: String
         if previousContributionCount == 1, !sourceWasAlreadyIncluded {
-            action = "Se ha creado la Vista unificada de “\(chatName)” a partir de 2 copias guardadas. "
-                + "Ambas siguen guardadas por separado."
+            action = "Se ha creado la Vista unificada de “\(chatName)” con 2 chats. "
+                + "Ambos siguen guardados por separado."
         } else {
             action = "Se ha actualizado la Vista unificada de “\(chatName)” con "
-                + "\(contributionCount) copias guardadas. Todas siguen guardadas por separado."
+                + "\(contributionCount) chats. Todos siguen guardados por separado."
         }
 
         let change: String
@@ -194,16 +194,16 @@ enum UnifiedViewPresentation {
         let result = messageCount(impact.resultingMessageCount)
         switch impact.removedMessageCount {
         case 0:
-            return "Esta copia contiene \(source), pero no desaparecerá ninguno de "
-                + "la conversación guardada porque todos están también en otras copias. "
+            return "Este chat contiene \(source), pero no desaparecerá ninguno de "
+                + "la conversación porque todos están también en otros chats. "
                 + "La conversación seguirá teniendo \(result)."
         case 1:
-            return "Esta copia contiene \(source). Al borrarla, 1 mensaje exclusivo "
-                + "dejará de aparecer en la conversación guardada, que quedará con \(result)."
+            return "Este chat contiene \(source). Al borrarlo, 1 mensaje exclusivo "
+                + "dejará de aparecer en la conversación, que quedará con \(result)."
         default:
-            return "Esta copia contiene \(source). Al borrarla, "
+            return "Este chat contiene \(source). Al borrarlo, "
                 + "\(impact.removedMessageCount.formatted()) mensajes exclusivos dejarán de "
-                + "aparecer en la conversación guardada, que quedará con \(result)."
+                + "aparecer en la conversación, que quedará con \(result)."
         }
     }
 
@@ -214,16 +214,17 @@ enum UnifiedViewPresentation {
         let result = messageCount(impact.resultingMessageCount)
         switch impact.removedMessageCount {
         case 0:
-            return "La copia extraída conservará sus \(source). No desaparecerá ningún mensaje "
-                + "de la conversación actual porque todos están también en otras aportaciones, "
+            return "El chat extraído conservará sus \(source). No desaparecerá ningún mensaje "
+                + "de la conversación porque todos están también en otros chats, "
                 + "que seguirán mostrando \(result)."
         case 1:
-            return "La copia extraída conservará sus \(source). Al retirarla, 1 mensaje exclusivo "
-                + "dejará de aparecer en la conversación actual, que quedará con \(result)."
+            return "El chat extraído conservará sus \(source). Al eliminarlo del catálogo, "
+                + "1 mensaje exclusivo "
+                + "dejará de aparecer en la conversación, que quedará con \(result)."
         default:
-            return "La copia extraída conservará sus \(source). Al retirarla, "
+            return "El chat extraído conservará sus \(source). Al eliminarlo del catálogo, "
                 + "\(impact.removedMessageCount.formatted()) mensajes exclusivos dejarán de "
-                + "aparecer en la conversación actual, que quedará con \(result)."
+                + "aparecer en la conversación, que quedará con \(result)."
         }
     }
 

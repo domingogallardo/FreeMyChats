@@ -18,14 +18,14 @@ struct ChatSidebarView: View {
     private var importedChatDetachmentDialog: some View {
         sidebarContent
         .confirmationDialog(
-            "¿Eliminar este chat importado de la conversación?",
+            UnifiedViewPresentation.catalogRemovalConfirmationTitle,
             isPresented: Binding(
                 get: { importedChatPendingDetachment != nil },
                 set: { if !$0 { importedChatPendingDetachment = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Eliminar de la conversación") {
+            Button(UnifiedViewPresentation.catalogRemovalActionTitle) {
                 if let item = importedChatPendingDetachment {
                     store.detachImportedChat(item)
                 }
@@ -35,11 +35,20 @@ struct ChatSidebarView: View {
                 importedChatPendingDetachment = nil
             }
         } message: {
-            Text(
-                "El chat importado se conservará en la columna izquierda, dejará de aportar "
-                    + "mensajes a la conversación y podrás volver a incorporarlo con "
-                    + "“Añadir a la conversación”."
-            )
+            if let item = importedChatPendingDetachment,
+               store.contributionCount(containing: item) == 1 {
+                Text(
+                    UnifiedViewPresentation.standaloneDetachmentMessage(
+                        chatName: item.conversationName
+                    )
+                )
+            } else {
+                Text(
+                    "El chat importado se conservará en la columna izquierda, dejará de aportar "
+                        + "mensajes a la conversación y podrás volver a incorporarlo con "
+                        + "“Añadir al catálogo”."
+                )
+            }
         }
     }
 
@@ -77,7 +86,7 @@ struct ChatSidebarView: View {
                 UnifiedViewPresentation.detachmentTitle(
                     contributionCount: $0.impact.contributionCount
                 )
-            } ?? "¿Eliminar de la conversación?",
+            } ?? UnifiedViewPresentation.catalogRemovalConfirmationTitle,
             isPresented: Binding(
                 get: { store.storedCopyDetachmentPreview != nil },
                 set: { if !$0 { store.dismissStoredCopyDetachmentPreview() } }
@@ -85,7 +94,7 @@ struct ChatSidebarView: View {
             titleVisibility: .visible
         ) {
             if let preview = store.storedCopyDetachmentPreview {
-                Button("Eliminar de la conversación") {
+                Button(UnifiedViewPresentation.catalogRemovalActionTitle) {
                     store.detachStoredContribution(preview.selection)
                 }
             }
@@ -178,7 +187,7 @@ struct ChatSidebarView: View {
                 UnifiedViewPresentation.deletionTitle(
                     contributionCount: $0.impact.contributionCount
                 )
-            } ?? "¿Borrar esta copia guardada?",
+            } ?? "¿Borrar este chat guardado?",
             isPresented: Binding(
                 get: { store.storedCopyDeletionPreview != nil },
                 set: { if !$0 { store.dismissStoredCopyDeletionPreview() } }
@@ -679,20 +688,25 @@ private struct ImportedChatSidebarRow: View {
                     .help("Abrir la carpeta del chat importado en Finder")
                 if item.isInConversation {
                     actionButton(
-                        "Eliminar de la conversación",
+                        UnifiedViewPresentation.catalogRemovalActionTitle,
                         systemImage: "arrow.right",
                         action: detachFromConversation
                     )
-                    .help("Retirar este chat importado y conservarlo en Chats importados")
+                    .help(UnifiedViewPresentation.catalogRemovalActionTitle)
                 } else {
                     actionButton(
-                        "Añadir a la conversación",
+                        UnifiedViewPresentation.catalogAdditionActionTitle,
                         systemImage: "plus",
                         action: addToConversation
                     )
-                    .help("Volver a incorporar este chat importado a su conversación")
-                    actionButton("Borrar", systemImage: "trash", tint: .red, action: delete)
-                        .help("Borrar definitivamente este chat importado")
+                    .help("Volver a añadir este chat importado al catálogo")
+                    actionButton(
+                        "Borrar",
+                        systemImage: "trash",
+                        tint: .red,
+                        action: delete
+                    )
+                    .help("Borrar definitivamente este chat importado")
                 }
             }
         }
@@ -826,7 +840,10 @@ private struct BackupVersionRow: View {
             )
             return "\(size) · \(version.chats.count) chats"
         }
-        return "Copia eliminada · \(version.chats.count) guardados"
+        let savedChats = version.chats.count == 1
+            ? "1 chat guardado"
+            : "\(version.chats.count) chats guardados"
+        return "Copia eliminada · \(savedChats)"
     }
 }
 
@@ -946,17 +963,14 @@ private struct ChatSidebarRow: View {
                         systemImage: "folder",
                         action: revealStoredChat
                     )
-                    .help("Abrir la copia guardada de este chat en Finder")
+                    .help("Abrir este chat guardado en Finder")
                     if isInConversation {
                         actionButton(
-                            "Eliminar de la conversación",
+                            UnifiedViewPresentation.catalogRemovalActionTitle,
                             systemImage: "arrow.right",
                             action: detachStoredChat
                         )
-                        .help(
-                            "Retirar esta copia de la conversación y conservar el chat "
-                                + "extraído en su copia de WhatsApp"
-                        )
+                        .help(UnifiedViewPresentation.catalogRemovalActionTitle)
                     }
                     if !isInConversation {
                         actionButton(
@@ -965,7 +979,7 @@ private struct ChatSidebarRow: View {
                             tint: .red,
                             action: deleteStoredChat
                         )
-                        .help("Borrar esta copia guardada de la biblioteca")
+                        .help("Borrar este chat guardado de la biblioteca")
                     }
                 }
             }
@@ -1015,7 +1029,7 @@ private struct ChatSidebarRow: View {
                     ),
                     action: addToLibrary
                 )
-                .help("Guardar esta conversación con sus mensajes y archivos en la biblioteca")
+                .help("Guardar este chat con sus mensajes y archivos en la biblioteca")
             } else {
                 Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
@@ -1029,20 +1043,18 @@ private struct ChatSidebarRow: View {
                     systemImage: "plus",
                     action: addToLibrary
                 )
-                .help("Guardar esta copia del chat y añadir sus mensajes a una Vista unificada")
+                .help("Guardar este chat y añadir sus mensajes a una Vista unificada")
             } else {
                 Label("Guardado · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
             }
         case .extracted:
             actionButton(
-                "Añadir a la conversación",
+                UnifiedViewPresentation.catalogAdditionActionTitle,
                 systemImage: "plus",
                 action: addToLibrary
             )
-            .help(
-                "Incorporar los mensajes de esta copia ya extraída a la Vista unificada"
-            )
+            .help("Volver a añadir este chat extraído al catálogo")
         case .stored:
             Label("En la biblioteca", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
@@ -1053,7 +1065,7 @@ private struct ChatSidebarRow: View {
                     systemImage: "arrow.clockwise",
                     action: refreshStoredChat
                 )
-                .help("Actualizar la copia guardada y la conversación de la biblioteca")
+                .help("Actualizar el chat guardado y la conversación del catálogo")
             } else {
                 Label("En la biblioteca · fuente no disponible", systemImage: "checkmark")
                     .foregroundStyle(.secondary)
@@ -1065,9 +1077,9 @@ private struct ChatSidebarRow: View {
                     systemImage: "arrow.clockwise",
                     action: refreshStoredChat
                 )
-                .help("Reemplazar la copia no válida y actualizar la conversación guardada")
+                .help("Reemplazar el chat no válido y actualizar la conversación del catálogo")
             } else {
-                Label("Copia guardada no válida", systemImage: "exclamationmark.triangle")
+                Label("Chat guardado no válido", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
         }

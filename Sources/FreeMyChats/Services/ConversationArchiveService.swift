@@ -17,9 +17,9 @@ enum ConversationArchiveError: Error, LocalizedError {
         case .invalidArchive(let url, let reason):
             return "La conversación guardada en \(url.lastPathComponent) no es válida: \(reason)"
         case .missingSource(let selection):
-            return "Falta la copia guardada de origen \(selection.versionID)/\(selection.chatID)."
+            return "Falta el chat guardado de origen \(selection.versionID)/\(selection.chatID)."
         case .contributionNotFound(let selection):
-            return "La copia \(selection.versionID)/\(selection.chatID) no forma parte de ninguna conversación guardada."
+            return "El chat \(selection.versionID)/\(selection.chatID) no forma parte de ninguna conversación guardada."
         case .noMatchingConversation(let name):
             return "No hay en esta biblioteca ninguna conversación compatible con “\(name)”. "
                 + "El chat exportado solo se puede añadir a una conversación que ya exista."
@@ -31,10 +31,10 @@ enum ConversationArchiveError: Error, LocalizedError {
         case .importedContributionNotFound:
             return "El chat importado ya no forma parte de ninguna conversación de la biblioteca."
         case .cannotRemoveLastLocalContribution(let name):
-            return "No se puede borrar la última copia local de “\(name)” mientras conserve chats importados, "
-                + "porque esa copia fija la perspectiva local de la Vista unificada."
+            return "No se puede borrar el último chat local de “\(name)” mientras conserve chats importados, "
+                + "porque ese chat fija la perspectiva local de la Vista unificada."
         case .contributionIsNotUnified(let selection):
-            return "La copia \(selection.versionID)/\(selection.chatID) no forma parte de una Vista unificada."
+            return "El chat \(selection.versionID)/\(selection.chatID) no forma parte de una Vista unificada."
         }
     }
 }
@@ -497,14 +497,14 @@ enum ConversationArchiveService {
         guard let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.missingSource(source)
         }
-        let identity = identity(for: stored.document.chat, in: version)
+        let identity = identity(for: stored.document, in: version)
         var record: ConversationArchiveRecord
 
         if let existing = context.record {
             guard existing.matches(identity) else {
                 throw ConversationArchiveError.invalidArchive(
                     stored.directoryURL,
-                    "La copia guardada ya no coincide con la conversación preparada."
+                    "El chat guardado ya no coincide con la conversación preparada."
                 )
             }
             record = existing
@@ -1008,14 +1008,23 @@ enum ConversationArchiveService {
     private static func loadAvailableRecords(
         in session: LibrarySession
     ) throws -> [ConversationArchiveRecord] {
-        let materialized = try loadRecords(paths: session.paths)
-        if let invalid = materialized.first(where: {
+        let loadedMaterialized = try loadRecords(paths: session.paths)
+        if let invalid = loadedMaterialized.first(where: {
             !$0.isSupported
                 || ($0.importedContributions.isEmpty && $0.contributions.count < 2)
         }) {
             throw ConversationArchiveError.invalidArchive(
                 archiveURL(id: invalid.id, paths: session.paths),
-                "La conversación materializada tiene una versión o una combinación de aportaciones no válida."
+                "La conversación materializada tiene una versión o una combinación de chats no válida."
+            )
+        }
+        let materialized = try loadedMaterialized.map { record in
+            let recordURL = archiveURL(id: record.id, paths: session.paths)
+                .appendingPathComponent(recordFilename)
+            return try enrichingIdentity(
+                of: record,
+                recordURL: recordURL,
+                in: session
             )
         }
         return materialized + (try loadSourceRecords(in: session))
@@ -1041,10 +1050,14 @@ enum ConversationArchiveService {
                       record.contributions.first?.source == source else {
                     throw ConversationArchiveError.invalidArchive(
                         directoryURL,
-                        "El manifiesto individual no corresponde a esta copia guardada."
+                        "El manifiesto individual no corresponde a este chat guardado."
                     )
                 }
-                return record
+                return try enrichingIdentity(
+                    of: record,
+                    recordURL: recordURL,
+                    in: session
+                )
             } catch let error as ConversationArchiveError {
                 throw error
             } catch {
@@ -1113,7 +1126,7 @@ enum ConversationArchiveService {
               let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "La conversación individual no tiene una copia de origen válida."
+                "La conversación individual no tiene un chat de origen válido."
             )
         }
         let stored = try version.storedChatStore.openChat(chatId: source.chatID)
@@ -1170,9 +1183,45 @@ enum ConversationArchiveService {
         for chat: ChatInfo,
         in version: LibraryVersionSession
     ) -> ResolvedConversationIdentity {
+        let resolver = ConversationIdentityResolver(
+            backupURL: version.hasSourceBackup ? version.backupURL : nil
+        )
+        guard let stored = try? version.storedChatStore.openChat(chatId: chat.id),
+              stored.document.chat.chatType == chat.chatType else {
+            return resolver.identity(for: chat)
+        }
+        return resolver.identity(for: stored.document)
+    }
+
+    private static func identity(
+        for document: StoredChatDocument,
+        in version: LibraryVersionSession
+    ) -> ResolvedConversationIdentity {
         ConversationIdentityResolver(
             backupURL: version.hasSourceBackup ? version.backupURL : nil
-        ).identity(for: chat)
+        ).identity(for: document)
+    }
+
+    private static func enrichingIdentity(
+        of record: ConversationArchiveRecord,
+        recordURL: URL,
+        in session: LibrarySession
+    ) throws -> ConversationArchiveRecord {
+        var enriched = record
+        for contribution in record.contributions {
+            guard let version = session.version(id: contribution.source.versionID) else {
+                throw ConversationArchiveError.missingSource(contribution.source)
+            }
+            let stored = try version.storedChatStore.openChat(
+                chatId: contribution.source.chatID
+            )
+            enriched.register(identity(for: stored.document, in: version))
+        }
+        guard enriched.contactJIDAliases != record.contactJIDAliases else {
+            return record
+        }
+        try encoder().encode(enriched).write(to: recordURL, options: .atomic)
+        return enriched
     }
 
     private static func store(
@@ -1202,7 +1251,7 @@ enum ConversationArchiveService {
               let version = session.version(id: source.versionID) else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "La conversación individual no tiene una copia de origen válida."
+                "La conversación individual no tiene un chat de origen válido."
             )
         }
         let stored = try version.storedChatStore.openChat(chatId: source.chatID)
@@ -1238,7 +1287,7 @@ enum ConversationArchiveService {
               record.totalContributionCount > 1 || !record.importedContributions.isEmpty else {
             throw ConversationArchiveError.invalidArchive(
                 session.paths.rootURL,
-                "La conversación materializada no contiene aportaciones válidas."
+                "La conversación materializada no contiene chats válidos."
             )
         }
 
@@ -1318,7 +1367,7 @@ enum ConversationArchiveService {
         guard !localSources.isEmpty || !importedSources.isEmpty else {
             throw ConversationArchiveError.invalidArchive(
                 archiveURL(id: record.id, paths: session.paths),
-                "No contiene ninguna aportación."
+                "No contiene ningún chat."
             )
         }
         let result: ConversationMaterializationResult
