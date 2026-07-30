@@ -966,16 +966,14 @@ final class FreeMyChatsStore: ObservableObject {
                         let count = conversation.record.totalContributionCount
                         if count == 1 {
                             self.informationMessage = "Se ha borrado el chat guardado “\(chatName)”. "
-                                + "La Vista unificada ha desaparecido y la conversación "
-                                + "conserva el chat restante."
+                                + "La conversación conserva el otro chat."
                         } else {
                             self.informationMessage = "Se ha borrado el chat guardado “\(chatName)”. "
-                                + "La Vista unificada se ha reconstruido con las \(count) "
-                                + "chats restantes."
+                                + "La conversación conserva los \(count) chats restantes."
                         }
                     } else {
-                        self.informationMessage = "Se ha borrado el último chat guardado "
-                            + "“\(chatName)” y la conversación ha salido del catálogo."
+                        self.informationMessage = "Se ha borrado el chat guardado “\(chatName)”. "
+                            + "La conversación se ha eliminado del catálogo."
                     }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
@@ -1072,18 +1070,8 @@ final class FreeMyChatsStore: ObservableObject {
                         }
                     }
 
-                    if contributionCount == 1 {
-                        self.informationMessage = "“\(chatName)” se conserva extraído en "
-                            + "la columna izquierda y ha salido del catálogo."
-                    } else if contributionCount == 2 {
-                        self.informationMessage = "El chat “\(chatName)” se conserva "
-                            + "extraído en la columna izquierda. La Vista unificada ha "
-                            + "desaparecido y la conversación conserva el chat restante."
-                    } else {
-                        self.informationMessage = "El chat “\(chatName)” se conserva "
-                            + "extraído en la columna izquierda. La Vista unificada se ha "
-                            + "reconstruido con los \(contributionCount - 1) chats restantes."
-                    }
+                    self.informationMessage = "“\(chatName)” se conserva extraído y se ha "
+                        + "eliminado del catálogo."
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
                 }
