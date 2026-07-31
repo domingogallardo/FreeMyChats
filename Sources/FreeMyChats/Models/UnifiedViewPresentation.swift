@@ -195,6 +195,11 @@ enum UnifiedViewPresentation {
         }
     }
 
+    static func noNewMessagesAdditionNotice(chatName: String) -> String {
+        "“\(chatName)” no se ha añadido al catálogo porque no aporta ningún mensaje nuevo "
+            + "a la conversación."
+    }
+
     static func redundantPreviousVersionsNotice(count: Int) -> String? {
         switch count {
         case 0:

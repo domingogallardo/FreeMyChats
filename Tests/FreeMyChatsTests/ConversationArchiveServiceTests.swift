@@ -727,29 +727,33 @@ final class ConversationArchiveServiceTests: XCTestCase {
             in: localVersion,
             session: imported.session
         )
-        _ = try ConversationArchiveService.incorporate(
+        let localReincorporation = try ConversationArchiveService.incorporate(
             localStored,
             source: VersionChatID(versionID: localVersion.id, chatID: localChat.id),
             context: localContext,
             in: imported.session
+        )
+        XCTAssertFalse(localReincorporation.incorporatedSource)
+        XCTAssertTrue(localReincorporation.conversation.record.contributions.isEmpty)
+        XCTAssertEqual(
+            localReincorporation.conversation.record.importedContributions.count,
+            1
         )
 
         let detachment = try ConversationArchiveService.detachImportedContribution(
             id: imported.importedContribution.id,
             from: imported.session
         )
-        let localOnlyConversation = try XCTUnwrap(detachment.conversation)
         let importedURL = fixture.session.paths.importedChatsURL
             .appendingPathComponent(imported.importedContribution.relativeDirectory)
         let mergedURL = fixture.session.paths.mergedChatsURL
             .appendingPathComponent(imported.conversation.record.id.rawValue)
 
-        XCTAssertEqual(localOnlyConversation.document.messages.count, 3)
-        XCTAssertEqual(localOnlyConversation.record.contributions.count, 1)
-        XCTAssertTrue(localOnlyConversation.record.importedContributions.isEmpty)
+        XCTAssertNil(detachment.conversation)
+        XCTAssertTrue(try ConversationArchiveService.catalog(in: imported.session).isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: mergedURL.path))
-        XCTAssertTrue(
+        XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: localStored.directoryURL.appendingPathComponent("archive.json").path
             )
@@ -1418,6 +1422,93 @@ final class ConversationArchiveServiceTests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: oldStored.directoryURL.appendingPathComponent("chat.json").path
             )
+        )
+    }
+
+    func testAddingChatWithoutNewMessagesLeavesCatalogUnchanged() throws {
+        let fixture = try makeLibrary(
+            storedChats: [
+                StoredChatFixture(
+                    versionID: "existing",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    storedAt: "2026-01-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 1, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 2, text: "B", date: "2026-01-02T10:00:00Z")
+                    ]
+                ),
+                StoredChatFixture(
+                    versionID: "duplicate",
+                    chatID: 7,
+                    jid: "family@g.us",
+                    name: "Familia",
+                    storedAt: "2026-02-10T12:00:00Z",
+                    messages: [
+                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
+                        MessageFixture(id: 20, text: "B", date: "2026-01-02T10:00:00Z")
+                    ]
+                )
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+
+        let existingVersion = try XCTUnwrap(fixture.session.version(id: "existing"))
+        let existingStored = try existingVersion.storedChatStore.openChat(chatId: 7)
+        let existingUpdate = try ConversationArchiveService.incorporate(
+            existingStored,
+            source: VersionChatID(versionID: "existing", chatID: 7),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: existingStored.document.chat,
+                in: existingVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+        let catalogBeforeAddition = try XCTUnwrap(
+            ConversationArchiveService.catalog(in: fixture.session).first
+        )
+
+        let duplicateVersion = try XCTUnwrap(fixture.session.version(id: "duplicate"))
+        let duplicateStored = try duplicateVersion.storedChatStore.openChat(chatId: 7)
+        let update = try ConversationArchiveService.incorporate(
+            duplicateStored,
+            source: VersionChatID(versionID: "duplicate", chatID: 7),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: duplicateStored.document.chat,
+                in: duplicateVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+        let catalog = try ConversationArchiveService.catalog(in: fixture.session)
+        let item = try XCTUnwrap(catalog.first)
+
+        XCTAssertFalse(update.incorporatedSource)
+        XCTAssertEqual(update.addedMessageCount, 0)
+        XCTAssertEqual(update.automaticallyRemovedContributionCount, 0)
+        XCTAssertEqual(update.conversation.record.id, existingUpdate.conversation.record.id)
+        XCTAssertEqual(item.updatedAt, catalogBeforeAddition.updatedAt)
+        XCTAssertEqual(update.conversation.document.messages.map(\.message), ["A", "B"])
+        XCTAssertEqual(item.contributionSources, [
+            VersionChatID(versionID: "existing", chatID: 7)
+        ])
+        XCTAssertEqual(item.contributionCount, 1)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: existingStored.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: duplicateStored.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertTrue(
+            try FileManager.default.contentsOfDirectory(
+                atPath: fixture.session.paths.mergedChatsURL.path
+            ).isEmpty
         )
     }
 

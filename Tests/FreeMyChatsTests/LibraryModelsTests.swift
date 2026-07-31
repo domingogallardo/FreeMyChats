@@ -383,6 +383,11 @@ final class LibraryModelsTests: XCTestCase {
             "2 chats anteriores se han eliminado automáticamente del catálogo porque ya no "
                 + "aportan ningún mensaje."
         )
+        XCTAssertEqual(
+            UnifiedViewPresentation.noNewMessagesAdditionNotice(chatName: "Familia"),
+            "“Familia” no se ha añadido al catálogo porque no aporta ningún mensaje nuevo "
+                + "a la conversación."
+        )
     }
 
     func testConversationRecordDetectsExistingContributionsThatBecomeRedundant() {

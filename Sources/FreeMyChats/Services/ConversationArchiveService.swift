@@ -43,6 +43,7 @@ struct ConversationArchiveUpdate {
     let conversation: ArchivedConversation
     let addedMessageCount: Int
     let automaticallyRemovedContributionCount: Int
+    let incorporatedSource: Bool
 }
 
 struct ConversationIncorporationContext {
@@ -532,7 +533,38 @@ enum ConversationArchiveService {
         }
         record.updatedAt = Date()
 
+        let sourceWasAlreadyIncluded = context.record?.contributions.contains {
+            $0.source == source
+        } ?? false
         let installedConversation = try store(record: record, in: session, progress: progress)
+        let addedMessageCount = max(
+            0,
+            installedConversation.document.messages.count - context.previousMessageCount
+        )
+
+        if let previousRecord = context.record,
+           !sourceWasAlreadyIncluded,
+           addedMessageCount == 0 {
+            let detachment = try detachContribution(
+                source: source,
+                from: session,
+                progress: progress
+            )
+            guard detachment.conversation != nil else {
+                throw ConversationArchiveError.invalidArchive(
+                    session.paths.rootURL,
+                    "La conversación anterior no se pudo restaurar."
+                )
+            }
+            let restoredConversation = try store(record: previousRecord, in: session)
+            return ConversationArchiveUpdate(
+                conversation: restoredConversation,
+                addedMessageCount: 0,
+                automaticallyRemovedContributionCount: 0,
+                incorporatedSource: false
+            )
+        }
+
         let pruning: (conversation: ArchivedConversation, removedCount: Int)
         do {
             pruning = try removeNewlyRedundantPreviousContributions(
@@ -551,11 +583,9 @@ enum ConversationArchiveService {
         let conversation = pruning.conversation
         return ConversationArchiveUpdate(
             conversation: conversation,
-            addedMessageCount: max(
-                0,
-                conversation.document.messages.count - context.previousMessageCount
-            ),
-            automaticallyRemovedContributionCount: pruning.removedCount
+            addedMessageCount: addedMessageCount,
+            automaticallyRemovedContributionCount: pruning.removedCount,
+            incorporatedSource: true
         )
     }
 

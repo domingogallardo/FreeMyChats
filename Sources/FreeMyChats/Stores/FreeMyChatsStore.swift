@@ -1166,6 +1166,7 @@ final class FreeMyChatsStore: ObservableObject {
             return
         }
         let chatName = chat.name
+        let previousDisplayState = storedChatStates[selection] ?? .notStored
         let isUpdating = ConversationArchiveService.hasArchive(
             for: chat,
             in: version,
@@ -1237,6 +1238,10 @@ final class FreeMyChatsStore: ObservableObject {
                     let sourceWasAlreadyIncluded = context.record?.contributions.contains {
                         $0.source == selection
                     } ?? false
+                    if !update.incorporatedSource,
+                       !previousDisplayState.isPhysicallyStored {
+                        _ = try LibraryService.deleteStoredChat(selection, from: session)
+                    }
                     return (
                         stored,
                         update,
@@ -1268,7 +1273,8 @@ final class FreeMyChatsStore: ObservableObject {
                         update: update,
                         previousContributionCount: previousContributionCount,
                         sourceWasAlreadyIncluded: sourceWasAlreadyIncluded,
-                        reportUpdate: isUpdating
+                        reportUpdate: isUpdating,
+                        rejectedDisplayState: previousDisplayState
                     )
                 case .failure(let error):
                     self.storedChatStates[selection] = .invalid(error.localizedDescription)
@@ -1334,7 +1340,8 @@ final class FreeMyChatsStore: ObservableObject {
                         update: update,
                         previousContributionCount: previousContributionCount,
                         sourceWasAlreadyIncluded: false,
-                        reportUpdate: true
+                        reportUpdate: true,
+                        rejectedDisplayState: .extracted(storedAt)
                     )
                 case .failure(let error):
                     self.storedChatStates[selection] = .extracted(storedAt)
@@ -1351,18 +1358,30 @@ final class FreeMyChatsStore: ObservableObject {
         update: ConversationArchiveUpdate,
         previousContributionCount: Int,
         sourceWasAlreadyIncluded: Bool,
-        reportUpdate: Bool
+        reportUpdate: Bool,
+        rejectedDisplayState: StoredChatDisplayState
     ) {
-        storedChatStates[selection] = .stored(stored.document.storedAt)
-        chatDetails[selection] = .loaded(
-            firstMessageDate: stored.document.messages.first?.date
-        )
+        if update.incorporatedSource {
+            storedChatStates[selection] = .stored(stored.document.storedAt)
+            chatDetails[selection] = .loaded(
+                firstMessageDate: stored.document.messages.first?.date
+            )
+        } else {
+            storedChatStates[selection] = rejectedDisplayState
+        }
         if let session {
             refreshConversationCatalog(in: session)
         }
         if selectedConversationID == update.conversation.record.id {
             selectedConversation = update.conversation
             highlightedChatIDs = Set(update.conversation.record.contributions.map(\.source))
+        }
+        if !update.incorporatedSource {
+            informationEmphasisMessage = nil
+            informationMessage = UnifiedViewPresentation.noNewMessagesAdditionNotice(
+                chatName: chatName
+            )
+            return
         }
         guard reportUpdate else { return }
 
