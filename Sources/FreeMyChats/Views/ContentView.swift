@@ -39,7 +39,13 @@ struct ContentView: View {
                 store.dismissInformation()
             }
         } message: {
-            Text(store.informationMessage ?? "")
+            informationAlertMessage
         }
+    }
+
+    private var informationAlertMessage: Text {
+        let message = Text(store.informationMessage ?? "")
+        guard let emphasis = store.informationEmphasisMessage else { return message }
+        return message + Text("\n\n") + Text(emphasis).bold()
     }
 }

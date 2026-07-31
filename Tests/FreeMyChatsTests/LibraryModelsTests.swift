@@ -370,6 +370,77 @@ final class LibraryModelsTests: XCTestCase {
             "Se ha actualizado la Vista unificada de “Familia” con 3 chats. "
                 + "No había mensajes nuevos que añadir."
         )
+        XCTAssertNil(
+            UnifiedViewPresentation.redundantPreviousVersionsNotice(count: 0)
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.redundantPreviousVersionsNotice(count: 1),
+            "Una versión anterior ha dejado de aportar mensajes. Puedes eliminarla del "
+                + "catálogo sin que desaparezca ningún mensaje de la Vista unificada."
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.redundantPreviousVersionsNotice(count: 2),
+            "2 versiones anteriores han dejado de aportar mensajes. Puedes eliminarlas del "
+                + "catálogo sin que desaparezca ningún mensaje de la Vista unificada."
+        )
+    }
+
+    func testConversationRecordDetectsExistingContributionsThatBecomeRedundant() {
+        let first = VersionChatID(versionID: "old", chatID: 7)
+        let second = VersionChatID(versionID: "current", chatID: 7)
+        let incoming = VersionChatID(versionID: "new", chatID: 7)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let key = ConversationIdentityKey(chatType: .group, contactJID: "family@g.us")
+        let previous = ConversationArchiveRecord(
+            key: key,
+            contributions: [
+                ConversationContribution(
+                    id: "first",
+                    source: first,
+                    storedAt: date,
+                    messageCount: 10,
+                    exclusiveMessageCount: 3
+                ),
+                ConversationContribution(
+                    id: "second",
+                    source: second,
+                    storedAt: date,
+                    messageCount: 20,
+                    exclusiveMessageCount: 7
+                )
+            ]
+        )
+        let updated = ConversationArchiveRecord(
+            key: key,
+            contributions: [
+                ConversationContribution(
+                    id: "first",
+                    source: first,
+                    storedAt: date,
+                    messageCount: 10,
+                    exclusiveMessageCount: 0
+                ),
+                ConversationContribution(
+                    id: "second",
+                    source: second,
+                    storedAt: date,
+                    messageCount: 20,
+                    exclusiveMessageCount: 5
+                ),
+                ConversationContribution(
+                    id: "incoming",
+                    source: incoming,
+                    storedAt: date,
+                    messageCount: 30,
+                    exclusiveMessageCount: 0
+                )
+            ]
+        )
+
+        XCTAssertEqual(
+            updated.newlyRedundantContributionCount(comparedTo: previous),
+            1
+        )
     }
 
     func testAudioTimeFormatterUsesClockStyleDurations() {

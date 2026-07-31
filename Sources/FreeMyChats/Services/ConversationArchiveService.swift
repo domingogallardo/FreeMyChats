@@ -42,6 +42,7 @@ enum ConversationArchiveError: Error, LocalizedError {
 struct ConversationArchiveUpdate {
     let conversation: ArchivedConversation
     let addedMessageCount: Int
+    let newlyRedundantContributionCount: Int
 }
 
 struct ConversationIncorporationContext {
@@ -72,6 +73,7 @@ struct PortableConversationImportResult {
     let conversation: ArchivedConversation
     let importedContribution: ImportedConversationContribution
     let addedMessageCount: Int
+    let newlyRedundantContributionCount: Int
 }
 
 struct ImportedConversationDetachment {
@@ -82,6 +84,7 @@ struct ImportedConversationDetachment {
 struct ImportedConversationIncorporation {
     let conversation: ArchivedConversation
     let addedMessageCount: Int
+    let newlyRedundantContributionCount: Int
 }
 
 enum ConversationArchiveService {
@@ -300,7 +303,9 @@ enum ConversationArchiveService {
                 addedMessageCount: max(
                     0,
                     conversation.document.messages.count - previousMessageCount
-                )
+                ),
+                newlyRedundantContributionCount: conversation.record
+                    .newlyRedundantContributionCount(comparedTo: matchedRecord)
             )
         } catch {
             try? fileManager.removeItem(at: finalImportURL)
@@ -533,7 +538,9 @@ enum ConversationArchiveService {
             addedMessageCount: max(
                 0,
                 conversation.document.messages.count - context.previousMessageCount
-            )
+            ),
+            newlyRedundantContributionCount: conversation.record
+                .newlyRedundantContributionCount(comparedTo: context.record)
         )
     }
 
@@ -915,7 +922,9 @@ enum ConversationArchiveService {
             addedMessageCount: max(
                 0,
                 conversation.document.messages.count - previousMessageCount
-            )
+            ),
+            newlyRedundantContributionCount: conversation.record
+                .newlyRedundantContributionCount(comparedTo: existingRecord)
         )
     }
 

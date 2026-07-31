@@ -291,6 +291,37 @@ struct ConversationArchiveRecord: Codable, Identifiable {
         contributions.count + importedContributions.count
     }
 
+    func newlyRedundantContributionCount(
+        comparedTo previousRecord: ConversationArchiveRecord?
+    ) -> Int {
+        guard let previousRecord else { return 0 }
+
+        let previousLocalIDs: [String] = previousRecord.contributions.compactMap { contribution in
+            guard let count = contribution.exclusiveMessageCount, count > 0 else {
+                return nil
+            }
+            return "local:\(contribution.id)"
+        }
+        let previousImportedIDs: [String] = previousRecord.importedContributions.compactMap {
+            contribution in
+            guard let count = contribution.exclusiveMessageCount, count > 0 else {
+                return nil
+            }
+            return "imported:\(contribution.id)"
+        }
+        let redundantLocalIDs: [String] = contributions.compactMap { contribution in
+            contribution.exclusiveMessageCount == 0 ? "local:\(contribution.id)" : nil
+        }
+        let redundantImportedIDs: [String] = importedContributions.compactMap { contribution in
+            contribution.exclusiveMessageCount == 0
+                ? "imported:\(contribution.id)"
+                : nil
+        }
+        let previouslyContributingIDs = Set(previousLocalIDs + previousImportedIDs)
+        let currentlyRedundantIDs = Set(redundantLocalIDs + redundantImportedIDs)
+        return previouslyContributingIDs.intersection(currentlyRedundantIDs).count
+    }
+
     mutating func markCurrentSchema() {
         schemaVersion = Self.currentSchemaVersion
     }

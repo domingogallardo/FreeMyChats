@@ -19,6 +19,20 @@ private enum ChatSidebarRowContext: Equatable {
     case extracted
 }
 
+private enum SidebarContributionHighlight: Equatable {
+    case none
+    case contributing
+    case redundant
+
+    var color: Color? {
+        switch self {
+        case .none: return nil
+        case .contributing: return .accentColor
+        case .redundant: return Color(nsColor: .systemGray)
+        }
+    }
+}
+
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
@@ -444,10 +458,15 @@ struct ChatSidebarView: View {
         let isExpanded = expandedImportedChatID == item.id
         let isHighlighted = item.isInConversation
             && store.selectedConversationID == item.conversationID
+        let highlight: SidebarContributionHighlight = if isHighlighted {
+            store.contributedMessageCount(for: item) == 0 ? .redundant : .contributing
+        } else {
+            .none
+        }
         return ImportedChatSidebarRow(
             item: item,
             isExpanded: isExpanded,
-            isHighlighted: isHighlighted,
+            highlight: highlight,
             detailsState: store.importedChatDetails[item.id],
             toggleExpansion: {
                 if isExpanded {
@@ -464,21 +483,21 @@ struct ChatSidebarView: View {
         )
         .listRowBackground(importedChatRowBackground(
             isExpanded: isExpanded,
-            isHighlighted: isHighlighted
+            highlight: highlight
         ))
     }
 
     @ViewBuilder
     private func importedChatRowBackground(
         isExpanded: Bool,
-        isHighlighted: Bool
+        highlight: SidebarContributionHighlight
     ) -> some View {
         if isExpanded {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
                 .padding(.horizontal, 2)
-        } else if isHighlighted {
-            Color.accentColor.opacity(0.14)
+        } else if let color = highlight.color {
+            color.opacity(0.14)
         } else {
             Color.clear
         }
@@ -495,17 +514,24 @@ struct ChatSidebarView: View {
             : .extracted(selection)
         let isExtractedContext = context == .extracted
         let isHighlighted = isExtractedContext && store.highlightedChatIDs.contains(selection)
+        let contributedMessageCount = isExtractedContext
+            && store.isStoredChatInConversation(selection)
+            ? store.contributedMessageCount(for: selection)
+            : nil
+        let highlight: SidebarContributionHighlight = if isHighlighted {
+            contributedMessageCount == 0 ? .redundant : .contributing
+        } else {
+            .none
+        }
         return ChatSidebarRow(
             chat: chat,
             photoURL: store.profilePhotoURL(for: chat, in: version),
             context: context,
             isExpanded: selectedChatLocation == location,
-            isHighlighted: isHighlighted,
+            highlight: highlight,
             detailsState: store.chatDetails[selection],
             storedChatState: store.storedChatStates[selection] ?? .checking,
-            contributedMessageCount: isExtractedContext && store.isStoredChatInConversation(selection)
-                ? store.contributedMessageCount(for: selection)
-                : nil,
+            contributedMessageCount: contributedMessageCount,
             isInConversation: store.isStoredChatInConversation(selection),
             additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
             isStoring: store.storingChatID == selection,
@@ -519,7 +545,7 @@ struct ChatSidebarView: View {
             deleteStoredChat: { store.prepareStoredCopyDeletion(selection) }
         )
         .tag(location)
-        .listRowBackground(isHighlighted ? Color.accentColor.opacity(0.14) : Color.clear)
+        .listRowBackground(highlight.color?.opacity(0.14) ?? Color.clear)
     }
 
     private var sidebarHeader: some View {
@@ -705,7 +731,7 @@ private struct ImportedChatsGroupRow: View {
 private struct ImportedChatSidebarRow: View {
     let item: ImportedChatSidebarItem
     let isExpanded: Bool
-    let isHighlighted: Bool
+    let highlight: SidebarContributionHighlight
     let detailsState: ImportedChatDetailsState?
     let toggleExpansion: () -> Void
     let reveal: () -> Void
@@ -757,14 +783,14 @@ private struct ImportedChatSidebarRow: View {
         .padding(.leading, 18)
         .padding(.vertical, isExpanded ? 7 : 3)
         .overlay(alignment: .leading) {
-            if isHighlighted {
+            if let color = highlight.color {
                 Capsule()
-                    .fill(Color.accentColor)
+                    .fill(color)
                     .frame(width: 3)
                     .padding(.vertical, 4)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: isHighlighted)
+        .animation(.easeInOut(duration: 0.16), value: highlight)
     }
 
     private var expandedDetails: some View {
@@ -1042,7 +1068,7 @@ private struct ChatSidebarRow: View {
     let photoURL: URL?
     let context: ChatSidebarRowContext
     let isExpanded: Bool
-    let isHighlighted: Bool
+    let highlight: SidebarContributionHighlight
     let detailsState: ChatDetailsState?
     let storedChatState: StoredChatDisplayState
     let contributedMessageCount: Int?
@@ -1101,14 +1127,14 @@ private struct ChatSidebarRow: View {
         .padding(.leading, 18)
         .padding(.vertical, isExpanded ? 7 : 3)
         .overlay(alignment: .leading) {
-            if isHighlighted {
+            if let color = highlight.color {
                 Capsule()
-                    .fill(Color.accentColor)
+                    .fill(color)
                     .frame(width: 3)
                     .padding(.vertical, 4)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: isHighlighted)
+        .animation(.easeInOut(duration: 0.16), value: highlight)
     }
 
     @ViewBuilder

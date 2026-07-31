@@ -40,6 +40,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var operation: AppOperation?
     @Published private(set) var errorMessage: String?
     @Published private(set) var informationMessage: String?
+    @Published private(set) var informationEmphasisMessage: String?
     @Published private(set) var unifiedViewAdditionPreview: UnifiedViewAdditionPreview?
     @Published private(set) var storedCopyDetachmentPreview: StoredCopyDetachmentPreview?
     @Published private(set) var storedCopyDeletionPreview: StoredCopyDeletionPreview?
@@ -136,7 +137,15 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func contributedMessageCount(for selection: VersionChatID) -> Int? {
-        localContributionMessageCounts[selection]
+        selectedConversation?.record.contributions.first {
+            $0.source == selection
+        }?.exclusiveMessageCount ?? localContributionMessageCounts[selection]
+    }
+
+    func contributedMessageCount(for item: ImportedChatSidebarItem) -> Int? {
+        selectedConversation?.record.importedContributions.first {
+            $0.id == item.id
+        }?.exclusiveMessageCount ?? item.contribution.exclusiveMessageCount
     }
 
     func readingPosition(for selection: ConversationArchiveID) -> Int? {
@@ -545,7 +554,9 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func isStoredChatInConversation(_ selection: VersionChatID) -> Bool {
-        conversationCatalog.contains { item in
+        selectedConversation?.record.contributions.contains {
+            $0.source == selection
+        } == true || conversationCatalog.contains { item in
             item.contributionSources.contains(selection)
         }
     }
@@ -641,7 +652,7 @@ final class FreeMyChatsStore: ObservableObject {
         )
         let producerVersion = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.1.6"
+        ) as? String ?? "2.3.5"
         workQueue.async { [weak self] in
             let result = Result {
                 try ConversationArchiveService.createPortableConversationArchive(
@@ -719,6 +730,10 @@ final class FreeMyChatsStore: ObservableObject {
                     let addedDescription = added == 1
                         ? "1 mensaje nuevo"
                         : "\(added.formatted()) mensajes nuevos"
+                    self.informationEmphasisMessage = UnifiedViewPresentation
+                        .redundantPreviousVersionsNotice(
+                            count: imported.newlyRedundantContributionCount
+                        )
                     self.informationMessage = "Se ha importado “"
                         + imported.importedContribution.displayName
                         + "” y se ha creado la nueva Vista unificada con "
@@ -853,6 +868,10 @@ final class FreeMyChatsStore: ObservableObject {
                     )
                     self.refreshConversationCatalog(in: session)
                     let count = incorporation.addedMessageCount
+                    self.informationEmphasisMessage = UnifiedViewPresentation
+                        .redundantPreviousVersionsNotice(
+                            count: incorporation.newlyRedundantContributionCount
+                        )
                     self.informationMessage = count == 1
                         ? "Se ha añadido 1 mensaje nuevo a “\(item.conversationName)”."
                         : "Se han añadido \(count.formatted()) mensajes nuevos a "
@@ -1105,6 +1124,7 @@ final class FreeMyChatsStore: ObservableObject {
 
     func dismissInformation() {
         informationMessage = nil
+        informationEmphasisMessage = nil
     }
 
     func dismissImportedBackupCleanupPrompt() {
@@ -1342,11 +1362,16 @@ final class FreeMyChatsStore: ObservableObject {
         }
         if selectedConversationID == update.conversation.record.id {
             selectedConversation = update.conversation
+            highlightedChatIDs = Set(update.conversation.record.contributions.map(\.source))
         }
         guard reportUpdate else { return }
 
         let count = update.addedMessageCount
         let contributionCount = update.conversation.record.totalContributionCount
+        informationEmphasisMessage = UnifiedViewPresentation
+            .redundantPreviousVersionsNotice(
+                count: update.newlyRedundantContributionCount
+            )
         if contributionCount > 1 {
             informationMessage = UnifiedViewPresentation.incorporationCompletionMessage(
                 chatName: chatName,
@@ -1634,6 +1659,7 @@ final class FreeMyChatsStore: ObservableObject {
             fractionCompleted: nil
         )
         errorMessage = nil
+        informationEmphasisMessage = nil
         return id
     }
 

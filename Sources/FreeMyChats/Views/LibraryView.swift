@@ -45,12 +45,12 @@ struct LibraryView: View {
         switch operation.kind {
         case .openingLibrary, .deletingBackup, .deletingOriginalIPhoneBackup,
              .detachingStoredContribution, .deletingStoredContribution,
-             .preparingStoredCopyDeletion,
+             .preparingStoredCopyDeletion, .storingChat,
              .exportingConversation, .importingPortableConversation,
              .incorporatingImportedConversation, .detachingImportedConversation,
              .removingImportedConversation:
             return operation
-        case .discovering, .creatingLibrary, .addingBackup, .storingChat, .loadingChats:
+        case .discovering, .creatingLibrary, .addingBackup, .loadingChats:
             return nil
         }
     }

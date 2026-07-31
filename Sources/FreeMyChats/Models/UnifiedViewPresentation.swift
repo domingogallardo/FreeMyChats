@@ -182,6 +182,20 @@ enum UnifiedViewPresentation {
         return "\(action) \(change)"
     }
 
+    static func redundantPreviousVersionsNotice(count: Int) -> String? {
+        switch count {
+        case 0:
+            return nil
+        case 1:
+            return "Una versión anterior ha dejado de aportar mensajes. Puedes eliminarla "
+                + "del catálogo sin que desaparezca ningún mensaje de la Vista unificada."
+        default:
+            return "\(count.formatted()) versiones anteriores han dejado de aportar mensajes. "
+                + "Puedes eliminarlas del catálogo sin que desaparezca ningún mensaje de la "
+                + "Vista unificada."
+        }
+    }
+
     private static func removalImpactMessage(
         _ impact: ConversationRemovalMessageImpact
     ) -> String {
