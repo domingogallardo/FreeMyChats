@@ -1369,8 +1369,8 @@ final class FreeMyChatsStore: ObservableObject {
         let count = update.addedMessageCount
         let contributionCount = update.conversation.record.totalContributionCount
         informationEmphasisMessage = UnifiedViewPresentation
-            .redundantPreviousVersionsNotice(
-                count: update.newlyRedundantContributionCount
+            .automaticallyRemovedPreviousChatsNotice(
+                count: update.automaticallyRemovedContributionCount
             )
         if contributionCount > 1 {
             informationMessage = UnifiedViewPresentation.incorporationCompletionMessage(

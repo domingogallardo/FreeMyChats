@@ -42,7 +42,7 @@ enum ConversationArchiveError: Error, LocalizedError {
 struct ConversationArchiveUpdate {
     let conversation: ArchivedConversation
     let addedMessageCount: Int
-    let newlyRedundantContributionCount: Int
+    let automaticallyRemovedContributionCount: Int
 }
 
 struct ConversationIncorporationContext {
@@ -532,15 +532,30 @@ enum ConversationArchiveService {
         }
         record.updatedAt = Date()
 
-        let conversation = try store(record: record, in: session, progress: progress)
+        let installedConversation = try store(record: record, in: session, progress: progress)
+        let pruning: (conversation: ArchivedConversation, removedCount: Int)
+        do {
+            pruning = try removeNewlyRedundantPreviousContributions(
+                from: installedConversation,
+                comparedTo: context.record,
+                in: session,
+                progress: progress
+            )
+        } catch {
+            removeInstalledRecord(installedConversation.record, in: session)
+            if let previousRecord = context.record {
+                _ = try? store(record: previousRecord, in: session)
+            }
+            throw error
+        }
+        let conversation = pruning.conversation
         return ConversationArchiveUpdate(
             conversation: conversation,
             addedMessageCount: max(
                 0,
                 conversation.document.messages.count - context.previousMessageCount
             ),
-            newlyRedundantContributionCount: conversation.record
-                .newlyRedundantContributionCount(comparedTo: context.record)
+            automaticallyRemovedContributionCount: pruning.removedCount
         )
     }
 
@@ -926,6 +941,87 @@ enum ConversationArchiveService {
             newlyRedundantContributionCount: conversation.record
                 .newlyRedundantContributionCount(comparedTo: existingRecord)
         )
+    }
+
+    private static func removeNewlyRedundantPreviousContributions(
+        from conversation: ArchivedConversation,
+        comparedTo previousRecord: ConversationArchiveRecord?,
+        in session: LibrarySession,
+        progress: WABackupProgressHandler? = nil,
+        cancellation: WABackupCancellationHandler? = nil
+    ) throws -> (conversation: ArchivedConversation, removedCount: Int) {
+        guard let previousRecord,
+              previousRecord.totalContributionCount == 1 else {
+            return (conversation, 0)
+        }
+
+        let previouslyContributingLocalIDs: Set<String> = Set(
+            previousRecord.contributions.compactMap { contribution in
+                guard let count = contribution.exclusiveMessageCount, count > 0 else {
+                    return nil
+                }
+                return contribution.id
+            }
+        )
+        let localSources: [VersionChatID] = conversation.record.contributions.compactMap {
+            contribution in
+            guard previouslyContributingLocalIDs.contains(contribution.id),
+                  contribution.exclusiveMessageCount == 0 else {
+                return nil
+            }
+            return contribution.source
+        }
+        let previouslyContributingImportedIDs: Set<String> = Set(
+            previousRecord.importedContributions.compactMap { contribution in
+                guard let count = contribution.exclusiveMessageCount, count > 0 else {
+                    return nil
+                }
+                return contribution.id
+            }
+        )
+        let importedIDs: [String] = conversation.record.importedContributions.compactMap {
+            contribution in
+            guard previouslyContributingImportedIDs.contains(contribution.id),
+                  contribution.exclusiveMessageCount == 0 else {
+                return nil
+            }
+            return contribution.id
+        }
+
+        var currentConversation = conversation
+        var removedCount = 0
+        for source in localSources {
+            let detachment = try detachContribution(
+                source: source,
+                from: session,
+                progress: progress
+            )
+            guard let rebuilt = detachment.conversation else {
+                throw ConversationArchiveError.invalidArchive(
+                    session.paths.rootURL,
+                    "La conversación se quedó sin chats al retirar una versión redundante."
+                )
+            }
+            currentConversation = rebuilt
+            removedCount += 1
+        }
+        for importID in importedIDs {
+            let detachment = try detachImportedContribution(
+                id: importID,
+                from: session,
+                progress: progress,
+                cancellation: cancellation
+            )
+            guard let rebuilt = detachment.conversation else {
+                throw ConversationArchiveError.invalidArchive(
+                    session.paths.rootURL,
+                    "La conversación se quedó sin chats al retirar una versión redundante."
+                )
+            }
+            currentConversation = rebuilt
+            removedCount += 1
+        }
+        return (currentConversation, removedCount)
     }
 
     static func deleteDetachedImportedContribution(

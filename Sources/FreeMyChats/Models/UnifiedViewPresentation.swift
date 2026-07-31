@@ -182,6 +182,19 @@ enum UnifiedViewPresentation {
         return "\(action) \(change)"
     }
 
+    static func automaticallyRemovedPreviousChatsNotice(count: Int) -> String? {
+        switch count {
+        case 0:
+            return nil
+        case 1:
+            return "El chat anterior se ha eliminado automáticamente del catálogo porque "
+                + "ya no aporta ningún mensaje."
+        default:
+            return "\(count.formatted()) chats anteriores se han eliminado automáticamente "
+                + "del catálogo porque ya no aportan ningún mensaje."
+        }
+    }
+
     static func redundantPreviousVersionsNotice(count: Int) -> String? {
         switch count {
         case 0:

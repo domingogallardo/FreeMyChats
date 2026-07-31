@@ -371,17 +371,17 @@ final class LibraryModelsTests: XCTestCase {
                 + "No había mensajes nuevos que añadir."
         )
         XCTAssertNil(
-            UnifiedViewPresentation.redundantPreviousVersionsNotice(count: 0)
+            UnifiedViewPresentation.automaticallyRemovedPreviousChatsNotice(count: 0)
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.redundantPreviousVersionsNotice(count: 1),
-            "Una versión anterior ha dejado de aportar mensajes. Puedes eliminarla del "
-                + "catálogo sin que desaparezca ningún mensaje de la Vista unificada."
+            UnifiedViewPresentation.automaticallyRemovedPreviousChatsNotice(count: 1),
+            "El chat anterior se ha eliminado automáticamente del catálogo porque ya no "
+                + "aporta ningún mensaje."
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.redundantPreviousVersionsNotice(count: 2),
-            "2 versiones anteriores han dejado de aportar mensajes. Puedes eliminarlas del "
-                + "catálogo sin que desaparezca ningún mensaje de la Vista unificada."
+            UnifiedViewPresentation.automaticallyRemovedPreviousChatsNotice(count: 2),
+            "2 chats anteriores se han eliminado automáticamente del catálogo porque ya no "
+                + "aportan ningún mensaje."
         )
     }
 

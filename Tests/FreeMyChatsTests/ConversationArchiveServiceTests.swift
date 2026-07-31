@@ -1324,7 +1324,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(cImpact.resultingMessageCount, 3)
     }
 
-    func testAuthorLIDChangeDoesNotDuplicateMessages() throws {
+    func testAddingSupersetChatAutomaticallyRemovesPreviousChatFromCatalog() throws {
         let fixture = try makeLibrary(
             storedChats: [
                 StoredChatFixture(
@@ -1370,19 +1370,55 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
-        let item = try XCTUnwrap(
-            incorporateAllStoredChats(in: fixture).first
+        let oldVersion = try XCTUnwrap(fixture.session.version(id: "old"))
+        let newVersion = try XCTUnwrap(fixture.session.version(id: "new"))
+        let oldStored = try oldVersion.storedChatStore.openChat(chatId: 7)
+        _ = try ConversationArchiveService.incorporate(
+            oldStored,
+            source: VersionChatID(versionID: "old", chatID: 7),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: oldStored.document.chat,
+                in: oldVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
         )
-        let archived = try ConversationArchiveService.open(
-            id: item.id,
-            paths: fixture.session.paths
+        let newStored = try newVersion.storedChatStore.openChat(chatId: 7)
+        let update = try ConversationArchiveService.incorporate(
+            newStored,
+            source: VersionChatID(versionID: "new", chatID: 7),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: newStored.document.chat,
+                in: newVersion,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+        let item = try XCTUnwrap(ConversationArchiveService.catalog(in: fixture.session).first)
+        let archived = try ConversationArchiveService.openRepairing(
+            item: item,
+            in: fixture.session
         )
 
         XCTAssertEqual(archived.document.messages.map(\.message), [
             "Mensaje compartido",
             "Mensaje nuevo"
         ])
-        XCTAssertEqual(archived.record.contributions.count, 2)
+        XCTAssertEqual(update.automaticallyRemovedContributionCount, 1)
+        XCTAssertEqual(archived.record.contributions.map(\.source), [
+            VersionChatID(versionID: "new", chatID: 7)
+        ])
+        XCTAssertEqual(item.contributionCount, 1)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: oldStored.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: oldStored.directoryURL.appendingPathComponent("chat.json").path
+            )
+        )
     }
 
     func testDetachingOneOfTwoContributionsKeepsTheCopyExtractedOutsideTheCatalog() throws {
@@ -1406,7 +1442,6 @@ final class ConversationArchiveServiceTests: XCTestCase {
                     name: "Grupo",
                     storedAt: "2026-02-10T12:00:00Z",
                     messages: [
-                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
                         MessageFixture(id: 12, text: "C", date: "2026-02-01T10:00:00Z")
                     ]
@@ -1428,7 +1463,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             remainingConversation.record.contributions.map(\.source),
             [VersionChatID(versionID: "new", chatID: 7)]
         )
-        XCTAssertEqual(remainingConversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertEqual(remainingConversation.document.messages.map(\.message), ["B", "C"])
         XCTAssertNotNil(fixture.session.version(id: "old"))
         XCTAssertNotNil(fixture.session.version(id: "new"))
         XCTAssertEqual(catalog.count, 1)
@@ -1655,7 +1690,6 @@ final class ConversationArchiveServiceTests: XCTestCase {
                     name: "Grupo",
                     storedAt: "2026-02-10T12:00:00Z",
                     messages: [
-                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
                         MessageFixture(id: 12, text: "C", date: "2026-02-01T10:00:00Z")
                     ]
@@ -1672,10 +1706,10 @@ final class ConversationArchiveServiceTests: XCTestCase {
         let conversation = try XCTUnwrap(removal.conversation)
         let catalog = try ConversationArchiveService.catalog(in: removal.session)
 
-        XCTAssertEqual(conversation.document.messages.map(\.message), ["A", "B", "C"])
+        XCTAssertEqual(conversation.document.messages.map(\.message), ["B", "C"])
         XCTAssertEqual(conversation.record.contributions.count, 1)
-        XCTAssertEqual(conversation.record.contributions.first?.messageCount, 3)
-        XCTAssertEqual(conversation.record.contributions.first?.exclusiveMessageCount, 3)
+        XCTAssertEqual(conversation.record.contributions.first?.messageCount, 2)
+        XCTAssertEqual(conversation.record.contributions.first?.exclusiveMessageCount, 2)
         XCTAssertNil(removal.session.version(id: "old"))
         XCTAssertNotNil(removal.session.version(id: "new"))
         XCTAssertEqual(catalog.count, 1)
@@ -1788,7 +1822,6 @@ final class ConversationArchiveServiceTests: XCTestCase {
                     name: "Grupo",
                     storedAt: "2026-02-10T12:00:00Z",
                     messages: [
-                        MessageFixture(id: 10, text: "A", date: "2026-01-01T10:00:00Z"),
                         MessageFixture(id: 11, text: "B", date: "2026-01-02T10:00:00Z"),
                         MessageFixture(id: 12, text: "C", date: "2026-02-01T10:00:00Z")
                     ]
@@ -2314,7 +2347,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
                         MessageFixture(
                             id: 80,
                             text: "Audio",
-                            date: "2026-01-01T10:00:00Z",
+                            date: "2026-02-01T10:00:00Z",
                             mediaFilename: "voice.opus",
                             mediaData: Data("audio".utf8)
                         )
@@ -2344,7 +2377,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
             in: fixture.session
         )
 
-        XCTAssertEqual(repaired.document.messages.map(\.message), ["Audio"])
+        XCTAssertEqual(repaired.document.messages.map(\.message), ["Audio", "Audio"])
         XCTAssertEqual(repaired.record.contributions.count, 2)
         XCTAssertTrue(FileManager.default.fileExists(atPath: missingURL.path))
     }
