@@ -351,7 +351,8 @@ final class FreeMyChatsStore: ObservableObject {
         guard let session,
               let version = session.version(id: selection.versionID),
               let chat = version.chats.first(where: { $0.id == selection.chatID }),
-              isUnifiedViewAdditionAvailable(storedChatStates[selection]) else {
+              let storedChatState = storedChatStates[selection],
+              isUnifiedViewAdditionAvailable(storedChatState) else {
             return
         }
         do {
@@ -365,7 +366,8 @@ final class FreeMyChatsStore: ObservableObject {
                 selection: selection,
                 chatName: chat.name,
                 existingContributionCount: existingContributionCount,
-                sourceMessageCount: chat.numberMessages
+                sourceMessageCount: chat.numberMessages,
+                requiresExtraction: isUpdateAvailable(storedChatState)
             )
         } catch {
             errorMessage = error.localizedDescription
@@ -550,10 +552,6 @@ final class FreeMyChatsStore: ObservableObject {
 
     func additionTargetsUnifiedView(_ selection: VersionChatID) -> Bool {
         existingConversationContributionCounts[selection, default: 0] > 1
-    }
-
-    func refreshStoredChat(_ selection: VersionChatID) {
-        storeChat(selection, overwriteExisting: true)
     }
 
     func openConversation(_ selection: ConversationArchiveID) {

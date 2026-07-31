@@ -6,6 +6,7 @@ struct UnifiedViewAdditionPreview: Equatable, Identifiable {
     let chatName: String
     let existingContributionCount: Int
     let sourceMessageCount: Int
+    let requiresExtraction: Bool
 }
 
 struct StoredCopyDeletionPreview: Equatable, Identifiable {
@@ -36,30 +37,33 @@ enum UnifiedViewPresentation {
         + "y puede eliminarse individualmente del catálogo. Si un mensaje aparece "
         + "en varios chats, se muestra una sola vez."
 
-    static func additionTitle(chatName: String, existingContributionCount: Int) -> String {
-        if existingContributionCount == 1 {
-            return "¿Crear una Vista unificada de “\(chatName)”?"
-        }
-        return "¿Actualizar la Vista unificada de “\(chatName)”?"
+    static func additionTitle(chatName: String, existingContributionCount _: Int) -> String {
+        "¿Añadir “\(chatName)” al catálogo?"
     }
 
     static func additionMessage(
         existingContributionCount: Int,
-        sourceMessageCount _: Int
+        sourceMessageCount _: Int,
+        requiresExtraction: Bool
     ) -> String {
         let messageImpact = "Los mensajes repetidos aparecerán una sola vez; al terminar "
             + "verás cuántos mensajes nuevos se han incorporado."
+        let source = requiresExtraction
+            ? "Este chat se extraerá de la copia de WhatsApp y se conservará por separado. "
+            : "Este chat extraído se conservará por separado. "
         if existingContributionCount == 1 {
-            return "Este chat se conservará por separado y sus mensajes se mostrarán "
-                + "junto a los del otro chat en una "
+            return source + "Sus mensajes se mostrarán junto a los del otro chat en una "
                 + "Vista unificada.\n\n\(messageImpact)"
         }
-        return "Este chat se conservará por separado y sus mensajes se añadirán a la "
+        return source + "Sus mensajes se añadirán a la "
             + "Vista unificada.\n\n\(messageImpact)"
     }
 
-    static func additionButtonTitle(existingContributionCount _: Int) -> String {
-        catalogAdditionActionTitle
+    static func additionButtonTitle(
+        existingContributionCount _: Int,
+        requiresExtraction: Bool
+    ) -> String {
+        requiresExtraction ? "Extraer y añadir al catálogo" : catalogAdditionActionTitle
     }
 
     static func additionActionTitle(addsToExistingConversation _: Bool) -> String {
@@ -127,7 +131,7 @@ enum UnifiedViewPresentation {
         }
         switch contributionCount {
         case 0: return "Borrar chat extraído"
-        case 3...: return "Borrar y actualizar la vista"
+        case 3...: return "Borrar y reconstruir la vista"
         default: return "Borrar chat guardado"
         }
     }

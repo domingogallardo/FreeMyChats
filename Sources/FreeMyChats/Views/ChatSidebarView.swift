@@ -2,9 +2,29 @@ import AppKit
 import SwiftUI
 import SwiftWABackupAPI
 
+private enum SidebarChatLocation: Hashable {
+    case sourceBackup(VersionChatID)
+    case extracted(VersionChatID)
+
+    var selection: VersionChatID {
+        switch self {
+        case .sourceBackup(let selection), .extracted(let selection):
+            return selection
+        }
+    }
+}
+
+private enum ChatSidebarRowContext: Equatable {
+    case sourceBackup
+    case extracted
+}
+
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @State private var expandedVersionIDs: Set<String> = []
+    @State private var expandedSourceVersionIDs: Set<String> = []
+    @State private var expandedExtractedVersionIDs: Set<String> = []
+    @State private var selectedChatLocation: SidebarChatLocation?
     @State private var isImportedChatsExpanded = false
     @State private var expandedImportedChatID: String?
     @State private var versionPendingDeletion: LibraryVersionSession?
@@ -117,14 +137,14 @@ struct ChatSidebarView: View {
     private var sourceBackupDeletionDialog: some View {
         storedCopyDetachmentDialog
         .confirmationDialog(
-            "¿Eliminar esta copia fuente?",
+            "¿Eliminar esta copia de WhatsApp?",
             isPresented: Binding(
                 get: { versionPendingDeletion != nil },
                 set: { if !$0 { versionPendingDeletion = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Eliminar copia fuente", role: .destructive) {
+            Button("Eliminar copia de WhatsApp", role: .destructive) {
                 if let version = versionPendingDeletion {
                     store.deleteSourceBackup(versionID: version.id)
                 }
@@ -135,8 +155,8 @@ struct ChatSidebarView: View {
             }
         } message: {
             Text(
-                "Se liberará el espacio ocupado por el backup. Las conversaciones ya guardadas "
-                + "seguirán disponibles, pero no se podrán añadir otros chats de esta copia a la biblioteca."
+                "Se eliminará la copia completa de WhatsApp. Los chats ya extraídos seguirán "
+                    + "disponibles, pero no podrás extraer otros chats de esta copia."
             )
         }
     }
@@ -159,7 +179,8 @@ struct ChatSidebarView: View {
             if let preview = store.unifiedViewAdditionPreview {
                 Button(
                     UnifiedViewPresentation.additionButtonTitle(
-                        existingContributionCount: preview.existingContributionCount
+                        existingContributionCount: preview.existingContributionCount,
+                        requiresExtraction: preview.requiresExtraction
                     )
                 ) {
                     store.commitUnifiedViewAddition(id: preview.id)
@@ -173,7 +194,8 @@ struct ChatSidebarView: View {
                 Text(
                     UnifiedViewPresentation.additionMessage(
                         existingContributionCount: preview.existingContributionCount,
-                        sourceMessageCount: preview.sourceMessageCount
+                        sourceMessageCount: preview.sourceMessageCount,
+                        requiresExtraction: preview.requiresExtraction
                     )
                 )
             }
@@ -228,7 +250,8 @@ struct ChatSidebarView: View {
             sidebarHeader
             sidebarList
         }
-        .onChange(of: store.selectedChatID, perform: store.selectChat)
+        .onChange(of: selectedChatLocation, perform: selectChatLocation)
+        .onChange(of: store.selectedChatID, perform: selectedChatDidChange)
         .onChange(of: store.highlightedChatIDs, perform: updateExpandedVersions)
         .onChange(of: store.selectedConversationID, perform: updateImportedChatExpansion)
         .onChange(of: isImportedChatsExpanded, perform: collapseImportedChatDetails)
@@ -237,7 +260,7 @@ struct ChatSidebarView: View {
     }
 
     private var sidebarList: some View {
-        List(selection: $store.selectedChatID) {
+        List(selection: $selectedChatLocation) {
             importedChatsSection
             backupVersionsSection
         }
@@ -251,13 +274,17 @@ struct ChatSidebarView: View {
 
     private func updateExpandedVersionIDs(_ ids: [String]) {
         expandedVersionIDs.formIntersection(Set(ids))
+        expandedSourceVersionIDs.formIntersection(Set(ids))
+        expandedExtractedVersionIDs.formIntersection(Set(ids))
         if expandedVersionIDs.isEmpty, let first = ids.first {
             expandedVersionIDs.insert(first)
         }
     }
 
     private func updateExpandedVersions(_ chatIDs: Set<VersionChatID>) {
-        expandedVersionIDs.formUnion(chatIDs.map(\.versionID))
+        let versionIDs = chatIDs.map(\.versionID)
+        expandedVersionIDs.formUnion(versionIDs)
+        expandedExtractedVersionIDs.formUnion(versionIDs)
     }
 
     private func updateImportedChatExpansion(_ conversationID: ConversationArchiveID?) {
@@ -281,6 +308,18 @@ struct ChatSidebarView: View {
             expandedVersionIDs.insert(first)
         }
         expandedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
+        expandedExtractedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
+    }
+
+    private func selectChatLocation(_ location: SidebarChatLocation?) {
+        store.selectedChatID = location?.selection
+    }
+
+    private func selectedChatDidChange(_ selection: VersionChatID?) {
+        store.selectChat(selection)
+        if selection == nil {
+            selectedChatLocation = nil
+        }
     }
 
     private var importedChatsSection: some View {
@@ -307,21 +346,46 @@ struct ChatSidebarView: View {
     private var backupVersionsSection: some View {
         ForEach(store.versions) { version in
             DisclosureGroup(isExpanded: expansionBinding(for: version.id)) {
-                backupVersionChats(version)
+                backupVersionContents(version)
             } label: {
                 BackupVersionRow(
                     version: version,
-                    isStoring: store.storingChatID?.versionID == version.id,
-                    isLoading: store.isLoadingSourceChats && version.hasSourceBackup
-                ) {
-                    versionPendingDeletion = version
-                }
+                    extractedChatCount: extractedChatCount(in: version)
+                )
             }
         }
     }
 
     @ViewBuilder
-    private func backupVersionChats(_ version: LibraryVersionSession) -> some View {
+    private func backupVersionContents(_ version: LibraryVersionSession) -> some View {
+        if version.hasSourceBackup {
+            DisclosureGroup(isExpanded: sourceExpansionBinding(for: version.id)) {
+                sourceBackupChats(version)
+            } label: {
+                SourceBackupGroupRow(
+                    version: version,
+                    isLoading: store.isLoadingSourceChats
+                        && store.storingChatID?.versionID != version.id
+                ) {
+                    versionPendingDeletion = version
+                }
+            }
+        } else {
+            MissingSourceBackupRow()
+        }
+
+        DisclosureGroup(isExpanded: extractedExpansionBinding(for: version.id)) {
+            extractedChats(version)
+        } label: {
+            ExtractedChatsGroupRow(
+                count: extractedChatCount(in: version),
+                isStoring: store.storingChatID?.versionID == version.id
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func sourceBackupChats(_ version: LibraryVersionSession) -> some View {
         let chats = store.visibleChats(in: version)
         if store.isLoadingSourceChats, chats.isEmpty, version.hasSourceBackup {
             HStack(spacing: 7) {
@@ -333,14 +397,32 @@ struct ChatSidebarView: View {
             .padding(.leading, 27)
             .padding(.vertical, 5)
         } else if chats.isEmpty {
-            Text(emptyMessage(for: version))
+            Text("No hay chats en la copia con este filtro")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 27)
                 .padding(.vertical, 5)
         } else {
             ForEach(chats, id: \.id) { chat in
-                chatSidebarRow(chat, in: version)
+                chatSidebarRow(chat, in: version, context: .sourceBackup)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func extractedChats(_ version: LibraryVersionSession) -> some View {
+        let chats = store.visibleChats(in: version).filter {
+            isExtracted($0, in: version)
+        }
+        if chats.isEmpty {
+            Text(extractedChatsEmptyMessage(in: version))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 27)
+                .padding(.vertical, 5)
+        } else {
+            ForEach(chats, id: \.id) { chat in
+                chatSidebarRow(chat, in: version, context: .extracted)
             }
         }
     }
@@ -404,32 +486,39 @@ struct ChatSidebarView: View {
 
     private func chatSidebarRow(
         _ chat: ChatInfo,
-        in version: LibraryVersionSession
+        in version: LibraryVersionSession,
+        context: ChatSidebarRowContext
     ) -> some View {
         let selection = VersionChatID(versionID: version.id, chatID: chat.id)
-        let isHighlighted = store.highlightedChatIDs.contains(selection)
+        let location: SidebarChatLocation = context == .sourceBackup
+            ? .sourceBackup(selection)
+            : .extracted(selection)
+        let isExtractedContext = context == .extracted
+        let isHighlighted = isExtractedContext && store.highlightedChatIDs.contains(selection)
         return ChatSidebarRow(
             chat: chat,
             photoURL: store.profilePhotoURL(for: chat, in: version),
-            isExpanded: store.selectedChatID == selection,
+            context: context,
+            isExpanded: selectedChatLocation == location,
             isHighlighted: isHighlighted,
             detailsState: store.chatDetails[selection],
             storedChatState: store.storedChatStates[selection] ?? .checking,
-            contributedMessageCount: store.contributedMessageCount(for: selection),
+            contributedMessageCount: isExtractedContext && store.isStoredChatInConversation(selection)
+                ? store.contributedMessageCount(for: selection)
+                : nil,
             isInConversation: store.isStoredChatInConversation(selection),
             additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
             isStoring: store.storingChatID == selection,
             hasSourceBackup: version.hasSourceBackup,
             toggleExpansion: {
-                store.selectedChatID = store.selectedChatID == selection ? nil : selection
+                selectedChatLocation = selectedChatLocation == location ? nil : location
             },
             addToLibrary: { requestAddition(selection) },
-            refreshStoredChat: { store.refreshStoredChat(selection) },
             revealStoredChat: { store.revealStoredChat(selection) },
             detachStoredChat: { store.prepareStoredCopyDetachment(selection) },
             deleteStoredChat: { store.prepareStoredCopyDeletion(selection) }
         )
-        .tag(selection)
+        .tag(location)
         .listRowBackground(isHighlighted ? Color.accentColor.opacity(0.14) : Color.clear)
     }
 
@@ -453,7 +542,7 @@ struct ChatSidebarView: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Importa chats o despliega una copia para navegar")
+                Text("Despliega una copia para explorarla o ver sus chats extraídos")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
 
@@ -530,20 +619,47 @@ struct ChatSidebarView: View {
     }
 
     private func expansionBinding(for id: String) -> Binding<Bool> {
+        expansionBinding(for: id, in: $expandedVersionIDs)
+    }
+
+    private func sourceExpansionBinding(for id: String) -> Binding<Bool> {
+        expansionBinding(for: id, in: $expandedSourceVersionIDs)
+    }
+
+    private func extractedExpansionBinding(for id: String) -> Binding<Bool> {
+        expansionBinding(for: id, in: $expandedExtractedVersionIDs)
+    }
+
+    private func expansionBinding(
+        for id: String,
+        in expandedIDs: Binding<Set<String>>
+    ) -> Binding<Bool> {
         Binding(
-            get: { expandedVersionIDs.contains(id) },
+            get: { expandedIDs.wrappedValue.contains(id) },
             set: { expanded in
                 if expanded {
-                    expandedVersionIDs.insert(id)
+                    expandedIDs.wrappedValue.insert(id)
                 } else {
-                    expandedVersionIDs.remove(id)
+                    expandedIDs.wrappedValue.remove(id)
                 }
             }
         )
     }
 
-    private func emptyMessage(for version: LibraryVersionSession) -> String {
-        version.hasSourceBackup ? "No hay chats con este filtro" : "No quedaron chats guardados"
+    private func isExtracted(_ chat: ChatInfo, in version: LibraryVersionSession) -> Bool {
+        let selection = VersionChatID(versionID: version.id, chatID: chat.id)
+        return store.storedChatStates[selection]?.isPhysicallyStored == true
+    }
+
+    private func extractedChatCount(in version: LibraryVersionSession) -> Int {
+        version.chats.filter { isExtracted($0, in: version) }.count
+    }
+
+    private func extractedChatsEmptyMessage(in version: LibraryVersionSession) -> String {
+        if extractedChatCount(in: version) == 0 {
+            return "Todavía no hay chats extraídos"
+        }
+        return "No hay chats extraídos con este filtro"
     }
 }
 
@@ -790,26 +906,56 @@ private struct ImportedChatSidebarRow: View {
 
 private struct BackupVersionRow: View {
     let version: LibraryVersionSession
-    let isStoring: Bool
-    let isLoading: Bool
-    let deleteSource: () -> Void
+    let extractedChatCount: Int
 
     var body: some View {
         HStack(spacing: 9) {
-            if isStoring {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 17)
-            } else {
-                Image(systemName: version.hasSourceBackup ? "externaldrive.fill" : "externaldrive.badge.xmark")
-                    .foregroundStyle(version.hasSourceBackup ? Color.secondary : Color.orange)
-                    .frame(width: 17)
-            }
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(.secondary)
+                .frame(width: 17)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(version.record.title)
                     .fontWeight(.medium)
                     .lineLimit(1)
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var summary: String {
+        let source = version.hasSourceBackup ? "Copia disponible" : "Copia eliminada"
+        let extracted = extractedChatCount == 1
+            ? "1 chat extraído"
+            : "\(extractedChatCount) chats extraídos"
+        return "\(source) · \(extracted)"
+    }
+}
+
+private struct SourceBackupGroupRow: View {
+    let version: LibraryVersionSession
+    let isLoading: Bool
+    let deleteSource: () -> Void
+
+    var body: some View {
+        HStack(spacing: 9) {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 17)
+            } else {
+                Image(systemName: "externaldrive.fill")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 17)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copia de WhatsApp")
+                    .fontWeight(.medium)
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -818,41 +964,83 @@ private struct BackupVersionRow: View {
 
             Spacer(minLength: 4)
 
-            if version.hasSourceBackup {
-                Menu {
-                    Button("Eliminar copia fuente…", role: .destructive, action: deleteSource)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Gestionar copia")
+            Menu {
+                Button("Eliminar copia de WhatsApp…", role: .destructive, action: deleteSource)
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Gestionar la copia de WhatsApp")
         }
         .padding(.vertical, 3)
     }
 
     private var detail: String {
         if isLoading {
-            return "Leyendo conversaciones…"
+            return "Leyendo chats…"
         }
-        if version.hasSourceBackup {
-            let size = ByteCountFormatter.string(
-                fromByteCount: version.backupByteCount,
-                countStyle: .file
-            )
-            return "\(size) · \(version.chats.count) chats"
+        let size = ByteCountFormatter.string(
+            fromByteCount: version.backupByteCount,
+            countStyle: .file
+        )
+        let chats = version.chats.count == 1 ? "1 chat" : "\(version.chats.count) chats"
+        return "\(size) · \(chats)"
+    }
+}
+
+private struct MissingSourceBackupRow: View {
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "externaldrive.badge.xmark")
+                .foregroundStyle(.orange)
+                .frame(width: 17)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Copia de WhatsApp")
+                    .fontWeight(.medium)
+                Text("Eliminada · ya no se pueden extraer otros chats")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        let savedChats = version.chats.count == 1
-            ? "1 chat guardado"
-            : "\(version.chats.count) chats guardados"
-        return "Copia eliminada · \(savedChats)"
+        .padding(.vertical, 3)
+    }
+}
+
+private struct ExtractedChatsGroupRow: View {
+    let count: Int
+    let isStoring: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            if isStoring {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 17)
+            } else {
+                Image(systemName: "archivebox.fill")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 17)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Chats extraídos")
+                    .fontWeight(.medium)
+                Text(count == 1 ? "1 chat conservado" : "\(count) chats conservados")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 3)
     }
 }
 
 private struct ChatSidebarRow: View {
     let chat: ChatInfo
     let photoURL: URL?
+    let context: ChatSidebarRowContext
     let isExpanded: Bool
     let isHighlighted: Bool
     let detailsState: ChatDetailsState?
@@ -864,7 +1052,6 @@ private struct ChatSidebarRow: View {
     let hasSourceBackup: Bool
     let toggleExpansion: () -> Void
     let addToLibrary: () -> Void
-    let refreshStoredChat: () -> Void
     let revealStoredChat: () -> Void
     let detachStoredChat: () -> Void
     let deleteStoredChat: () -> Void
@@ -959,7 +1146,7 @@ private struct ChatSidebarRow: View {
             }
             .padding(.top, 3)
 
-            if storedChatState.isPhysicallyStored, !isStoring {
+            if context == .extracted, storedChatState.isPhysicallyStored, !isStoring {
                 VStack(alignment: .leading, spacing: 6) {
                     actionButton(
                         "Abrir carpeta",
@@ -1010,84 +1197,98 @@ private struct ChatSidebarRow: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
-                Text("Añadiendo a la biblioteca…")
+                Text(
+                    context == .sourceBackup
+                        ? "Extrayendo y añadiendo al catálogo…"
+                        : "Añadiendo al catálogo…"
+                )
                     .foregroundStyle(.secondary)
             }
         } else {
-            storedChatStateView
+            if context == .sourceBackup {
+                sourceBackupStateView
+            } else {
+                extractedChatStateView
+            }
         }
     }
 
     @ViewBuilder
-    private var storedChatStateView: some View {
+    private var sourceBackupStateView: some View {
         switch storedChatState {
         case .checking:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text("Comprobando la biblioteca…")
+                Text("Comprobando si está extraído…")
                     .foregroundStyle(.secondary)
             }
         case .notStored:
-            if hasSourceBackup {
-                actionButton(
-                    UnifiedViewPresentation.additionActionTitle(
-                        addsToExistingConversation: false
-                    ),
-                    action: addToLibrary
-                )
-                .help("Guardar este chat con sus mensajes y archivos en la biblioteca")
-            } else {
-                Label("Copia fuente no disponible", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-            }
+            actionButton(
+                "Extraer y añadir al catálogo",
+                systemImage: "plus",
+                action: addToLibrary
+            )
+            .help("Extraer los mensajes y archivos de este chat y añadirlo al catálogo")
         case .updateAvailable:
-            if hasSourceBackup {
-                actionButton(
-                    UnifiedViewPresentation.additionActionTitle(
-                        addsToExistingConversation: additionTargetsUnifiedView
-                    ),
-                    systemImage: "plus",
-                    action: addToLibrary
-                )
-                .help("Guardar este chat y añadir sus mensajes a una Vista unificada")
-            } else {
-                Label("Guardado · fuente no disponible", systemImage: "checkmark")
+            actionButton(
+                "Extraer y añadir al catálogo",
+                systemImage: "plus",
+                action: addToLibrary
+            )
+            .help(
+                additionTargetsUnifiedView
+                    ? "Extraer este chat y añadirlo a la Vista unificada"
+                    : "Extraer este chat y añadirlo al catálogo"
+            )
+        case .extracted:
+            Label("También extraído · fuera del catálogo", systemImage: "archivebox")
+                .foregroundStyle(.secondary)
+        case .stored:
+            Label("También extraído · en el catálogo", systemImage: "checkmark")
+                .foregroundStyle(.secondary)
+        case .stale:
+            Label(
+                "El chat extraído no coincide con esta copia",
+                systemImage: "exclamationmark.triangle"
+            )
+            .foregroundStyle(.orange)
+        case .invalid:
+            Label("Chat extraído no válido", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        }
+    }
+
+    @ViewBuilder
+    private var extractedChatStateView: some View {
+        switch storedChatState {
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Comprobando el chat extraído…")
                     .foregroundStyle(.secondary)
             }
+        case .notStored, .updateAvailable:
+            Label("El chat extraído ya no está disponible", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
         case .extracted:
             actionButton(
                 UnifiedViewPresentation.catalogAdditionActionTitle,
                 systemImage: "plus",
                 action: addToLibrary
             )
-            .help("Volver a añadir este chat extraído al catálogo")
+            .help("Añadir este chat extraído al catálogo")
         case .stored:
-            Label("En la biblioteca", systemImage: "checkmark")
+            Label("En el catálogo", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
         case .stale:
-            if hasSourceBackup {
-                actionButton(
-                    "Actualizar en la biblioteca",
-                    systemImage: "arrow.clockwise",
-                    action: refreshStoredChat
-                )
-                .help("Actualizar el chat guardado y la conversación del catálogo")
-            } else {
-                Label("En la biblioteca · fuente no disponible", systemImage: "checkmark")
-                    .foregroundStyle(.secondary)
-            }
+            Label(
+                "El chat extraído no coincide con la copia",
+                systemImage: "exclamationmark.triangle"
+            )
+            .foregroundStyle(.orange)
         case .invalid:
-            if hasSourceBackup {
-                actionButton(
-                    "Reparar en la biblioteca",
-                    systemImage: "arrow.clockwise",
-                    action: refreshStoredChat
-                )
-                .help("Reemplazar el chat no válido y actualizar la conversación del catálogo")
-            } else {
-                Label("Chat guardado no válido", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-            }
+            Label("Chat extraído no válido", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
         }
     }
 

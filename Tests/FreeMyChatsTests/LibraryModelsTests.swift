@@ -45,7 +45,7 @@ final class LibraryModelsTests: XCTestCase {
                 contributionCount: 3,
                 hasSourceBackup: true
             ),
-            "Borrar y actualizar la vista"
+            "Borrar y reconstruir la vista"
         )
         XCTAssertEqual(
             UnifiedViewPresentation.deletionButtonTitle(
@@ -99,21 +99,25 @@ final class LibraryModelsTests: XCTestCase {
                 chatName: "Familia",
                 existingContributionCount: 1
             ),
-            "¿Crear una Vista unificada de “Familia”?"
+            "¿Añadir “Familia” al catálogo?"
         )
         let message = UnifiedViewPresentation.additionMessage(
             existingContributionCount: 1,
-            sourceMessageCount: 900
+            sourceMessageCount: 900,
+            requiresExtraction: false
         )
         XCTAssertEqual(
             message,
-            "Este chat se conservará por separado y sus mensajes se mostrarán junto a "
-                + "los del otro chat en una Vista unificada.\n\nLos mensajes repetidos "
+            "Este chat extraído se conservará por separado. Sus mensajes se mostrarán "
+                + "junto a los del otro chat en una Vista unificada.\n\nLos mensajes repetidos "
                 + "aparecerán una sola vez; al terminar verás cuántos mensajes nuevos "
                 + "se han incorporado."
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.additionButtonTitle(existingContributionCount: 1),
+            UnifiedViewPresentation.additionButtonTitle(
+                existingContributionCount: 1,
+                requiresExtraction: false
+            ),
             "Añadir al catálogo"
         )
     }
@@ -124,21 +128,26 @@ final class LibraryModelsTests: XCTestCase {
                 chatName: "Familia",
                 existingContributionCount: 2
             ),
-            "¿Actualizar la Vista unificada de “Familia”?"
+            "¿Añadir “Familia” al catálogo?"
         )
         let message = UnifiedViewPresentation.additionMessage(
             existingContributionCount: 2,
-            sourceMessageCount: 900
+            sourceMessageCount: 900,
+            requiresExtraction: true
         )
         XCTAssertEqual(
             message,
-            "Este chat se conservará por separado y sus mensajes se añadirán a la Vista "
-                + "unificada.\n\nLos mensajes repetidos aparecerán una sola vez; al "
+            "Este chat se extraerá de la copia de WhatsApp y se conservará por separado. "
+                + "Sus mensajes se añadirán a la Vista unificada.\n\nLos mensajes repetidos "
+                + "aparecerán una sola vez; al "
                 + "terminar verás cuántos mensajes nuevos se han incorporado."
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.additionButtonTitle(existingContributionCount: 2),
-            "Añadir al catálogo"
+            UnifiedViewPresentation.additionButtonTitle(
+                existingContributionCount: 2,
+                requiresExtraction: true
+            ),
+            "Extraer y añadir al catálogo"
         )
     }
 
@@ -205,7 +214,7 @@ final class LibraryModelsTests: XCTestCase {
                 contributionCount: 3,
                 hasSourceBackup: true
             ),
-            "Borrar y actualizar la vista"
+            "Borrar y reconstruir la vista"
         )
     }
 
