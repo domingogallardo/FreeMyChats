@@ -13,6 +13,7 @@ struct StoredCopyDeletionPreview: Equatable, Identifiable {
     let selection: VersionChatID
     let chatName: String
     let versionTitle: String
+    let hasSourceBackup: Bool
     let impact: ConversationRemovalMessageImpact
 }
 
@@ -74,7 +75,10 @@ enum UnifiedViewPresentation {
             + "con “Añadir al catálogo”."
     }
 
-    static func deletionTitle(contributionCount: Int) -> String {
+    static func deletionTitle(contributionCount: Int, hasSourceBackup: Bool) -> String {
+        if contributionCount == 0, !hasSourceBackup {
+            return "¿Borrar definitivamente este chat extraído?"
+        }
         switch contributionCount {
         case 0:
             return "¿Borrar este chat extraído?"
@@ -90,25 +94,41 @@ enum UnifiedViewPresentation {
     static func deletionMessage(
         chatName: String,
         versionTitle: String,
+        hasSourceBackup: Bool,
         impact: ConversationRemovalMessageImpact
     ) -> String {
         let origin = "Se borrará el chat guardado “\(chatName)” procedente de “\(versionTitle)”. "
         let messageImpact = removalImpactMessage(impact)
+        let recovery: String
+        if hasSourceBackup {
+            recovery = "La copia de WhatsApp sigue disponible, por lo que podrás volver a "
+                + "extraerlo con “Añadir al catálogo”."
+        } else {
+            recovery = "La copia de WhatsApp ya no está disponible. Si lo borras, no podrás "
+                + "recuperar este chat."
+        }
         switch impact.contributionCount {
         case 0:
-            return origin
-                + "Como no forma parte de ninguna conversación del catálogo, se eliminará "
-                + "definitivamente de la biblioteca."
+            let removal = hasSourceBackup
+                ? "Sus mensajes y archivos se eliminarán de la biblioteca. "
+                : "Sus mensajes y archivos se eliminarán definitivamente de la biblioteca. "
+            return origin + removal + recovery
         default:
-            return origin + messageImpact
+            return origin + messageImpact + " " + recovery
         }
     }
 
-    static func deletionButtonTitle(contributionCount: Int) -> String {
+    static func deletionButtonTitle(
+        contributionCount: Int,
+        hasSourceBackup: Bool
+    ) -> String {
+        if !hasSourceBackup {
+            return "Borrar definitivamente"
+        }
         switch contributionCount {
-        case 0: return "Borrar chat"
+        case 0: return "Borrar chat extraído"
         case 3...: return "Borrar y actualizar la vista"
-        default: return "Borrar chat"
+        default: return "Borrar chat guardado"
         }
     }
 

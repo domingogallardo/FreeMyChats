@@ -408,6 +408,7 @@ final class FreeMyChatsStore: ObservableObject {
                 selection: selection,
                 chatName: chatName,
                 versionTitle: version.record.title,
+                hasSourceBackup: version.hasSourceBackup,
                 impact: ConversationRemovalMessageImpact(
                     contributionCount: 0,
                     existingMessageCount: messageCount,
@@ -428,6 +429,7 @@ final class FreeMyChatsStore: ObservableObject {
                     selection: selection,
                     chatName: chatName,
                     versionTitle: version.record.title,
+                    hasSourceBackup: version.hasSourceBackup,
                     impact: impact
                 )
                 return
@@ -471,6 +473,7 @@ final class FreeMyChatsStore: ObservableObject {
                         selection: selection,
                         chatName: chatName,
                         versionTitle: version.record.title,
+                        hasSourceBackup: version.hasSourceBackup,
                         impact: impact
                     )
                 case .failure(let error):
@@ -485,6 +488,7 @@ final class FreeMyChatsStore: ObservableObject {
         selection: VersionChatID,
         chatName: String,
         versionTitle: String,
+        hasSourceBackup: Bool,
         impact: ConversationRemovalMessageImpact
     ) {
         switch change {
@@ -502,6 +506,7 @@ final class FreeMyChatsStore: ObservableObject {
                 selection: selection,
                 chatName: chatName,
                 versionTitle: versionTitle,
+                hasSourceBackup: hasSourceBackup,
                 impact: impact
             )
         }

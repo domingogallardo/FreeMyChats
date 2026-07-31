@@ -185,7 +185,8 @@ struct ChatSidebarView: View {
         .confirmationDialog(
             store.storedCopyDeletionPreview.map {
                 UnifiedViewPresentation.deletionTitle(
-                    contributionCount: $0.impact.contributionCount
+                    contributionCount: $0.impact.contributionCount,
+                    hasSourceBackup: $0.hasSourceBackup
                 )
             } ?? "¿Borrar este chat guardado?",
             isPresented: Binding(
@@ -197,7 +198,8 @@ struct ChatSidebarView: View {
             if let preview = store.storedCopyDeletionPreview {
                 Button(
                     UnifiedViewPresentation.deletionButtonTitle(
-                        contributionCount: preview.impact.contributionCount
+                        contributionCount: preview.impact.contributionCount,
+                        hasSourceBackup: preview.hasSourceBackup
                     ),
                     role: .destructive
                 ) {
@@ -213,6 +215,7 @@ struct ChatSidebarView: View {
                     UnifiedViewPresentation.deletionMessage(
                         chatName: preview.chatName,
                         versionTitle: preview.versionTitle,
+                        hasSourceBackup: preview.hasSourceBackup,
                         impact: preview.impact
                     )
                 )
@@ -416,7 +419,7 @@ struct ChatSidebarView: View {
             isInConversation: store.isStoredChatInConversation(selection),
             additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
             isStoring: store.storingChatID == selection,
-            canAddToLibrary: version.hasSourceBackup,
+            hasSourceBackup: version.hasSourceBackup,
             toggleExpansion: {
                 store.selectedChatID = store.selectedChatID == selection ? nil : selection
             },
@@ -858,7 +861,7 @@ private struct ChatSidebarRow: View {
     let isInConversation: Bool
     let additionTargetsUnifiedView: Bool
     let isStoring: Bool
-    let canAddToLibrary: Bool
+    let hasSourceBackup: Bool
     let toggleExpansion: () -> Void
     let addToLibrary: () -> Void
     let refreshStoredChat: () -> Void
@@ -974,7 +977,10 @@ private struct ChatSidebarRow: View {
                     }
                     if !isInConversation {
                         actionButton(
-                            "Borrar",
+                            UnifiedViewPresentation.deletionButtonTitle(
+                                contributionCount: 0,
+                                hasSourceBackup: hasSourceBackup
+                            ),
                             systemImage: "trash",
                             tint: .red,
                             action: deleteStoredChat
@@ -1022,7 +1028,7 @@ private struct ChatSidebarRow: View {
                     .foregroundStyle(.secondary)
             }
         case .notStored:
-            if canAddToLibrary {
+            if hasSourceBackup {
                 actionButton(
                     UnifiedViewPresentation.additionActionTitle(
                         addsToExistingConversation: false
@@ -1035,7 +1041,7 @@ private struct ChatSidebarRow: View {
                     .foregroundStyle(.secondary)
             }
         case .updateAvailable:
-            if canAddToLibrary {
+            if hasSourceBackup {
                 actionButton(
                     UnifiedViewPresentation.additionActionTitle(
                         addsToExistingConversation: additionTargetsUnifiedView
@@ -1059,7 +1065,7 @@ private struct ChatSidebarRow: View {
             Label("En la biblioteca", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
         case .stale:
-            if canAddToLibrary {
+            if hasSourceBackup {
                 actionButton(
                     "Actualizar en la biblioteca",
                     systemImage: "arrow.clockwise",
@@ -1071,7 +1077,7 @@ private struct ChatSidebarRow: View {
                     .foregroundStyle(.secondary)
             }
         case .invalid:
-            if canAddToLibrary {
+            if hasSourceBackup {
                 actionButton(
                     "Reparar en la biblioteca",
                     systemImage: "arrow.clockwise",

@@ -27,20 +27,32 @@ final class LibraryModelsTests: XCTestCase {
             "¿Eliminar del catálogo?"
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionTitle(contributionCount: 3),
+            UnifiedViewPresentation.deletionTitle(
+                contributionCount: 3,
+                hasSourceBackup: true
+            ),
             "¿Borrar este chat guardado de la Vista unificada?"
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionTitle(contributionCount: 0),
+            UnifiedViewPresentation.deletionTitle(
+                contributionCount: 0,
+                hasSourceBackup: true
+            ),
             "¿Borrar este chat extraído?"
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 3),
+            UnifiedViewPresentation.deletionButtonTitle(
+                contributionCount: 3,
+                hasSourceBackup: true
+            ),
             "Borrar y actualizar la vista"
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 0),
-            "Borrar chat"
+            UnifiedViewPresentation.deletionButtonTitle(
+                contributionCount: 0,
+                hasSourceBackup: true
+            ),
+            "Borrar chat extraído"
         )
     }
 
@@ -132,12 +144,16 @@ final class LibraryModelsTests: XCTestCase {
 
     func testDeletingOneOfTwoSavedCopiesSummarizesTheMessageImpact() {
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionTitle(contributionCount: 2),
+            UnifiedViewPresentation.deletionTitle(
+                contributionCount: 2,
+                hasSourceBackup: true
+            ),
             "¿Borrar este chat guardado y deshacer la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
             versionTitle: "Copia de junio",
+            hasSourceBackup: true,
             impact: ConversationRemovalMessageImpact(
                 contributionCount: 2,
                 existingMessageCount: 900,
@@ -150,18 +166,24 @@ final class LibraryModelsTests: XCTestCase {
             message,
             "Se borrará el chat guardado “Familia” procedente de “Copia de junio”. "
                 + "Al borrarlo, 50 mensajes exclusivos dejarán de aparecer en la "
-                + "conversación, que quedará con 850 mensajes."
+                + "conversación, que quedará con 850 mensajes. La copia de WhatsApp "
+                + "sigue disponible, por lo que podrás volver a extraerlo con “Añadir "
+                + "al catálogo”."
         )
     }
 
     func testDeletingOneOfThreeSavedCopiesOmitsUnchangedChatDetails() {
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionTitle(contributionCount: 3),
+            UnifiedViewPresentation.deletionTitle(
+                contributionCount: 3,
+                hasSourceBackup: true
+            ),
             "¿Borrar este chat guardado de la Vista unificada?"
         )
         let message = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
             versionTitle: "Copia de junio",
+            hasSourceBackup: true,
             impact: ConversationRemovalMessageImpact(
                 contributionCount: 3,
                 existingMessageCount: 900,
@@ -174,10 +196,15 @@ final class LibraryModelsTests: XCTestCase {
             message,
             "Se borrará el chat guardado “Familia” procedente de “Copia de junio”. "
                 + "Al borrarlo, ningún mensaje dejará de aparecer en la conversación "
-                + "porque todos están también en otros chats; seguirá teniendo 900 mensajes."
+                + "porque todos están también en otros chats; seguirá teniendo 900 mensajes. "
+                + "La copia de WhatsApp sigue disponible, por lo que podrás volver a extraerlo "
+                + "con “Añadir al catálogo”."
         )
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 3),
+            UnifiedViewPresentation.deletionButtonTitle(
+                contributionCount: 3,
+                hasSourceBackup: true
+            ),
             "Borrar y actualizar la vista"
         )
     }
@@ -256,6 +283,7 @@ final class LibraryModelsTests: XCTestCase {
         let deletion = UnifiedViewPresentation.deletionMessage(
             chatName: "Familia",
             versionTitle: "Copia de junio",
+            hasSourceBackup: false,
             impact: ConversationRemovalMessageImpact(
                 contributionCount: 0,
                 existingMessageCount: 700,
@@ -264,11 +292,49 @@ final class LibraryModelsTests: XCTestCase {
                 resultingMessageCount: 0
             )
         )
-        XCTAssertTrue(deletion.contains("no forma parte de ninguna conversación"))
-        XCTAssertTrue(deletion.contains("definitivamente de la biblioteca"))
         XCTAssertEqual(
-            UnifiedViewPresentation.deletionButtonTitle(contributionCount: 0),
-            "Borrar chat"
+            deletion,
+            "Se borrará el chat guardado “Familia” procedente de “Copia de junio”. "
+                + "Sus mensajes y archivos se eliminarán definitivamente de la biblioteca. "
+                + "La copia de WhatsApp ya no está disponible. Si lo borras, no podrás "
+                + "recuperar este chat."
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionTitle(
+                contributionCount: 0,
+                hasSourceBackup: false
+            ),
+            "¿Borrar definitivamente este chat extraído?"
+        )
+        XCTAssertEqual(
+            UnifiedViewPresentation.deletionButtonTitle(
+                contributionCount: 0,
+                hasSourceBackup: false
+            ),
+            "Borrar definitivamente"
+        )
+    }
+
+    func testDeletingExtractedChatWithSourceBackupExplainsItCanBeRecovered() {
+        let deletion = UnifiedViewPresentation.deletionMessage(
+            chatName: "Familia",
+            versionTitle: "Copia de junio",
+            hasSourceBackup: true,
+            impact: ConversationRemovalMessageImpact(
+                contributionCount: 0,
+                existingMessageCount: 700,
+                sourceMessageCount: 700,
+                removedMessageCount: 700,
+                resultingMessageCount: 0
+            )
+        )
+
+        XCTAssertEqual(
+            deletion,
+            "Se borrará el chat guardado “Familia” procedente de “Copia de junio”. "
+                + "Sus mensajes y archivos se eliminarán de la biblioteca. La copia de "
+                + "WhatsApp sigue disponible, por lo que podrás volver a extraerlo con "
+                + "“Añadir al catálogo”."
         )
     }
 
