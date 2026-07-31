@@ -35,6 +35,7 @@ private enum SidebarContributionHighlight: Equatable {
 
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedVersionIDs: Set<String> = []
     @State private var expandedSourceVersionIDs: Set<String> = []
     @State private var expandedExtractedVersionIDs: Set<String> = []
@@ -44,6 +45,7 @@ struct ChatSidebarView: View {
     @State private var versionPendingDeletion: LibraryVersionSession?
     @State private var importedChatPendingDetachment: ImportedChatSidebarItem?
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
+    @State private var recentExtraction: ChatExtractionCompletion?
 
     var body: some View {
         storedCopyDeletionDialog
@@ -270,7 +272,46 @@ struct ChatSidebarView: View {
         .onChange(of: store.selectedConversationID, perform: updateImportedChatExpansion)
         .onChange(of: isImportedChatsExpanded, perform: collapseImportedChatDetails)
         .onChange(of: versionIDs, perform: updateExpandedVersionIDs)
+        .onChange(of: store.latestExtractionCompletion, perform: showExtractionCompletion)
         .onAppear(perform: initializeExpandedVersions)
+    }
+
+    private func showExtractionCompletion(_ completion: ChatExtractionCompletion?) {
+        guard let completion else { return }
+        let versionID = completion.selection.versionID
+
+        withAnimation(extractionClosingAnimation) {
+            expandedSourceVersionIDs.remove(versionID)
+        }
+
+        let openingDelay = reduceMotion ? 0 : 0.22
+        DispatchQueue.main.asyncAfter(deadline: .now() + openingDelay) {
+            guard store.latestExtractionCompletion?.id == completion.id else { return }
+            withAnimation(extractionAnimation) {
+                expandedVersionIDs.insert(versionID)
+                expandedExtractedVersionIDs.insert(versionID)
+                recentExtraction = completion
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
+                guard recentExtraction?.id == completion.id else { return }
+                withAnimation(extractionAnimation) {
+                    recentExtraction = nil
+                }
+            }
+        }
+    }
+
+    private var extractionClosingAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.12)
+            : .easeInOut(duration: 0.24)
+    }
+
+    private var extractionAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.18)
+            : .spring(response: 0.46, dampingFraction: 0.78)
     }
 
     private var sidebarList: some View {
@@ -292,6 +333,7 @@ struct ChatSidebarView: View {
         expandedExtractedVersionIDs.formIntersection(Set(ids))
         if expandedVersionIDs.isEmpty, let first = ids.first {
             expandedVersionIDs.insert(first)
+            expandedExtractedVersionIDs.insert(first)
         }
     }
 
@@ -320,6 +362,7 @@ struct ChatSidebarView: View {
     private func initializeExpandedVersions() {
         if let first = store.versions.first?.id {
             expandedVersionIDs.insert(first)
+            expandedExtractedVersionIDs.insert(first)
         }
         expandedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
         expandedExtractedVersionIDs.formUnion(store.highlightedChatIDs.map(\.versionID))
@@ -384,8 +427,6 @@ struct ChatSidebarView: View {
                     versionPendingDeletion = version
                 }
             }
-        } else {
-            MissingSourceBackupRow()
         }
 
         DisclosureGroup(isExpanded: extractedExpansionBinding(for: version.id)) {
@@ -513,6 +554,8 @@ struct ChatSidebarView: View {
             ? .sourceBackup(selection)
             : .extracted(selection)
         let isExtractedContext = context == .extracted
+        let isRecentlyExtracted = isExtractedContext
+            && recentExtraction?.selection == selection
         let isHighlighted = isExtractedContext && store.highlightedChatIDs.contains(selection)
         let contributedMessageCount = isExtractedContext
             && store.isStoredChatInConversation(selection)
@@ -535,6 +578,7 @@ struct ChatSidebarView: View {
             isInConversation: store.isStoredChatInConversation(selection),
             additionTargetsUnifiedView: store.additionTargetsUnifiedView(selection),
             isStoring: store.storingChatID == selection,
+            isRecentlyExtracted: isRecentlyExtracted,
             hasSourceBackup: version.hasSourceBackup,
             toggleExpansion: {
                 selectedChatLocation = selectedChatLocation == location ? nil : location
@@ -545,7 +589,37 @@ struct ChatSidebarView: View {
             deleteStoredChat: { store.prepareStoredCopyDeletion(selection) }
         )
         .tag(location)
-        .listRowBackground(highlight.color?.opacity(0.14) ?? Color.clear)
+        .listRowBackground(
+            chatRowBackground(
+                highlight: highlight,
+                isNewEntry: isExtractedContext && isRecentlyExtracted
+            )
+        )
+        .transition(
+            isExtractedContext && !reduceMotion
+                ? .move(edge: .top).combined(with: .opacity)
+                : .opacity
+        )
+    }
+
+    @ViewBuilder
+    private func chatRowBackground(
+        highlight: SidebarContributionHighlight,
+        isNewEntry: Bool
+    ) -> some View {
+        if isNewEntry {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.accentColor.opacity(0.16))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.32), lineWidth: 1)
+                }
+                .padding(.horizontal, 2)
+        } else if let color = highlight.color {
+            color.opacity(0.14)
+        } else {
+            Color.clear
+        }
     }
 
     private var sidebarHeader: some View {
@@ -645,7 +719,18 @@ struct ChatSidebarView: View {
     }
 
     private func expansionBinding(for id: String) -> Binding<Bool> {
-        expansionBinding(for: id, in: $expandedVersionIDs)
+        Binding(
+            get: { expandedVersionIDs.contains(id) },
+            set: { expanded in
+                if expanded {
+                    expandedVersionIDs.insert(id)
+                    expandedExtractedVersionIDs.insert(id)
+                } else {
+                    expandedVersionIDs.remove(id)
+                    expandedExtractedVersionIDs.remove(id)
+                }
+            }
+        )
     }
 
     private func sourceExpansionBinding(for id: String) -> Binding<Bool> {
@@ -1015,26 +1100,6 @@ private struct SourceBackupGroupRow: View {
     }
 }
 
-private struct MissingSourceBackupRow: View {
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "externaldrive.badge.xmark")
-                .foregroundStyle(.orange)
-                .frame(width: 17)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Copia de WhatsApp")
-                    .fontWeight(.medium)
-                Text("Eliminada · ya no se pueden extraer otros chats")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.vertical, 3)
-    }
-}
-
 private struct ExtractedChatsGroupRow: View {
     let count: Int
     let isStoring: Bool
@@ -1054,7 +1119,7 @@ private struct ExtractedChatsGroupRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Chats extraídos")
                     .fontWeight(.medium)
-                Text(count == 1 ? "1 chat conservado" : "\(count) chats conservados")
+                Text(count == 1 ? "1 chat extraído" : "\(count) chats extraídos")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1075,6 +1140,7 @@ private struct ChatSidebarRow: View {
     let isInConversation: Bool
     let additionTargetsUnifiedView: Bool
     let isStoring: Bool
+    let isRecentlyExtracted: Bool
     let hasSourceBackup: Bool
     let toggleExpansion: () -> Void
     let addToLibrary: () -> Void
@@ -1096,10 +1162,17 @@ private struct ChatSidebarRow: View {
 
                             Spacer(minLength: 4)
 
-                            Text(sizeDescription)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            if context == .extracted, isRecentlyExtracted {
+                                Label("Nuevo", systemImage: "checkmark.circle.fill")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.accentColor)
+                                    .transition(.scale.combined(with: .opacity))
+                            } else {
+                                Text(sizeDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
 
                         HStack(spacing: 4) {
@@ -1267,10 +1340,10 @@ private struct ChatSidebarRow: View {
                     : "Extraer este chat y añadirlo al catálogo"
             )
         case .extracted:
-            Label("También extraído · fuera del catálogo", systemImage: "archivebox")
+            Label("Extraído · fuera del catálogo", systemImage: "archivebox")
                 .foregroundStyle(.secondary)
         case .stored:
-            Label("También extraído · en el catálogo", systemImage: "checkmark")
+            Label("Extraído · en el catálogo", systemImage: "checkmark")
                 .foregroundStyle(.secondary)
         case .stale:
             Label(

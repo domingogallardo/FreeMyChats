@@ -8,6 +8,12 @@ private enum StoredContributionChange: Equatable {
     case delete
 }
 
+struct ChatExtractionCompletion: Equatable, Identifiable {
+    let id = UUID()
+    let selection: VersionChatID
+    let chatName: String
+}
+
 @MainActor
 final class FreeMyChatsStore: ObservableObject {
     static let defaultBackupPath = NSString(
@@ -46,6 +52,7 @@ final class FreeMyChatsStore: ObservableObject {
     @Published private(set) var storedCopyDeletionPreview: StoredCopyDeletionPreview?
     @Published private(set) var discoveryIssue: BackupDiscoveryIssue?
     @Published private(set) var importedBackupCleanupPrompt: ImportedIPhoneBackupCleanupPrompt?
+    @Published private(set) var latestExtractionCompletion: ChatExtractionCompletion?
     @Published var isShowingBackupImporter = false
 
     private let workQueue = DispatchQueue(
@@ -223,6 +230,7 @@ final class FreeMyChatsStore: ObservableObject {
         openConversationRequestID = nil
         discoveryIssue = nil
         importedBackupCleanupPrompt = nil
+        latestExtractionCompletion = nil
         isShowingBackupImporter = false
         UserDefaults.standard.removeObject(forKey: DefaultsKey.lastLibraryPath)
     }
@@ -1366,6 +1374,12 @@ final class FreeMyChatsStore: ObservableObject {
             chatDetails[selection] = .loaded(
                 firstMessageDate: stored.document.messages.first?.date
             )
+            if !rejectedDisplayState.isPhysicallyStored {
+                latestExtractionCompletion = ChatExtractionCompletion(
+                    selection: selection,
+                    chatName: chatName
+                )
+            }
         } else {
             storedChatStates[selection] = rejectedDisplayState
         }
@@ -1471,6 +1485,7 @@ final class FreeMyChatsStore: ObservableObject {
         chatDetails = [:]
         importedChatDetails = [:]
         detachedImportedChats = []
+        latestExtractionCompletion = nil
         existingConversationContributionCounts = [:]
         storedChatStates = Dictionary(uniqueKeysWithValues: newSession.versions.flatMap { version in
             version.chats.map { (VersionChatID(versionID: version.id, chatID: $0.id), .checking) }
