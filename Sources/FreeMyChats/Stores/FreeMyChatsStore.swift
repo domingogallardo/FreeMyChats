@@ -152,16 +152,6 @@ final class FreeMyChatsStore: ObservableObject {
         return localContributionMessageCounts[selection]
     }
 
-    func contributedMessageCount(for item: ImportedChatSidebarItem) -> Int? {
-        if let record = selectedConversation?.record,
-           record.importedContributions.contains(where: { $0.id == item.id }) {
-            return record.contributedMessageCountsByID[item.id]
-                ?? item.contribution.exclusiveMessageCount
-        }
-        return item.contribution.contributedMessageCount
-            ?? item.contribution.exclusiveMessageCount
-    }
-
     func readingPosition(for selection: ConversationArchiveID) -> Int? {
         guard let libraryURL = session?.paths.rootURL else { return nil }
         return readingPositionStore.messageID(for: selection, in: libraryURL)

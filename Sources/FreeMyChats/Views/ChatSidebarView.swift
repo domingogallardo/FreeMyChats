@@ -22,20 +22,6 @@ private enum ChatSidebarRowContext: Equatable {
     case extracted
 }
 
-private enum SidebarContributionHighlight: Equatable {
-    case none
-    case contributing
-    case redundant
-
-    var color: Color? {
-        switch self {
-        case .none: return nil
-        case .contributing: return .accentColor
-        case .redundant: return Color(nsColor: .systemGray)
-        }
-    }
-}
-
 private enum SidebarScrollTarget: Hashable {
     case top
 }
@@ -578,15 +564,10 @@ struct ChatSidebarView: View {
         let isExpanded = selectedChatLocation == location
         let isHighlighted = item.isInConversation
             && store.selectedConversationID == item.conversationID
-        let highlight: SidebarContributionHighlight = if isHighlighted {
-            store.contributedMessageCount(for: item) == 0 ? .redundant : .contributing
-        } else {
-            .none
-        }
         return ImportedChatSidebarRow(
             item: item,
             isExpanded: isExpanded,
-            highlight: highlight,
+            isConversationHighlighted: isHighlighted,
             detailsState: store.importedChatDetails[item.id],
             toggleExpansion: {
                 if isExpanded {
@@ -602,18 +583,9 @@ struct ChatSidebarView: View {
             delete: { importedChatPendingDeletion = item }
         )
         .tag(location)
-        .listRowBackground(importedChatRowBackground(highlight: highlight))
-    }
-
-    @ViewBuilder
-    private func importedChatRowBackground(
-        highlight: SidebarContributionHighlight
-    ) -> some View {
-        if let color = highlight.color {
-            color.opacity(0.14)
-        } else {
-            Color.clear
-        }
+        .listRowBackground(
+            isHighlighted ? Color.accentColor.opacity(0.14) : Color.clear
+        )
     }
 
     private func chatSidebarRow(
@@ -633,17 +605,12 @@ struct ChatSidebarView: View {
             && store.isStoredChatInConversation(selection)
             ? store.contributedMessageCount(for: selection)
             : nil
-        let highlight: SidebarContributionHighlight = if isHighlighted {
-            contributedMessageCount == 0 ? .redundant : .contributing
-        } else {
-            .none
-        }
         return ChatSidebarRow(
             chat: chat,
             photoURL: store.profilePhotoURL(for: chat, in: version),
             context: context,
             isExpanded: selectedChatLocation == location,
-            highlight: highlight,
+            isConversationHighlighted: isHighlighted,
             detailsState: store.chatDetails[selection],
             storedChatState: store.storedChatStates[selection] ?? .checking,
             contributedMessageCount: contributedMessageCount,
@@ -664,7 +631,7 @@ struct ChatSidebarView: View {
         .id(location)
         .listRowBackground(
             chatRowBackground(
-                highlight: highlight,
+                isConversationHighlighted: isHighlighted,
                 isNewEntry: isExtractedContext && isRecentlyExtracted
             )
         )
@@ -677,7 +644,7 @@ struct ChatSidebarView: View {
 
     @ViewBuilder
     private func chatRowBackground(
-        highlight: SidebarContributionHighlight,
+        isConversationHighlighted: Bool,
         isNewEntry: Bool
     ) -> some View {
         if isNewEntry {
@@ -688,8 +655,8 @@ struct ChatSidebarView: View {
                         .stroke(Color.accentColor.opacity(0.32), lineWidth: 1)
                 }
                 .padding(.horizontal, 2)
-        } else if let color = highlight.color {
-            color.opacity(0.14)
+        } else if isConversationHighlighted {
+            Color.accentColor.opacity(0.14)
         } else {
             Color.clear
         }
@@ -889,7 +856,7 @@ private struct ImportedChatsGroupRow: View {
 private struct ImportedChatSidebarRow: View {
     let item: ImportedChatSidebarItem
     let isExpanded: Bool
-    let highlight: SidebarContributionHighlight
+    let isConversationHighlighted: Bool
     let detailsState: ImportedChatDetailsState?
     let toggleExpansion: () -> Void
     let reveal: () -> Void
@@ -941,14 +908,14 @@ private struct ImportedChatSidebarRow: View {
         .padding(.leading, 18)
         .padding(.vertical, isExpanded ? 7 : 3)
         .overlay(alignment: .leading) {
-            if let color = highlight.color {
+            if isConversationHighlighted {
                 Capsule()
-                    .fill(color)
+                    .fill(Color.accentColor)
                     .frame(width: 3)
                     .padding(.vertical, 4)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: highlight)
+        .animation(.easeInOut(duration: 0.16), value: isConversationHighlighted)
     }
 
     private var expandedDetails: some View {
@@ -1207,7 +1174,7 @@ private struct ChatSidebarRow: View {
     let photoURL: URL?
     let context: ChatSidebarRowContext
     let isExpanded: Bool
-    let highlight: SidebarContributionHighlight
+    let isConversationHighlighted: Bool
     let detailsState: ChatDetailsState?
     let storedChatState: StoredChatDisplayState
     let contributedMessageCount: Int?
@@ -1274,14 +1241,14 @@ private struct ChatSidebarRow: View {
         .padding(.leading, 18)
         .padding(.vertical, isExpanded ? 7 : 3)
         .overlay(alignment: .leading) {
-            if let color = highlight.color {
+            if isConversationHighlighted {
                 Capsule()
-                    .fill(color)
+                    .fill(Color.accentColor)
                     .frame(width: 3)
                     .padding(.vertical, 4)
             }
         }
-        .animation(.easeInOut(duration: 0.16), value: highlight)
+        .animation(.easeInOut(duration: 0.16), value: isConversationHighlighted)
     }
 
     @ViewBuilder
