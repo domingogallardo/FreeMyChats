@@ -5,6 +5,67 @@ import XCTest
 @testable import FreeMyChats
 
 final class LibraryModelsTests: XCTestCase {
+    func testLegacyContributionCountsCreditSharedMessagesToExtractedChat() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let summary = try decoder.decode(
+            ChatInfo.self,
+            from: Data(
+                """
+                {
+                  "id": 224,
+                  "contactJid": "family@g.us",
+                  "name": "Family❤️",
+                  "numberMessages": 62370,
+                  "lastMessageDate": "2026-07-30T16:39:28Z",
+                  "chatType": "group",
+                  "isArchived": false,
+                  "mediaByteCount": 0
+                }
+                """.utf8
+            )
+        )
+        let importedID = "imported"
+        let extractedID = "extracted"
+        let record = ConversationArchiveRecord(
+            key: ConversationIdentityKey(chat: summary),
+            contributions: [
+                ConversationContribution(
+                    id: extractedID,
+                    source: VersionChatID(versionID: "latest", chatID: 224),
+                    storedAt: try XCTUnwrap(
+                        ISO8601DateFormatter().date(from: "2026-07-31T15:57:59Z")
+                    ),
+                    messageCount: 45_985,
+                    exclusiveMessageCount: 422
+                )
+            ],
+            importedContributions: [
+                ImportedConversationContribution(
+                    id: importedID,
+                    importedAt: try XCTUnwrap(
+                        ISO8601DateFormatter().date(from: "2026-07-28T12:15:05Z")
+                    ),
+                    packageID: UUID(),
+                    packageCreatedAt: Date(),
+                    producerName: "Free My Chats",
+                    producerVersion: "2.1.1",
+                    relativeDirectory: "conversation/imported",
+                    archiveSHA256: "archive",
+                    contentDigest: "content",
+                    displayName: "Family❤️",
+                    messageCount: 61_948,
+                    exclusiveMessageCount: 16_385
+                )
+            ],
+            summary: summary
+        )
+
+        XCTAssertEqual(record.contributedMessageCountsByID[extractedID], 45_985)
+        XCTAssertEqual(record.contributedMessageCountsByID[importedID], 16_385)
+        XCTAssertEqual(record.contributedMessageCountsByID.values.reduce(0, +), 62_370)
+    }
+
     func testConversationActionLabelsDifferentiateAddingDetachingAndDeleting() {
         XCTAssertEqual(
             UnifiedViewPresentation.additionActionTitle(addsToExistingConversation: false),

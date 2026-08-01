@@ -144,15 +144,22 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func contributedMessageCount(for selection: VersionChatID) -> Int? {
-        selectedConversation?.record.contributions.first {
-            $0.source == selection
-        }?.exclusiveMessageCount ?? localContributionMessageCounts[selection]
+        if let record = selectedConversation?.record,
+           let contribution = record.contributions.first(where: { $0.source == selection }) {
+            return record.contributedMessageCountsByID[contribution.id]
+                ?? contribution.exclusiveMessageCount
+        }
+        return localContributionMessageCounts[selection]
     }
 
     func contributedMessageCount(for item: ImportedChatSidebarItem) -> Int? {
-        selectedConversation?.record.importedContributions.first {
-            $0.id == item.id
-        }?.exclusiveMessageCount ?? item.contribution.exclusiveMessageCount
+        if let record = selectedConversation?.record,
+           record.importedContributions.contains(where: { $0.id == item.id }) {
+            return record.contributedMessageCountsByID[item.id]
+                ?? item.contribution.exclusiveMessageCount
+        }
+        return item.contribution.contributedMessageCount
+            ?? item.contribution.exclusiveMessageCount
     }
 
     func readingPosition(for selection: ConversationArchiveID) -> Int? {

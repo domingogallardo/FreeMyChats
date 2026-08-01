@@ -153,28 +153,32 @@ struct ConversationContribution: Codable, Equatable, Identifiable {
     let storedAt: Date
     let messageCount: Int?
     let exclusiveMessageCount: Int?
+    let contributedMessageCount: Int?
 
     init(
         id: String = UUID().uuidString.lowercased(),
         source: VersionChatID,
         storedAt: Date,
         messageCount: Int? = nil,
-        exclusiveMessageCount: Int? = nil
+        exclusiveMessageCount: Int? = nil,
+        contributedMessageCount: Int? = nil
     ) {
         self.id = id
         self.source = source
         self.storedAt = storedAt
         self.messageCount = messageCount
         self.exclusiveMessageCount = exclusiveMessageCount
+        self.contributedMessageCount = contributedMessageCount
     }
 
-    func withMessageCounts(total: Int, exclusive: Int) -> Self {
+    func withMessageCounts(total: Int, exclusive: Int, contributed: Int) -> Self {
         ConversationContribution(
             id: id,
             source: source,
             storedAt: storedAt,
             messageCount: total,
-            exclusiveMessageCount: exclusive
+            exclusiveMessageCount: exclusive,
+            contributedMessageCount: contributed
         )
     }
 }
@@ -193,6 +197,7 @@ struct ImportedConversationContribution: Codable, Equatable, Identifiable {
     let perspectiveHint: ConversationPerspectiveHint?
     let messageCount: Int?
     let exclusiveMessageCount: Int?
+    let contributedMessageCount: Int?
     let exclusiveMediaByteCount: Int64?
 
     init(
@@ -209,6 +214,7 @@ struct ImportedConversationContribution: Codable, Equatable, Identifiable {
         perspectiveHint: ConversationPerspectiveHint? = nil,
         messageCount: Int? = nil,
         exclusiveMessageCount: Int? = nil,
+        contributedMessageCount: Int? = nil,
         exclusiveMediaByteCount: Int64? = nil
     ) {
         self.id = id
@@ -224,10 +230,11 @@ struct ImportedConversationContribution: Codable, Equatable, Identifiable {
         self.perspectiveHint = perspectiveHint
         self.messageCount = messageCount
         self.exclusiveMessageCount = exclusiveMessageCount
+        self.contributedMessageCount = contributedMessageCount
         self.exclusiveMediaByteCount = exclusiveMediaByteCount
     }
 
-    func withImpact(_ impact: ConversationSourceImpact) -> Self {
+    func withImpact(_ impact: ConversationSourceImpact, contributedMessageCount: Int) -> Self {
         ImportedConversationContribution(
             id: id,
             importedAt: importedAt,
@@ -242,7 +249,28 @@ struct ImportedConversationContribution: Codable, Equatable, Identifiable {
             perspectiveHint: perspectiveHint,
             messageCount: impact.sourceMessageCount,
             exclusiveMessageCount: impact.exclusiveMessageCount,
+            contributedMessageCount: contributedMessageCount,
             exclusiveMediaByteCount: impact.exclusiveMediaByteCount
+        )
+    }
+
+    func withContributedMessageCount(_ count: Int) -> Self {
+        ImportedConversationContribution(
+            id: id,
+            importedAt: importedAt,
+            packageID: packageID,
+            packageCreatedAt: packageCreatedAt,
+            producerName: producerName,
+            producerVersion: producerVersion,
+            relativeDirectory: relativeDirectory,
+            archiveSHA256: archiveSHA256,
+            contentDigest: contentDigest,
+            displayName: displayName,
+            perspectiveHint: perspectiveHint,
+            messageCount: messageCount,
+            exclusiveMessageCount: exclusiveMessageCount,
+            contributedMessageCount: count,
+            exclusiveMediaByteCount: exclusiveMediaByteCount
         )
     }
 }
@@ -289,6 +317,48 @@ struct ConversationArchiveRecord: Codable, Identifiable {
 
     var totalContributionCount: Int {
         contributions.count + importedContributions.count
+    }
+
+    /// Number of materialized messages credited to each chat without duplicates.
+    ///
+    /// Unlike `exclusiveMessageCount`, these values form a partition of the
+    /// conversation. Extracted chats take precedence over imported chats, so
+    /// shared messages remain credited to the local WhatsApp copies.
+    var contributedMessageCountsByID: [String: Int] {
+        var persisted = Dictionary(
+            uniqueKeysWithValues: contributions.compactMap { contribution in
+                contribution.contributedMessageCount.map { (contribution.id, $0) }
+            } + importedContributions.compactMap { contribution in
+                contribution.contributedMessageCount.map { (contribution.id, $0) }
+            }
+        )
+        guard persisted.count != totalContributionCount else { return persisted }
+
+        let legacyLocalContributions = contributions.map {
+            (id: $0.id, includedAt: $0.storedAt, total: $0.messageCount)
+        }.sorted {
+            if $0.includedAt != $1.includedAt { return $0.includedAt < $1.includedAt }
+            return $0.id < $1.id
+        }
+        let legacyImportedContributions = importedContributions.map {
+            (id: $0.id, includedAt: $0.importedAt, total: $0.messageCount)
+        }.sorted {
+            if $0.includedAt != $1.includedAt { return $0.includedAt < $1.includedAt }
+            return $0.id < $1.id
+        }
+        let ordered = legacyLocalContributions + legacyImportedContributions
+
+        if ordered.count == 1, let total = ordered[0].total {
+            persisted[ordered[0].id] = total
+        } else if ordered.count == 2,
+                  let conversationTotal = summary?.numberMessages,
+                  let firstTotal = ordered[0].total {
+            // Schema-3 records did not persist attribution. With two sources it
+            // is recoverable exactly from the preferred source and their union.
+            persisted[ordered[0].id] = firstTotal
+            persisted[ordered[1].id] = max(0, conversationTotal - firstTotal)
+        }
+        return persisted
     }
 
     func newlyRedundantContributionCount(

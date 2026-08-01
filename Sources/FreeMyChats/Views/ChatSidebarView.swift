@@ -945,7 +945,8 @@ private struct ImportedChatSidebarRow: View {
                         Text("No está en ninguna conversación")
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                    } else if let messageCount = item.contribution.exclusiveMessageCount {
+                    } else if let messageCount = item.contribution.contributedMessageCount
+                        ?? item.contribution.exclusiveMessageCount {
                         Text(
                             UnifiedViewPresentation.contributionDescription(
                                 messageCount: messageCount

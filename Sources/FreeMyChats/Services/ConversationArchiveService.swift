@@ -1075,19 +1075,20 @@ enum ConversationArchiveService {
     ) throws -> [ConversationCatalogItem] {
         try records.map { record in
             let locations = try storageLocations(for: record, in: session)
+            var catalogRecord = record
             let chat: ChatInfo
             if let summary = record.summary {
                 chat = summary
             } else {
                 let archived = try openStoredConversation(record: record, in: session)
                 chat = archived.document.chat
-                var upgradedRecord = record
-                upgradedRecord.summary = chat
-                try encoder().encode(upgradedRecord).write(
+                catalogRecord.summary = chat
+                try encoder().encode(catalogRecord).write(
                     to: locations.recordURL,
                     options: .atomic
                 )
             }
+            let contributedMessageCountsByID = catalogRecord.contributedMessageCountsByID
             let photoURL = chat.photoFilename.map {
                 locations.mediaURL.appendingPathComponent($0)
             }.flatMap {
@@ -1097,15 +1098,21 @@ enum ConversationArchiveService {
                 id: record.id,
                 chat: chat,
                 updatedAt: record.updatedAt,
-                contributionSources: record.contributions.map(\.source),
+                contributionSources: catalogRecord.contributions.map(\.source),
                 localContributionMessageCounts: Dictionary(
-                    uniqueKeysWithValues: record.contributions.compactMap { contribution in
-                        contribution.exclusiveMessageCount.map {
+                    uniqueKeysWithValues: catalogRecord.contributions.compactMap { contribution in
+                        (contributedMessageCountsByID[contribution.id]
+                            ?? contribution.exclusiveMessageCount).map {
                             (contribution.source, $0)
                         }
                     }
                 ),
-                importedContributions: record.importedContributions,
+                importedContributions: catalogRecord.importedContributions.map { contribution in
+                    guard let count = contributedMessageCountsByID[contribution.id] else {
+                        return contribution
+                    }
+                    return contribution.withContributedMessageCount(count)
+                },
                 directoryURL: locations.directoryURL,
                 photoURL: photoURL
             )
@@ -1402,7 +1409,8 @@ enum ConversationArchiveService {
         let messageCount = stored.document.messages.count
         installedRecord.contributions[0] = installedRecord.contributions[0].withMessageCounts(
             total: messageCount,
-            exclusive: messageCount
+            exclusive: messageCount,
+            contributed: messageCount
         )
         installedRecord.summary = stored.document.chat
         try encoder().encode(installedRecord).write(
@@ -1507,6 +1515,7 @@ enum ConversationArchiveService {
         }
         let result: ConversationMaterializationResult
         let localMessageCountsByID: [String: ContributionMessageCounts]
+        let contributionMessageIDsByID: [String: Set<ArchiveMessageID>]
 
         if localSources.isEmpty, let importedTargetSource = importedSources.first {
             result = try ConversationCompositionEngine(policy: .conservativeDefault).compose(
@@ -1519,6 +1528,7 @@ enum ConversationArchiveService {
                 cancellation: cancellation
             )
             localMessageCountsByID = [:]
+            contributionMessageIDsByID = messageIDsBySourceID(result.sourceMappings)
         } else {
             let target = try compositionTarget(in: resolved)
             let localTargetSourceID = ConversationSourceID(rawValue: target.contribution.id)
@@ -1535,6 +1545,7 @@ enum ConversationArchiveService {
                     cancellation: cancellation
                 )
                 localMessageCountsByID = messageCountsBySourceID(result.sourceImpacts)
+                contributionMessageIDsByID = messageIDsBySourceID(result.sourceMappings)
             } else if localSources.count == 1 {
                 result = try ConversationCompositionEngine(policy: .conservativeDefault).compose(
                     sources: localSources + importedSources,
@@ -1546,6 +1557,7 @@ enum ConversationArchiveService {
                     cancellation: cancellation
                 )
                 localMessageCountsByID = messageCountsBySourceID(result.sourceImpacts)
+                contributionMessageIDsByID = messageIDsBySourceID(result.sourceMappings)
             } else {
                 let localTemporaryURL = session.paths.mergedChatsURL.appendingPathComponent(
                     ".combining-local-\(record.id.rawValue)-\(UUID().uuidString)",
@@ -1595,15 +1607,25 @@ enum ConversationArchiveService {
                     progress: progress,
                     cancellation: cancellation
                 )
-                localMessageCountsByID = try localMessageCounts(
+                contributionMessageIDsByID = try expandedMessageIDsBySourceID(
                     localResult: localResult,
                     finalResult: result,
                     combinedLocalSourceID: combinedLocalSourceID
+                )
+                localMessageCountsByID = try localMessageCounts(
+                    localResult: localResult,
+                    contributionMessageIDsByID: contributionMessageIDsByID
                 )
             }
         }
 
         let document = result.document
+        let contributedMessageCountsByID = try contributedMessageCounts(
+            for: record,
+            messageIDsByContributionID: contributionMessageIDsByID,
+            materializedMessageCount: document.messages.count,
+            materializedURL: result.directoryURL
+        )
         var installedRecord = record
         if installedRecord.contributions.isEmpty {
             let materializedKey = ConversationIdentityKey(chat: document.chat)
@@ -1623,7 +1645,8 @@ enum ConversationArchiveService {
             }
             return contribution.withMessageCounts(
                 total: counts.total,
-                exclusive: counts.exclusive
+                exclusive: counts.exclusive,
+                contributed: contributedMessageCountsByID[contribution.id] ?? 0
             )
         }
         installedRecord.importedContributions = record.importedContributions.map {
@@ -1631,7 +1654,10 @@ enum ConversationArchiveService {
             guard let impact = impactsByID[contribution.id] else {
                 return contribution
             }
-            return contribution.withImpact(impact)
+            return contribution.withImpact(
+                impact,
+                contributedMessageCount: contributedMessageCountsByID[contribution.id] ?? 0
+            )
         }
         try encoder().encode(installedRecord).write(
             to: temporaryURL.appendingPathComponent(recordFilename),
@@ -1808,11 +1834,95 @@ enum ConversationArchiveService {
         )
     }
 
+    private static func messageIDsBySourceID(
+        _ mappings: [ConversationSourceMapping]
+    ) -> [String: Set<ArchiveMessageID>] {
+        Dictionary(
+            uniqueKeysWithValues: mappings.map {
+                ($0.sourceID.rawValue, Set($0.sourceMessageIDs.values))
+            }
+        )
+    }
+
+    private static func contributedMessageCounts(
+        for record: ConversationArchiveRecord,
+        messageIDsByContributionID: [String: Set<ArchiveMessageID>],
+        materializedMessageCount: Int,
+        materializedURL: URL
+    ) throws -> [String: Int] {
+        let orderedLocalContributions = record.contributions.map {
+            (id: $0.id, includedAt: $0.storedAt)
+        }.sorted {
+            if $0.includedAt != $1.includedAt { return $0.includedAt < $1.includedAt }
+            return $0.id < $1.id
+        }
+        let orderedImportedContributions = record.importedContributions.map {
+            (id: $0.id, includedAt: $0.importedAt)
+        }.sorted {
+            if $0.includedAt != $1.includedAt { return $0.includedAt < $1.includedAt }
+            return $0.id < $1.id
+        }
+        let orderedContributions = orderedLocalContributions + orderedImportedContributions
+
+        var representedMessageIDs = Set<ArchiveMessageID>()
+        var countsByID: [String: Int] = [:]
+        for contribution in orderedContributions {
+            guard let messageIDs = messageIDsByContributionID[contribution.id] else {
+                throw ConversationCompositionError.invalidMaterializedOutput(
+                    url: materializedURL,
+                    reason: "A contribution mapping is missing."
+                )
+            }
+            countsByID[contribution.id] = messageIDs.subtracting(representedMessageIDs).count
+            representedMessageIDs.formUnion(messageIDs)
+        }
+        guard representedMessageIDs.count == materializedMessageCount else {
+            throw ConversationCompositionError.invalidMaterializedOutput(
+                url: materializedURL,
+                reason: "The contribution mappings do not cover the materialized conversation."
+            )
+        }
+        return countsByID
+    }
+
     private static func localMessageCounts(
+        localResult: ConversationMaterializationResult,
+        contributionMessageIDsByID: [String: Set<ArchiveMessageID>]
+    ) throws -> [String: ContributionMessageCounts] {
+        var ownerIDsByMessage: [ArchiveMessageID: Set<String>] = [:]
+        for (sourceID, messageIDs) in contributionMessageIDsByID {
+            for messageID in messageIDs {
+                ownerIDsByMessage[messageID, default: []].insert(sourceID)
+            }
+        }
+
+        var countsByID: [String: ContributionMessageCounts] = [:]
+        for impact in localResult.sourceImpacts {
+            guard let representedMessages = contributionMessageIDsByID[impact.sourceID.rawValue]
+            else {
+                throw ConversationCompositionError.invalidMaterializedOutput(
+                    url: localResult.directoryURL,
+                    reason: "A local contribution mapping is missing."
+                )
+            }
+            let exclusiveCount = representedMessages.reduce(into: 0) { count, messageID in
+                if ownerIDsByMessage[messageID]?.count == 1 {
+                    count += 1
+                }
+            }
+            countsByID[impact.sourceID.rawValue] = ContributionMessageCounts(
+                total: impact.sourceMessageCount,
+                exclusive: exclusiveCount
+            )
+        }
+        return countsByID
+    }
+
+    private static func expandedMessageIDsBySourceID(
         localResult: ConversationMaterializationResult,
         finalResult: ConversationMaterializationResult,
         combinedLocalSourceID: ConversationSourceID
-    ) throws -> [String: ContributionMessageCounts] {
+    ) throws -> [String: Set<ArchiveMessageID>] {
         guard let combinedMapping = finalResult.sourceMappings.first(where: {
             $0.sourceID == combinedLocalSourceID
         }) else {
@@ -1833,57 +1943,24 @@ enum ConversationArchiveService {
             finalIDByLocalID[localID] = finalID
         }
 
-        var ownerIDsByMessage: [ArchiveMessageID: Set<String>] = [:]
+        var messageIDsBySourceID: [String: Set<ArchiveMessageID>] = [:]
         for mapping in localResult.sourceMappings {
-            for localID in Set(mapping.sourceMessageIDs.values) {
-                guard let finalID = finalIDByLocalID[localID] else {
-                    throw ConversationCompositionError.invalidMaterializedOutput(
-                        url: finalResult.directoryURL,
-                        reason: "A local contribution message is missing from the final mapping."
-                    )
+            messageIDsBySourceID[mapping.sourceID.rawValue] = try Set(
+                mapping.sourceMessageIDs.values.map { localID in
+                    guard let finalID = finalIDByLocalID[localID] else {
+                        throw ConversationCompositionError.invalidMaterializedOutput(
+                            url: finalResult.directoryURL,
+                            reason: "A local contribution message is missing from the final mapping."
+                        )
+                    }
+                    return finalID
                 }
-                ownerIDsByMessage[finalID, default: []].insert(mapping.sourceID.rawValue)
-            }
-        }
-        for mapping in finalResult.sourceMappings where mapping.sourceID != combinedLocalSourceID {
-            for finalID in Set(mapping.sourceMessageIDs.values) {
-                ownerIDsByMessage[finalID, default: []].insert(mapping.sourceID.rawValue)
-            }
-        }
-
-        let localMappingsByID = Dictionary(
-            uniqueKeysWithValues: localResult.sourceMappings.map {
-                ($0.sourceID, $0)
-            }
-        )
-        var countsByID: [String: ContributionMessageCounts] = [:]
-        for impact in localResult.sourceImpacts {
-            guard let mapping = localMappingsByID[impact.sourceID] else {
-                throw ConversationCompositionError.invalidMaterializedOutput(
-                    url: localResult.directoryURL,
-                    reason: "A local contribution mapping is missing."
-                )
-            }
-            let representedMessages = try Set(mapping.sourceMessageIDs.values.map { localID in
-                guard let finalID = finalIDByLocalID[localID] else {
-                    throw ConversationCompositionError.invalidMaterializedOutput(
-                        url: finalResult.directoryURL,
-                        reason: "A local contribution message is missing from the final mapping."
-                    )
-                }
-                return finalID
-            })
-            let exclusiveCount = representedMessages.reduce(into: 0) { count, messageID in
-                if ownerIDsByMessage[messageID]?.count == 1 {
-                    count += 1
-                }
-            }
-            countsByID[impact.sourceID.rawValue] = ContributionMessageCounts(
-                total: impact.sourceMessageCount,
-                exclusive: exclusiveCount
             )
         }
-        return countsByID
+        for mapping in finalResult.sourceMappings where mapping.sourceID != combinedLocalSourceID {
+            messageIDsBySourceID[mapping.sourceID.rawValue] = Set(mapping.sourceMessageIDs.values)
+        }
+        return messageIDsBySourceID
     }
 
     /// Identifies the other participant of an individual conversation. This is

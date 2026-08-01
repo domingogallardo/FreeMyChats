@@ -58,6 +58,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
         XCTAssertEqual(opened.record.contributions.first?.messageCount, 1)
         XCTAssertEqual(opened.record.contributions.first?.exclusiveMessageCount, 1)
+        XCTAssertEqual(opened.record.contributions.first?.contributedMessageCount, 1)
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(
                 atPath: fixture.session.paths.mergedChatsURL.path
@@ -382,6 +383,18 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(result.addedMessageCount, 2)
         XCTAssertEqual(result.conversation.record.contributions.count, 1)
         XCTAssertEqual(result.conversation.record.importedContributions.count, 1)
+        XCTAssertEqual(
+            result.conversation.record.contributions.first?.contributedMessageCount,
+            3
+        )
+        XCTAssertEqual(result.importedContribution.contributedMessageCount, 2)
+        XCTAssertEqual(
+            result.conversation.record.contributions.compactMap(\.contributedMessageCount)
+                .reduce(0, +)
+                + result.conversation.record.importedContributions
+                    .compactMap(\.contributedMessageCount).reduce(0, +),
+            result.conversation.document.messages.count
+        )
         XCTAssertEqual(item.localContributionCount, 1)
         XCTAssertEqual(item.importedContributionCount, 1)
         XCTAssertEqual(reopened.document.messages.count, 5)
@@ -535,10 +548,13 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(result.conversation.record.importedContributions.count, 1)
         XCTAssertEqual(localContributions["local-group"]?.messageCount, 3)
         XCTAssertEqual(localContributions["local-group"]?.exclusiveMessageCount, 0)
+        XCTAssertEqual(localContributions["local-group"]?.contributedMessageCount, 3)
         XCTAssertEqual(localContributions["local-group-new"]?.messageCount, 1)
         XCTAssertEqual(localContributions["local-group-new"]?.exclusiveMessageCount, 1)
+        XCTAssertEqual(localContributions["local-group-new"]?.contributedMessageCount, 1)
         XCTAssertEqual(result.importedContribution.messageCount, 6)
         XCTAssertEqual(result.importedContribution.exclusiveMessageCount, 3)
+        XCTAssertEqual(result.importedContribution.contributedMessageCount, 3)
         XCTAssertTrue(
             result.conversation.document.messages.contains {
                 $0.message == "Exclusive future local"
@@ -877,6 +893,22 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(update.conversation.record.contributions.count, 2)
         XCTAssertEqual(update.conversation.record.importedContributions.count, 1)
         XCTAssertEqual(update.conversation.document.messages.count, 6)
+        XCTAssertEqual(
+            update.conversation.record.contributions.first {
+                $0.source.versionID == "local-old"
+            }?.contributedMessageCount,
+            3
+        )
+        XCTAssertEqual(
+            update.conversation.record.contributions.first {
+                $0.source.versionID == "local-new"
+            }?.contributedMessageCount,
+            1
+        )
+        XCTAssertEqual(
+            update.conversation.record.importedContributions.first?.contributedMessageCount,
+            2
+        )
         XCTAssertTrue(
             update.conversation.document.messages.contains {
                 $0.message == "Exclusive new local"
@@ -1306,10 +1338,17 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         XCTAssertEqual(contributions["a"]?.messageCount, 2)
         XCTAssertEqual(contributions["a"]?.exclusiveMessageCount, 1)
+        XCTAssertEqual(contributions["a"]?.contributedMessageCount, 2)
         XCTAssertEqual(contributions["b"]?.messageCount, 2)
         XCTAssertEqual(contributions["b"]?.exclusiveMessageCount, 0)
+        XCTAssertEqual(contributions["b"]?.contributedMessageCount, 1)
         XCTAssertEqual(contributions["c"]?.messageCount, 2)
         XCTAssertEqual(contributions["c"]?.exclusiveMessageCount, 1)
+        XCTAssertEqual(contributions["c"]?.contributedMessageCount, 1)
+        XCTAssertEqual(
+            contributions.values.compactMap(\.contributedMessageCount).reduce(0, +),
+            archived.document.messages.count
+        )
 
         let bImpact = try XCTUnwrap(ConversationArchiveService.storedRemovalMessageImpact(
             of: VersionChatID(versionID: "b", chatID: 7),
