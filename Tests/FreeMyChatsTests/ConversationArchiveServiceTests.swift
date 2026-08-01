@@ -447,6 +447,48 @@ final class ConversationArchiveServiceTests: XCTestCase {
         }
     }
 
+    func testImportedChatWithoutNewMessagesRemainsExtractedOutsideCatalog() throws {
+        let fixture = try makeLibrary(storedChats: [oppositeGroupStoredChats()[0]])
+        defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+        let version = try XCTUnwrap(fixture.session.version(id: "local-group"))
+        let chat = try XCTUnwrap(version.chats.first)
+        let stored = try version.storedChatStore.openChat(chatId: chat.id)
+        _ = try ConversationArchiveService.incorporate(
+            stored,
+            source: VersionChatID(versionID: version.id, chatID: chat.id),
+            context: ConversationArchiveService.prepareIncorporation(
+                for: chat,
+                in: version,
+                session: fixture.session
+            ),
+            in: fixture.session
+        )
+        let archiveURL = fixture.rootURL.appendingPathComponent("duplicate.fmcchat")
+        _ = try ConversationArchiveService.createPortableConversationArchive(
+            from: ConversationSource(
+                id: ConversationSourceID(rawValue: "duplicate"),
+                storedChat: stored
+            ),
+            producerVersion: "test",
+            destinationURL: archiveURL
+        )
+
+        let result = try ConversationArchiveService.importPortableConversationArchive(
+            at: archiveURL,
+            into: fixture.session
+        )
+        let detached = try ConversationArchiveService.detachedImportedChats(in: result.session)
+        let importedURL = result.session.paths.importedChatsURL.appendingPathComponent(
+            result.importedContribution.relativeDirectory
+        )
+
+        XCTAssertEqual(result.addedMessageCount, 0)
+        XCTAssertEqual(result.automaticallyRemovedContributionCount, 1)
+        XCTAssertTrue(result.conversation.record.importedContributions.isEmpty)
+        XCTAssertEqual(detached.map(\.id), [result.importedContribution.id])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: importedURL.path))
+    }
+
     func testImportsPortableGroupIntoItsExistingConversation() throws {
         let fixture = try makeLibrary(storedChats: oppositeGroupStoredChats())
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
@@ -1296,7 +1338,7 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertEqual(archived.record.contributions.count, 2)
     }
 
-    func testStoredContributionCountsReflectThreeStoredChats() throws {
+    func testFullyCoveredMiddleStoredChatStopsParticipating() throws {
         let fixture = try makeLibrary(
             storedChats: [
                 StoredChatFixture(
@@ -1336,6 +1378,8 @@ final class ConversationArchiveServiceTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
 
+        let bVersion = try XCTUnwrap(fixture.session.version(id: "b"))
+        let bStored = try bVersion.storedChatStore.openChat(chatId: 7)
         let item = try XCTUnwrap(incorporateAllStoredChats(in: fixture).first)
         let archived = try ConversationArchiveService.open(
             id: item.id,
@@ -1345,34 +1389,35 @@ final class ConversationArchiveServiceTests: XCTestCase {
             uniqueKeysWithValues: archived.record.contributions.map { ($0.source.versionID, $0) }
         )
         XCTAssertEqual(contributions["a"]?.messageCount, 2)
-        XCTAssertEqual(contributions["a"]?.exclusiveMessageCount, 1)
+        XCTAssertEqual(contributions["a"]?.exclusiveMessageCount, 2)
         XCTAssertEqual(contributions["a"]?.contributedMessageCount, 2)
-        XCTAssertEqual(contributions["b"]?.messageCount, 2)
-        XCTAssertEqual(contributions["b"]?.exclusiveMessageCount, 0)
-        XCTAssertEqual(contributions["b"]?.contributedMessageCount, 1)
+        XCTAssertNil(contributions["b"])
         XCTAssertEqual(contributions["c"]?.messageCount, 2)
-        XCTAssertEqual(contributions["c"]?.exclusiveMessageCount, 1)
-        XCTAssertEqual(contributions["c"]?.contributedMessageCount, 1)
+        XCTAssertEqual(contributions["c"]?.exclusiveMessageCount, 2)
+        XCTAssertEqual(contributions["c"]?.contributedMessageCount, 2)
         XCTAssertEqual(
             contributions.values.compactMap(\.contributedMessageCount).reduce(0, +),
             archived.document.messages.count
         )
 
-        let bImpact = try XCTUnwrap(ConversationArchiveService.storedRemovalMessageImpact(
+        XCTAssertThrowsError(try ConversationArchiveService.storedRemovalMessageImpact(
             of: VersionChatID(versionID: "b", chatID: 7),
             in: fixture.session
         ))
-        XCTAssertEqual(bImpact.sourceMessageCount, 2)
-        XCTAssertEqual(bImpact.removedMessageCount, 0)
-        XCTAssertEqual(bImpact.resultingMessageCount, 4)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: bStored.directoryURL.appendingPathComponent("archive.json").path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: bStored.directoryURL.appendingPathComponent("chat.json").path
+        ))
 
         let cImpact = try XCTUnwrap(ConversationArchiveService.storedRemovalMessageImpact(
             of: VersionChatID(versionID: "c", chatID: 7),
             in: fixture.session
         ))
         XCTAssertEqual(cImpact.sourceMessageCount, 2)
-        XCTAssertEqual(cImpact.removedMessageCount, 1)
-        XCTAssertEqual(cImpact.resultingMessageCount, 3)
+        XCTAssertEqual(cImpact.removedMessageCount, 2)
+        XCTAssertEqual(cImpact.resultingMessageCount, 2)
     }
 
     func testAddingSupersetChatAutomaticallyRemovesPreviousChatFromCatalog() throws {
@@ -1550,6 +1595,11 @@ final class ConversationArchiveServiceTests: XCTestCase {
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: duplicateStored.directoryURL.appendingPathComponent("archive.json").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: duplicateStored.directoryURL.appendingPathComponent("chat.json").path
             )
         )
         XCTAssertTrue(

@@ -746,13 +746,23 @@ final class FreeMyChatsStore: ObservableObject {
                         ? "1 mensaje nuevo"
                         : "\(added.formatted()) mensajes nuevos"
                     self.informationEmphasisMessage = UnifiedViewPresentation
-                        .redundantPreviousVersionsNotice(
-                            count: imported.newlyRedundantContributionCount
+                        .automaticallyRemovedPreviousChatsNotice(
+                            count: imported.automaticallyRemovedContributionCount
                         )
-                    self.informationMessage = "Se ha importado “"
-                        + imported.importedContribution.displayName
-                        + "” y se ha creado la nueva Vista unificada con "
-                        + addedDescription + "."
+                    if imported.conversation.record.importedContributions.contains(where: {
+                        $0.id == imported.importedContribution.id
+                    }) {
+                        self.informationMessage = "Se ha importado “"
+                            + imported.importedContribution.displayName
+                            + "” y se ha creado la nueva Vista unificada con "
+                            + addedDescription + "."
+                    } else {
+                        self.informationEmphasisMessage = nil
+                        self.informationMessage = UnifiedViewPresentation
+                            .noNewMessagesAdditionNotice(
+                                chatName: imported.importedContribution.displayName
+                            )
+                    }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
                 }
@@ -884,13 +894,23 @@ final class FreeMyChatsStore: ObservableObject {
                     self.refreshConversationCatalog(in: session)
                     let count = incorporation.addedMessageCount
                     self.informationEmphasisMessage = UnifiedViewPresentation
-                        .redundantPreviousVersionsNotice(
-                            count: incorporation.newlyRedundantContributionCount
+                        .automaticallyRemovedPreviousChatsNotice(
+                            count: incorporation.automaticallyRemovedContributionCount
                         )
-                    self.informationMessage = count == 1
-                        ? "Se ha añadido 1 mensaje nuevo a “\(item.conversationName)”."
-                        : "Se han añadido \(count.formatted()) mensajes nuevos a "
-                            + "“\(item.conversationName)”."
+                    if incorporation.conversation.record.importedContributions.contains(where: {
+                        $0.id == item.id
+                    }) {
+                        self.informationMessage = count == 1
+                            ? "Se ha añadido 1 mensaje nuevo a “\(item.conversationName)”."
+                            : "Se han añadido \(count.formatted()) mensajes nuevos a "
+                                + "“\(item.conversationName)”."
+                    } else {
+                        self.informationEmphasisMessage = nil
+                        self.informationMessage = UnifiedViewPresentation
+                            .noNewMessagesAdditionNotice(
+                                chatName: item.contribution.displayName
+                            )
+                    }
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
                 }
@@ -1246,10 +1266,6 @@ final class FreeMyChatsStore: ObservableObject {
                     let sourceWasAlreadyIncluded = context.record?.contributions.contains {
                         $0.source == selection
                     } ?? false
-                    if !update.incorporatedSource,
-                       !previousDisplayState.isPhysicallyStored {
-                        _ = try LibraryService.deleteStoredChat(selection, from: session)
-                    }
                     return (
                         stored,
                         update,
@@ -1381,7 +1397,7 @@ final class FreeMyChatsStore: ObservableObject {
                 )
             }
         } else {
-            storedChatStates[selection] = rejectedDisplayState
+            storedChatStates[selection] = .extracted(stored.document.storedAt)
         }
         if let session {
             refreshConversationCatalog(in: session)

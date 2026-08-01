@@ -187,31 +187,18 @@ enum UnifiedViewPresentation {
         case 0:
             return nil
         case 1:
-            return "El chat anterior se ha eliminado automáticamente del catálogo porque "
-                + "ya no aporta ningún mensaje."
+            return "Un chat ha dejado de participar porque ya no aporta mensajes. "
+                + "Se conserva como chat extraído y puedes volver a añadirlo manualmente."
         default:
-            return "\(count.formatted()) chats anteriores se han eliminado automáticamente "
-                + "del catálogo porque ya no aportan ningún mensaje."
+            return "\(count.formatted()) chats han dejado de participar porque ya no aportan "
+                + "mensajes. Se conservan como chats extraídos y puedes volver a añadirlos "
+                + "manualmente."
         }
     }
 
     static func noNewMessagesAdditionNotice(chatName: String) -> String {
         "“\(chatName)” no se ha añadido al catálogo porque no aporta ningún mensaje nuevo "
-            + "a la conversación."
-    }
-
-    static func redundantPreviousVersionsNotice(count: Int) -> String? {
-        switch count {
-        case 0:
-            return nil
-        case 1:
-            return "Una versión anterior ha dejado de aportar mensajes. Puedes eliminarla "
-                + "del catálogo sin que desaparezca ningún mensaje de la Vista unificada."
-        default:
-            return "\(count.formatted()) versiones anteriores han dejado de aportar mensajes. "
-                + "Puedes eliminarlas del catálogo sin que desaparezca ningún mensaje de la "
-                + "Vista unificada."
-        }
+            + "a la conversación. Se conserva como chat extraído."
     }
 
     private static func removalImpactMessage(

@@ -436,76 +436,18 @@ final class LibraryModelsTests: XCTestCase {
         )
         XCTAssertEqual(
             UnifiedViewPresentation.automaticallyRemovedPreviousChatsNotice(count: 1),
-            "El chat anterior se ha eliminado automáticamente del catálogo porque ya no "
-                + "aporta ningún mensaje."
+            "Un chat ha dejado de participar porque ya no aporta mensajes. Se conserva "
+                + "como chat extraído y puedes volver a añadirlo manualmente."
         )
         XCTAssertEqual(
             UnifiedViewPresentation.automaticallyRemovedPreviousChatsNotice(count: 2),
-            "2 chats anteriores se han eliminado automáticamente del catálogo porque ya no "
-                + "aportan ningún mensaje."
+            "2 chats han dejado de participar porque ya no aportan mensajes. Se conservan "
+                + "como chats extraídos y puedes volver a añadirlos manualmente."
         )
         XCTAssertEqual(
             UnifiedViewPresentation.noNewMessagesAdditionNotice(chatName: "Familia"),
             "“Familia” no se ha añadido al catálogo porque no aporta ningún mensaje nuevo "
-                + "a la conversación."
-        )
-    }
-
-    func testConversationRecordDetectsExistingContributionsThatBecomeRedundant() {
-        let first = VersionChatID(versionID: "old", chatID: 7)
-        let second = VersionChatID(versionID: "current", chatID: 7)
-        let incoming = VersionChatID(versionID: "new", chatID: 7)
-        let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let key = ConversationIdentityKey(chatType: .group, contactJID: "family@g.us")
-        let previous = ConversationArchiveRecord(
-            key: key,
-            contributions: [
-                ConversationContribution(
-                    id: "first",
-                    source: first,
-                    storedAt: date,
-                    messageCount: 10,
-                    exclusiveMessageCount: 3
-                ),
-                ConversationContribution(
-                    id: "second",
-                    source: second,
-                    storedAt: date,
-                    messageCount: 20,
-                    exclusiveMessageCount: 7
-                )
-            ]
-        )
-        let updated = ConversationArchiveRecord(
-            key: key,
-            contributions: [
-                ConversationContribution(
-                    id: "first",
-                    source: first,
-                    storedAt: date,
-                    messageCount: 10,
-                    exclusiveMessageCount: 0
-                ),
-                ConversationContribution(
-                    id: "second",
-                    source: second,
-                    storedAt: date,
-                    messageCount: 20,
-                    exclusiveMessageCount: 5
-                ),
-                ConversationContribution(
-                    id: "incoming",
-                    source: incoming,
-                    storedAt: date,
-                    messageCount: 30,
-                    exclusiveMessageCount: 0
-                )
-            ]
-        )
-
-        XCTAssertEqual(
-            updated.newlyRedundantContributionCount(comparedTo: previous),
-            1
+                + "a la conversación. Se conserva como chat extraído."
         )
     }
 

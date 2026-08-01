@@ -74,7 +74,7 @@ struct PortableConversationImportResult {
     let conversation: ArchivedConversation
     let importedContribution: ImportedConversationContribution
     let addedMessageCount: Int
-    let newlyRedundantContributionCount: Int
+    let automaticallyRemovedContributionCount: Int
 }
 
 struct ImportedConversationDetachment {
@@ -85,7 +85,7 @@ struct ImportedConversationDetachment {
 struct ImportedConversationIncorporation {
     let conversation: ArchivedConversation
     let addedMessageCount: Int
-    let newlyRedundantContributionCount: Int
+    let automaticallyRemovedContributionCount: Int
 }
 
 enum ConversationArchiveService {
@@ -288,12 +288,20 @@ enum ConversationArchiveService {
             if previousManifest.schemaVersion != upgradedManifest.schemaVersion {
                 try LibraryService.write(upgradedManifest, to: session.paths.manifestURL)
             }
-            let conversation = try store(
+            let installedConversation = try store(
                 record: record,
                 in: upgradedSession,
                 progress: progress,
                 cancellation: cancellation
             )
+            let pruning = try removeNonContributingChats(
+                from: installedConversation,
+                comparedTo: matchedRecord,
+                in: upgradedSession,
+                progress: progress,
+                cancellation: cancellation
+            )
+            let conversation = pruning.conversation
             let installedContribution = conversation.record.importedContributions.first {
                 $0.id == importID
             } ?? contribution
@@ -305,8 +313,7 @@ enum ConversationArchiveService {
                     0,
                     conversation.document.messages.count - previousMessageCount
                 ),
-                newlyRedundantContributionCount: conversation.record
-                    .newlyRedundantContributionCount(comparedTo: matchedRecord)
+                automaticallyRemovedContributionCount: pruning.removedCount
             )
         } catch {
             try? fileManager.removeItem(at: finalImportURL)
@@ -567,9 +574,10 @@ enum ConversationArchiveService {
 
         let pruning: (conversation: ArchivedConversation, removedCount: Int)
         do {
-            pruning = try removeNewlyRedundantPreviousContributions(
+            pruning = try removeNonContributingChats(
                 from: installedConversation,
                 comparedTo: context.record,
+                removeCoveredPreviousLocalChats: true,
                 in: session,
                 progress: progress
             )
@@ -585,7 +593,9 @@ enum ConversationArchiveService {
             conversation: conversation,
             addedMessageCount: addedMessageCount,
             automaticallyRemovedContributionCount: pruning.removedCount,
-            incorporatedSource: true
+            incorporatedSource: conversation.record.contributions.contains {
+                $0.source == source
+            }
         )
     }
 
@@ -955,72 +965,71 @@ enum ConversationArchiveService {
         record.importedContributions.append(registration.contribution)
         record.markCurrentSchema()
         record.updatedAt = Date()
-        let conversation = try store(
+        let installedConversation = try store(
             record: record,
             in: session,
             progress: progress,
             cancellation: cancellation
         )
         try? removeDetachedImportedRegistration(id: importID, in: session)
+        let pruning = try removeNonContributingChats(
+            from: installedConversation,
+            comparedTo: existingRecord,
+            in: session,
+            progress: progress,
+            cancellation: cancellation
+        )
+        let conversation = pruning.conversation
         return ImportedConversationIncorporation(
             conversation: conversation,
             addedMessageCount: max(
                 0,
                 conversation.document.messages.count - previousMessageCount
             ),
-            newlyRedundantContributionCount: conversation.record
-                .newlyRedundantContributionCount(comparedTo: existingRecord)
+            automaticallyRemovedContributionCount: pruning.removedCount
         )
     }
 
-    private static func removeNewlyRedundantPreviousContributions(
+    private static func removeNonContributingChats(
         from conversation: ArchivedConversation,
         comparedTo previousRecord: ConversationArchiveRecord?,
+        removeCoveredPreviousLocalChats: Bool = false,
         in session: LibrarySession,
         progress: WABackupProgressHandler? = nil,
         cancellation: WABackupCancellationHandler? = nil
     ) throws -> (conversation: ArchivedConversation, removedCount: Int) {
-        guard let previousRecord,
-              previousRecord.totalContributionCount == 1 else {
+        let counts = conversation.record.contributedMessageCountsByID
+        var localIDs = Set(conversation.record.contributions.compactMap {
+            counts[$0.id] == 0 ? $0.id : nil
+        })
+        let importedIDs = Set(conversation.record.importedContributions.compactMap {
+            counts[$0.id] == 0 ? $0.id : nil
+        })
+
+        // A newer local extraction can fully cover any earlier local copy,
+        // even when attribution order still credits messages to that copy.
+        if removeCoveredPreviousLocalChats,
+           let previousRecord {
+            for contribution in previousRecord.contributions
+            where contribution.exclusiveMessageCount.map({ $0 > 0 }) == true {
+                if conversation.record.contributions.first(where: {
+                    $0.id == contribution.id
+                })?.exclusiveMessageCount == 0 {
+                    localIDs.insert(contribution.id)
+                }
+            }
+        }
+
+        let removalCount = localIDs.count + importedIDs.count
+        guard removalCount > 0,
+              removalCount < conversation.record.totalContributionCount else {
             return (conversation, 0)
         }
 
-        let previouslyContributingLocalIDs: Set<String> = Set(
-            previousRecord.contributions.compactMap { contribution in
-                guard let count = contribution.exclusiveMessageCount, count > 0 else {
-                    return nil
-                }
-                return contribution.id
-            }
-        )
-        let localSources: [VersionChatID] = conversation.record.contributions.compactMap {
-            contribution in
-            guard previouslyContributingLocalIDs.contains(contribution.id),
-                  contribution.exclusiveMessageCount == 0 else {
-                return nil
-            }
-            return contribution.source
-        }
-        let previouslyContributingImportedIDs: Set<String> = Set(
-            previousRecord.importedContributions.compactMap { contribution in
-                guard let count = contribution.exclusiveMessageCount, count > 0 else {
-                    return nil
-                }
-                return contribution.id
-            }
-        )
-        let importedIDs: [String] = conversation.record.importedContributions.compactMap {
-            contribution in
-            guard previouslyContributingImportedIDs.contains(contribution.id),
-                  contribution.exclusiveMessageCount == 0 else {
-                return nil
-            }
-            return contribution.id
-        }
-
         var currentConversation = conversation
-        var removedCount = 0
-        for source in localSources {
+        for source in conversation.record.contributions.compactMap({
+            localIDs.contains($0.id) ? $0.source : nil
+        }) {
             let detachment = try detachContribution(
                 source: source,
                 from: session,
@@ -1033,9 +1042,10 @@ enum ConversationArchiveService {
                 )
             }
             currentConversation = rebuilt
-            removedCount += 1
         }
-        for importID in importedIDs {
+        for importID in conversation.record.importedContributions.compactMap({
+            importedIDs.contains($0.id) ? $0.id : nil
+        }) {
             let detachment = try detachImportedContribution(
                 id: importID,
                 from: session,
@@ -1049,9 +1059,8 @@ enum ConversationArchiveService {
                 )
             }
             currentConversation = rebuilt
-            removedCount += 1
         }
-        return (currentConversation, removedCount)
+        return (currentConversation, removalCount)
     }
 
     static func deleteDetachedImportedContribution(
