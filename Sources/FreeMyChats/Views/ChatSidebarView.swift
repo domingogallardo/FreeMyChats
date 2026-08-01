@@ -33,6 +33,10 @@ private enum SidebarContributionHighlight: Equatable {
     }
 }
 
+private enum SidebarScrollTarget: Hashable {
+    case top
+}
+
 struct ChatSidebarView: View {
     @ObservedObject var store: FreeMyChatsStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -268,8 +272,8 @@ struct ChatSidebarView: View {
         }
         .onChange(of: selectedChatLocation, perform: selectChatLocation)
         .onChange(of: store.selectedChatID, perform: selectedChatDidChange)
-        .onChange(of: store.highlightedChatIDs, perform: updateExpandedVersions)
-        .onChange(of: store.selectedConversationID, perform: updateImportedChatExpansion)
+        .onChange(of: store.highlightedChatIDs, perform: updateConversationExpansion)
+        .onChange(of: store.selectedConversationID, perform: updateConversationExpansion)
         .onChange(of: isImportedChatsExpanded, perform: collapseImportedChatDetails)
         .onChange(of: versionIDs, perform: updateExpandedVersionIDs)
         .onChange(of: store.latestExtractionCompletion, perform: showExtractionCompletion)
@@ -315,12 +319,31 @@ struct ChatSidebarView: View {
     }
 
     private var sidebarList: some View {
-        List(selection: $selectedChatLocation) {
-            importedChatsSection
-            backupVersionsSection
+        ScrollViewReader { proxy in
+            List(selection: $selectedChatLocation) {
+                importedChatsSection
+                    .id(SidebarScrollTarget.top)
+                backupVersionsSection
+            }
+            .listStyle(.sidebar)
+            .disabled(store.operation != nil)
+            .onChange(of: store.selectedConversationID) { _ in
+                scrollSidebarToTop(using: proxy)
+            }
         }
-        .listStyle(.sidebar)
-        .disabled(store.operation != nil)
+    }
+
+    private func scrollSidebarToTop(using proxy: ScrollViewProxy) {
+        // Wait until disclosure groups have adopted their new expansion state.
+        DispatchQueue.main.async {
+            if reduceMotion {
+                proxy.scrollTo(SidebarScrollTarget.top, anchor: .top)
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(SidebarScrollTarget.top, anchor: .top)
+                }
+            }
+        }
     }
 
     private var versionIDs: [String] {
@@ -337,20 +360,46 @@ struct ChatSidebarView: View {
         }
     }
 
-    private func updateExpandedVersions(_ chatIDs: Set<VersionChatID>) {
-        let versionIDs = chatIDs.map(\.versionID)
-        expandedVersionIDs.formUnion(versionIDs)
-        expandedExtractedVersionIDs.formUnion(versionIDs)
+    private func updateConversationExpansion(_ chatIDs: Set<VersionChatID>) {
+        guard let conversationID = store.selectedConversationID else { return }
+        focusSidebar(on: conversationID, highlightedChatIDs: chatIDs)
     }
 
-    private func updateImportedChatExpansion(_ conversationID: ConversationArchiveID?) {
-        guard let conversationID,
-              store.importedChats.contains(where: {
-                  $0.isInConversation && $0.conversationID == conversationID
-              }) else {
+    private func updateConversationExpansion(_ conversationID: ConversationArchiveID?) {
+        guard let conversationID else {
+            collapseAllSidebarLevels()
             return
         }
-        isImportedChatsExpanded = true
+        focusSidebar(on: conversationID, highlightedChatIDs: store.highlightedChatIDs)
+    }
+
+    private func focusSidebar(
+        on conversationID: ConversationArchiveID,
+        highlightedChatIDs: Set<VersionChatID>
+    ) {
+        // Highlighted IDs contain every stored contribution, including the gray
+        // contributions that add zero exclusive messages to the unified view.
+        let contributingVersionIDs = Set(highlightedChatIDs.map(\.versionID))
+        expandedVersionIDs = contributingVersionIDs
+        expandedSourceVersionIDs = []
+        expandedExtractedVersionIDs = contributingVersionIDs
+        isImportedChatsExpanded = store.importedChats.contains {
+            $0.isInConversation && $0.conversationID == conversationID
+        }
+        collapseExpandedChatDetails()
+    }
+
+    private func collapseAllSidebarLevels() {
+        expandedVersionIDs = []
+        expandedSourceVersionIDs = []
+        expandedExtractedVersionIDs = []
+        isImportedChatsExpanded = false
+        collapseExpandedChatDetails()
+    }
+
+    private func collapseExpandedChatDetails() {
+        selectedChatLocation = nil
+        expandedImportedChatID = nil
     }
 
     private func collapseImportedChatDetails(_ isExpanded: Bool) {
