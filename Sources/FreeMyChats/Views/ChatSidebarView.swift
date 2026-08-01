@@ -3,11 +3,14 @@ import SwiftUI
 import SwiftWABackupAPI
 
 private enum SidebarChatLocation: Hashable {
+    case imported(String)
     case sourceBackup(VersionChatID)
     case extracted(VersionChatID)
 
-    var selection: VersionChatID {
+    var selection: VersionChatID? {
         switch self {
+        case .imported:
+            return nil
         case .sourceBackup(let selection), .extracted(let selection):
             return selection
         }
@@ -45,7 +48,6 @@ struct ChatSidebarView: View {
     @State private var expandedExtractedVersionIDs: Set<String> = []
     @State private var selectedChatLocation: SidebarChatLocation?
     @State private var isImportedChatsExpanded = false
-    @State private var expandedImportedChatID: String?
     @State private var versionPendingDeletion: LibraryVersionSession?
     @State private var importedChatPendingDetachment: ImportedChatSidebarItem?
     @State private var importedChatPendingDeletion: ImportedChatSidebarItem?
@@ -294,6 +296,7 @@ struct ChatSidebarView: View {
             withAnimation(extractionAnimation) {
                 expandedVersionIDs.insert(versionID)
                 expandedExtractedVersionIDs.insert(versionID)
+                selectedChatLocation = .extracted(completion.selection)
                 recentExtraction = completion
             }
 
@@ -330,6 +333,9 @@ struct ChatSidebarView: View {
             .onChange(of: store.selectedConversationID) { _ in
                 scrollSidebarToTop(using: proxy)
             }
+            .onChange(of: recentExtraction) { completion in
+                scrollSidebarToRecentExtraction(completion, using: proxy)
+            }
         }
     }
 
@@ -341,6 +347,27 @@ struct ChatSidebarView: View {
             } else {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     proxy.scrollTo(SidebarScrollTarget.top, anchor: .top)
+                }
+            }
+        }
+    }
+
+    private func scrollSidebarToRecentExtraction(
+        _ completion: ChatExtractionCompletion?,
+        using proxy: ScrollViewProxy
+    ) {
+        guard let completion else { return }
+        let target = SidebarChatLocation.extracted(completion.selection)
+
+        // Wait until the disclosure groups and the expanded chat row have
+        // adopted their final layout before centering the complete panel.
+        DispatchQueue.main.async {
+            guard recentExtraction?.id == completion.id else { return }
+            if reduceMotion {
+                proxy.scrollTo(target, anchor: .center)
+            } else {
+                withAnimation(.easeInOut(duration: 0.24)) {
+                    proxy.scrollTo(target, anchor: .center)
                 }
             }
         }
@@ -399,12 +426,11 @@ struct ChatSidebarView: View {
 
     private func collapseExpandedChatDetails() {
         selectedChatLocation = nil
-        expandedImportedChatID = nil
     }
 
     private func collapseImportedChatDetails(_ isExpanded: Bool) {
-        if isExpanded {
-            expandedImportedChatID = nil
+        if isExpanded, case .imported = selectedChatLocation {
+            selectedChatLocation = nil
         }
     }
 
@@ -424,6 +450,9 @@ struct ChatSidebarView: View {
     private func selectedChatDidChange(_ selection: VersionChatID?) {
         store.selectChat(selection)
         if selection == nil {
+            if case .imported = selectedChatLocation {
+                return
+            }
             selectedChatLocation = nil
         }
     }
@@ -545,7 +574,8 @@ struct ChatSidebarView: View {
     }
 
     private func importedChatSidebarRow(_ item: ImportedChatSidebarItem) -> some View {
-        let isExpanded = expandedImportedChatID == item.id
+        let location = SidebarChatLocation.imported(item.id)
+        let isExpanded = selectedChatLocation == location
         let isHighlighted = item.isInConversation
             && store.selectedConversationID == item.conversationID
         let highlight: SidebarContributionHighlight = if isHighlighted {
@@ -560,9 +590,9 @@ struct ChatSidebarView: View {
             detailsState: store.importedChatDetails[item.id],
             toggleExpansion: {
                 if isExpanded {
-                    expandedImportedChatID = nil
+                    selectedChatLocation = nil
                 } else {
-                    expandedImportedChatID = item.id
+                    selectedChatLocation = location
                     store.loadImportedChatDetails(item)
                 }
             },
@@ -571,22 +601,15 @@ struct ChatSidebarView: View {
             detachFromConversation: { importedChatPendingDetachment = item },
             delete: { importedChatPendingDeletion = item }
         )
-        .listRowBackground(importedChatRowBackground(
-            isExpanded: isExpanded,
-            highlight: highlight
-        ))
+        .tag(location)
+        .listRowBackground(importedChatRowBackground(highlight: highlight))
     }
 
     @ViewBuilder
     private func importedChatRowBackground(
-        isExpanded: Bool,
         highlight: SidebarContributionHighlight
     ) -> some View {
-        if isExpanded {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
-                .padding(.horizontal, 2)
-        } else if let color = highlight.color {
+        if let color = highlight.color {
             color.opacity(0.14)
         } else {
             Color.clear
@@ -638,6 +661,7 @@ struct ChatSidebarView: View {
             deleteStoredChat: { store.prepareStoredCopyDeletion(selection) }
         )
         .tag(location)
+        .id(location)
         .listRowBackground(
             chatRowBackground(
                 highlight: highlight,
@@ -1072,7 +1096,7 @@ private struct BackupVersionRow: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "clock.arrow.circlepath")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(version.hasSourceBackup ? Color.accentColor : Color.secondary)
                 .frame(width: 17)
 
             VStack(alignment: .leading, spacing: 2) {
