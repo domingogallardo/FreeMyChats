@@ -38,7 +38,10 @@ struct ConversationCatalogView: View {
                     Button {
                         store.openConversation(item.id)
                     } label: {
-                        ConversationCatalogRow(item: item)
+                        ConversationCatalogRow(
+                            item: item,
+                            photoURL: store.profilePhotoURL(for: item)
+                        )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -129,10 +132,11 @@ struct ConversationCatalogView: View {
 
 private struct ConversationCatalogRow: View {
     let item: ConversationCatalogItem
+    let photoURL: URL?
 
     var body: some View {
         HStack(spacing: 11) {
-            LocalImageAvatar(photoURL: item.photoURL, name: item.chat.name, size: 42)
+            LocalImageAvatar(photoURL: photoURL, name: item.chat.name, size: 42)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.chat.name)

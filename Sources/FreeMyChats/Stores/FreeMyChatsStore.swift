@@ -1117,20 +1117,13 @@ final class FreeMyChatsStore: ObservableObject {
     }
 
     func profilePhotoURL(for chat: ChatInfo, in version: LibraryVersionSession) -> URL? {
-        guard let filename = chat.photoFilename else { return nil }
-        let catalogURL = session?.paths
-            .profilePhotosURL(for: version.id)
-            .appendingPathComponent(filename)
-        if let catalogURL, FileManager.default.fileExists(atPath: catalogURL.path) {
-            return catalogURL
-        }
+        guard let paths = session?.paths else { return nil }
+        return ProfilePhotoResolver.photoURL(for: chat, in: version, paths: paths)
+    }
 
-        let storedChatURL = version.storedChatsURL
-            .appendingPathComponent("Chats", isDirectory: true)
-            .appendingPathComponent(String(chat.id), isDirectory: true)
-            .appendingPathComponent("Media", isDirectory: true)
-            .appendingPathComponent(filename)
-        return FileManager.default.fileExists(atPath: storedChatURL.path) ? storedChatURL : nil
+    func profilePhotoURL(for item: ConversationCatalogItem) -> URL? {
+        guard let session else { return item.photoURL }
+        return ProfilePhotoResolver.photoURL(for: item, in: session)
     }
 
     func dismissError() {

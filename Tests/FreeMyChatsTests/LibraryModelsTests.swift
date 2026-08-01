@@ -1140,6 +1140,67 @@ final class LibraryModelsTests: XCTestCase {
         XCTAssertNotNil(thumbnail)
     }
 
+    func testConversationPhotoPrefersCurrentAvatarFromExtractedChat() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let paths = LibraryPaths(rootURL: root)
+        let source = VersionChatID(versionID: "latest", chatID: 3)
+        let versionRecord = LibraryVersionRecord(
+            id: source.versionID,
+            sourceBackupIdentifier: "iphone",
+            sourceBackupCreationDate: Date(),
+            importedAt: Date(),
+            storageDirectoryName: "latest"
+        )
+        let currentChat = try makeChat(
+            id: source.chatID,
+            name: "Anabel",
+            photoFilename: "chat_3.jpg"
+        )
+        let profilePhotoURL = paths.profilePhotosURL(for: source.versionID)
+            .appendingPathComponent("chat_3.jpg")
+        try FileManager.default.createDirectory(
+            at: profilePhotoURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("current-avatar".utf8).write(to: profilePhotoURL)
+
+        let version = LibraryVersionSession(
+            record: versionRecord,
+            backupURL: paths.backupURL(for: source.versionID),
+            storedChatsURL: paths.storedChatURL(for: versionRecord),
+            backup: nil,
+            reader: nil,
+            chats: [currentChat],
+            backupByteCount: 0
+        )
+        let session = LibrarySession(
+            paths: paths,
+            manifest: LibraryManifest(versions: [versionRecord]),
+            versions: [version]
+        )
+        let archivedPhotoURL = root.appendingPathComponent("archived-avatar.jpg")
+        try Data("archived-avatar".utf8).write(to: archivedPhotoURL)
+        let item = ConversationCatalogItem(
+            id: ConversationArchiveID(),
+            chat: currentChat,
+            updatedAt: Date(),
+            contributionSources: [source],
+            preferredPhotoSource: source,
+            localContributionMessageCounts: [:],
+            importedContributions: [],
+            directoryURL: root,
+            photoURL: archivedPhotoURL
+        )
+
+        XCTAssertEqual(
+            ProfilePhotoResolver.photoURL(for: item, in: session),
+            profilePhotoURL
+        )
+    }
+
     private func makeMessage(id: Int) throws -> MessageInfo {
         let data = Data(
             """
@@ -1156,6 +1217,27 @@ final class LibraryModelsTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(MessageInfo.self, from: data)
+    }
+
+    private func makeChat(id: Int, name: String, photoFilename: String) throws -> ChatInfo {
+        let data = Data(
+            """
+            {
+              "id": \(id),
+              "contactJid": "34662499450@s.whatsapp.net",
+              "name": "\(name)",
+              "numberMessages": 1,
+              "lastMessageDate": "2026-07-30T12:00:00Z",
+              "chatType": "individual",
+              "isArchived": false,
+              "mediaByteCount": 0,
+              "photoFilename": "\(photoFilename)"
+            }
+            """.utf8
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(ChatInfo.self, from: data)
     }
 
     private func writeStoredChat(id: Int, name: String, to storedChatURL: URL) throws {

@@ -467,6 +467,7 @@ struct ConversationCatalogItem: Identifiable {
     let chat: ChatInfo
     let updatedAt: Date
     let contributionSources: [VersionChatID]
+    let preferredPhotoSource: VersionChatID?
     let localContributionMessageCounts: [VersionChatID: Int]
     let importedContributions: [ImportedConversationContribution]
     let directoryURL: URL

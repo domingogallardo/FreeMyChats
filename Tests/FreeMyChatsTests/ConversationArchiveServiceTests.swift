@@ -53,6 +53,10 @@ final class ConversationArchiveServiceTests: XCTestCase {
             item.contributionSources,
             [VersionChatID(versionID: "single", chatID: 7)]
         )
+        XCTAssertEqual(
+            item.preferredPhotoSource,
+            VersionChatID(versionID: "single", chatID: 7)
+        )
         XCTAssertEqual(item.directoryURL.standardizedFileURL, stored.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.directoryURL.standardizedFileURL, stored.directoryURL.standardizedFileURL)
         XCTAssertEqual(opened.document.messages.map(\.message), ["Mensaje único"])
@@ -112,6 +116,10 @@ final class ConversationArchiveServiceTests: XCTestCase {
                 VersionChatID(versionID: "old", chatID: 7),
                 VersionChatID(versionID: "new", chatID: 8)
             ])
+        )
+        XCTAssertEqual(
+            item.preferredPhotoSource,
+            VersionChatID(versionID: "new", chatID: 8)
         )
         XCTAssertEqual(
             item.directoryURL.standardizedFileURL,

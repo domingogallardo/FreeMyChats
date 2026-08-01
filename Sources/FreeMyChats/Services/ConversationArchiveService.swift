@@ -1099,6 +1099,9 @@ enum ConversationArchiveService {
                 chat: chat,
                 updatedAt: record.updatedAt,
                 contributionSources: catalogRecord.contributions.map(\.source),
+                preferredPhotoSource: catalogRecord.contributions.max {
+                    $0.storedAt < $1.storedAt
+                }?.source,
                 localContributionMessageCounts: Dictionary(
                     uniqueKeysWithValues: catalogRecord.contributions.compactMap { contribution in
                         (contributedMessageCountsByID[contribution.id]
